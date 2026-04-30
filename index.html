@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SuiviPro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon">📊</div>
+      <div class="sidebar-logo-text">Suivi<span>Pro</span></div>
+    </div>
+    <button class="nav-item active" onclick="showPage('dashboard')">
+      <span class="nav-icon">📊</span> Dashboard
+    </button>
+    <button class="nav-item" onclick="showPage('projets')">
+      <span class="nav-icon">📁</span> Projets
+    </button>
+    <button class="nav-item" onclick="showPage('taches')">
+      <span class="nav-icon">✅</span> Tâches
+    </button>
+    <button class="nav-item" onclick="showPage('employes')">
+      <span class="nav-icon">👥</span> Équipe
+    </button>
+    <button class="nav-item" onclick="showPage('calendrier')">
+      <span class="nav-icon">📅</span> Calendrier
+    </button>
+    <button class="nav-item" onclick="showPage('archives')">
+      <span class="nav-icon">🗄️</span> Archives
+    </button>
+  </aside>
+
+  <!-- CONTENU PRINCIPAL -->
+  <main class="main">
+
+    <!-- DASHBOARD -->
+    <div id="page-dashboard" class="page active">
+      <div class="page-header">
+        <h1 class="page-title">Dashboard</h1>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card" onclick="showPage('projets')" style="cursor:pointer;">
+          <div class="stat-label">Projets en cours</div>
+          <div class="stat-value" id="stat-projets">—</div>
+          <div class="stat-sub">Cliquer pour voir</div>
+        </div>
+        <div class="stat-card retard" onclick="showPage('taches')" style="cursor:pointer;">
+          <div class="stat-label">Tâches en retard</div>
+          <div class="stat-value" id="stat-retard">—</div>
+          <div class="stat-sub">Cliquer pour voir</div>
+        </div>
+        <div class="stat-card urgent" onclick="showPage('taches')" style="cursor:pointer;">
+          <div class="stat-label">Tâches urgentes</div>
+          <div class="stat-value" id="stat-urgent">—</div>
+          <div class="stat-sub">Cliquer pour voir</div>
+        </div>
+        <div class="stat-card fait" onclick="showPage('taches')" style="cursor:pointer;">
+          <div class="stat-label">Tâches faites</div>
+          <div class="stat-value" id="stat-fait">—</div>
+          <div class="stat-sub">Cliquer pour voir</div>
+        </div>
+      </div>
+      <div class="page-header" style="margin-top:1rem;">
+        <h2 class="page-title" style="font-size:1rem;">Tâches en retard</h2>
+      </div>
+      <div id="dashboard-retard"></div>
+    </div>
+
+    <!-- PROJETS -->
+    <div id="page-projets" class="page">
+      <div class="page-header">
+        <h1 class="page-title">Projets</h1>
+        <button class="btn btn-primary" onclick="ouvrirModalProjet()">+ Nouveau projet</button>
+      </div>
+      <div id="filtres-projets"></div>
+      <div class="projets-grid" id="liste-projets"></div>
+    </div>
+
+    <!-- DETAIL PROJET -->
+    <div id="page-detail" class="page">
+      <div class="detail-header">
+        <button class="back-btn" onclick="showPage('projets')">← Retour</button>
+        <h1 class="page-title" id="detail-titre"></h1>
+        <span id="detail-badge"></span>
+        <button class="btn btn-secondary" id="btn-editer-projet" onclick="ouvrirEditionProjet()">✏️ Modifier</button>
+        <button class="btn btn-secondary" id="btn-archiver" onclick="archiverProjet()">🗄️ Archiver</button>
+      </div>
+      <p id="detail-client" style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1.5rem;"></p>
+
+      <div class="page-header">
+        <div class="section-title">Tâches</div>
+        <button class="btn btn-primary" onclick="ouvrirModalTache()">+ Ajouter tâche</button>
+      </div>
+      <div id="detail-taches"></div>
+
+      <div class="section-title">Gantt</div>
+      <div class="gantt-container">
+        <div id="detail-gantt"></div>
+      </div>
+
+      <div class="section-title">Commentaires</div>
+      <div style="background:white; border-radius:12px; padding:1rem; box-shadow:var(--shadow);">
+        <textarea id="input-commentaire" placeholder="Ajouter un commentaire..." style="width:100%; border:1px solid var(--border); border-radius:8px; padding:0.6rem; font-family:inherit; font-size:0.9rem; resize:vertical; min-height:70px;"></textarea>
+        <div style="display:flex; justify-content:flex-end; margin-top:0.5rem;">
+          <button class="btn btn-primary" onclick="ajouterCommentaire()">Envoyer</button>
+        </div>
+        <div id="liste-commentaires" style="margin-top:1rem;"></div>
+      </div>
+    </div>
+
+    <!-- TACHES -->
+    <div id="page-taches" class="page">
+      <div class="page-header">
+        <h1 class="page-title">Toutes les tâches</h1>
+      </div>
+      <div id="filtres-taches"></div>
+      <div id="liste-taches-global"></div>
+    </div>
+
+    <!-- EQUIPE -->
+    <div id="page-employes" class="page">
+      <div class="page-header">
+        <h1 class="page-title">Équipe</h1>
+        <button class="btn btn-primary" onclick="ouvrirModalEmploye()">+ Ajouter membre</button>
+      </div>
+      <div class="employes-grid" id="liste-employes"></div>
+    </div>
+
+    <!-- CALENDRIER -->
+    <div id="page-calendrier" class="page">
+      <div class="page-header">
+        <h1 class="page-title">Calendrier</h1>
+        <div style="display:flex; gap:0.5rem;">
+          <button class="btn btn-secondary" id="toggle-cal-type" onclick="toggleCalType()">📁 Projets</button>
+          <button class="btn btn-secondary" id="toggle-cal-vue" onclick="toggleCalVue()">📊 Timeline</button>
+        </div>
+      </div>
+      <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:1.5rem;">
+        <button class="btn btn-secondary" onclick="calNaviguer(-1)">←</button>
+        <span id="cal-titre" style="font-weight:600; font-size:1rem; min-width:180px; text-align:center;"></span>
+        <button class="btn btn-secondary" onclick="calNaviguer(1)">→</button>
+        <button class="btn btn-secondary" onclick="calAujourdhui()">Aujourd'hui</button>
+      </div>
+      <div id="cal-contenu"></div>
+    </div>
+
+    <!-- ARCHIVES -->
+    <div id="page-archives" class="page">
+      <div class="page-header">
+        <h1 class="page-title">Archives</h1>
+      </div>
+      <div class="projets-grid" id="liste-archives"></div>
+    </div>
+
+  </main>
+</div>
+
+<!-- MODAL PROJET -->
+<div id="modal-projet" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h2 id="modal-projet-titre">Nouveau projet</h2>
+    <input type="hidden" id="input-projet-id" />
+    <div class="form-group">
+      <label>Nom du projet</label>
+      <input type="text" id="input-projet-nom" placeholder="Ex: Dégustation" />
+    </div>
+    <div class="form-group">
+      <label>Client / Site</label>
+      <input type="text" id="input-projet-client" placeholder="Ex: Certicall" />
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <textarea id="input-projet-description" placeholder="Description du projet..."></textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Équipe principale</label>
+        <select id="input-projet-equipe">
+          <option value="technique">Technique</option>
+          <option value="operationnel">Opérationnel</option>
+          <option value="commercial">Commercial</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Statut</label>
+        <select id="input-projet-statut">
+          <option value="en cours">En cours</option>
+          <option value="en attente">En attente</option>
+          <option value="fait">Fait</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fermerModals()">Annuler</button>
+      <button class="btn btn-primary" onclick="sauvegarderProjet()">Sauvegarder</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL TACHE -->
+<div id="modal-tache" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h2 id="modal-tache-titre">Nouvelle tâche</h2>
+    <div class="form-group">
+      <label>Description</label>
+      <input type="text" id="input-tache-desc" placeholder="Ex: Remplacement brio laverie" />
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Priorité</label>
+        <select id="input-tache-priorite">
+          <option value="normal">Normal</option>
+          <option value="urgent">Urgent</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Statut</label>
+        <select id="input-tache-statut">
+          <option value="en cours">En cours</option>
+          <option value="en attente">En attente</option>
+          <option value="fait">Fait</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Date début</label>
+        <input type="date" id="input-tache-debut" onchange="validerDates()" />
+      </div>
+      <div class="form-group">
+        <label>Date fin prévue</label>
+        <input type="date" id="input-tache-fin" onchange="validerDates()" />
+      </div>
+    </div>
+    <p id="erreur-dates" style="color:var(--rouge); font-size:0.8rem; display:none;">⚠ La date de fin ne peut pas être avant la date de début.</p>
+    <div class="form-group">
+      <label>Assigné à (plusieurs possibles)</label>
+      <div id="liste-checkboxes-employes" style="display:flex; flex-wrap:wrap; gap:0.5rem; padding:0.5rem; border:1px solid var(--border); border-radius:8px; max-height:150px; overflow-y:auto;"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fermerModals()">Annuler</button>
+      <button class="btn btn-danger" id="btn-supprimer-tache" onclick="supprimerTache()" style="display:none;">🗑️ Supprimer</button>
+      <button class="btn btn-primary" onclick="sauvegarderTache()">Sauvegarder</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EMPLOYE -->
+<div id="modal-employe" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h2 id="modal-employe-titre">Nouveau membre</h2>
+    <input type="hidden" id="input-employe-id" />
+    <div class="form-group">
+      <label>Prénom / Nom</label>
+      <input type="text" id="input-employe-nom" placeholder="Ex: Angelo" />
+    </div>
+    <div class="form-group">
+      <label>Équipe</label>
+      <select id="input-employe-equipe">
+        <option value="technique">Technique</option>
+        <option value="operationnel">Opérationnel</option>
+        <option value="commercial">Commercial</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Email (pour les alertes)</label>
+      <input type="email" id="input-employe-email" placeholder="angelo@exemple.com" />
+    </div>
+    <div class="form-group">
+      <label>Téléphone</label>
+      <input type="tel" id="input-employe-telephone" placeholder="06 00 00 00 00" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fermerModals()">Annuler</button>
+      <button class="btn btn-danger" id="btn-supprimer-employe" onclick="supprimerEmploye()" style="display:none;">Supprimer</button>
+      <button class="btn btn-primary" onclick="sauvegarderEmploye()">Sauvegarder</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
