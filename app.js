@@ -214,7 +214,7 @@ const { data } = await query
           </div>
         </div>
         <div style="display:flex; gap:0.4rem; flex-wrap:wrap; justify-content:flex-end; align-items:center;">
-          <span class="badge ${t.statut.replace(' ', '-')}">${t.statut}</span>
+          <span class="badge ${t.statut.replace(' ', '-')}" style="cursor:pointer;" title="Cliquer pour changer le statut" onclick="changerStatutTache('${t.id}', '${t.statut}', event)">↻ ${t.statut}</span>
           <span class="badge ${t.priorite}">${t.priorite}</span>
           <button class="btn btn-secondary" style="padding:2px 10px; font-size:0.75rem;" onclick="ouvrirEditionTache('${t.id}')">✏️ Éditer</button>
         </div>
@@ -245,26 +245,25 @@ function afficherGantt(taches, aujourd_hui) {
   const aujourd_huiDate = new Date()
   aujourd_huiDate.setHours(0,0,0,0)
 
-  // Construire les semaines
-  let semaines = []
-  let cur = new Date(minDate)
-  while (cur <= maxDate) {
-    const lundi = new Date(cur)
-    lundi.setDate(lundi.getDate() - ((lundi.getDay() + 6) % 7))
-    const already = semaines.find(s => s.lundi.getTime() === lundi.getTime())
-    if (!already) {
-      const numSem = getNumSemaine(lundi)
-      semaines.push({ lundi, num: numSem })
-    }
-    cur.setDate(cur.getDate() + 1)
+  // Construire les mois
+  const moisNoms = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
+  let mois = []
+  let curMois = new Date(minDate.getFullYear(), minDate.getMonth(), 1)
+  while (curMois <= maxDate) {
+    mois.push(new Date(curMois))
+    curMois.setMonth(curMois.getMonth() + 1)
   }
 
-  // Header semaines
+  // Header mois
   let headerSem = ''
-  for (const s of semaines) {
-    const offsetJours = Math.max(0, Math.ceil((s.lundi - minDate) / 86400000))
-    const left = offsetJours * largeurJour
-    headerSem += `<div style="position:absolute; left:${left}px; top:0; font-size:0.7rem; font-weight:600; color:var(--text-muted); white-space:nowrap; border-left:1px solid var(--border); padding-left:4px; height:20px; line-height:20px;">S${s.num}</div>`
+  for (const m of mois) {
+    const debutMois = new Date(m.getFullYear(), m.getMonth(), 1)
+    const finMois = new Date(m.getFullYear(), m.getMonth() + 1, 0)
+    const debutClamp = debutMois < minDate ? minDate : debutMois
+    const finClamp = finMois > maxDate ? maxDate : finMois
+    const left = Math.ceil((debutClamp - minDate) / 86400000) * largeurJour
+    const width = (Math.ceil((finClamp - debutClamp) / 86400000) + 1) * largeurJour
+    headerSem += `<div style="position:absolute; left:${left}px; top:0; width:${width}px; font-size:0.7rem; font-weight:700; color:var(--indigo); border-left:2px solid var(--indigo); padding-left:6px; height:20px; line-height:20px; overflow:hidden; opacity:0.8;">${moisNoms[m.getMonth()]} ${m.getFullYear()}</div>`
   }
 
   // Header jours
@@ -388,6 +387,15 @@ async function ajouterCommentaire() {
   chargerCommentaires()
 }
 
+async function changerStatutTache(id, statutActuel, event) {
+  event.stopPropagation()
+  const ordre = ['en attente', 'en cours', 'fait']
+  const nouveauStatut = ordre[(ordre.indexOf(statutActuel) + 1) % ordre.length]
+  await db.from('taches').update({ statut: nouveauStatut }).eq('id', id)
+  if (projetActif) chargerTachesDetail()
+  else chargerTachesGlobal()
+}
+
 async function supprimerTache() {
   if (!tacheEnEdition) return
   if (!confirm('Supprimer cette tâche définitivement ?')) return
@@ -456,7 +464,7 @@ async function chargerTachesGlobal() {
           </div>
         </div>
         <div style="display:flex; gap:0.4rem; flex-direction:column; align-items:flex-end;">
-          <span class="badge ${t.statut.replace(' ', '-')}">${t.statut}</span>
+          <span class="badge ${t.statut.replace(' ', '-')}" style="cursor:pointer;" title="Cliquer pour changer le statut" onclick="changerStatutTache('${t.id}', '${t.statut}', event)">↻ ${t.statut}</span>
           <span class="badge ${t.priorite}">${t.priorite}</span>
         </div>
       </div>
