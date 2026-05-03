@@ -11,6 +11,7 @@ let projetEnEdition = null
 let filtreProjetEquipe = 'tous'
 let filtreProjetStatut = 'tous'
 let filtreTacheStatut = 'tous'
+let vueProjet = 'liste'
 
 // --- NAVIGATION ---
 function showPage(page) {
@@ -171,25 +172,34 @@ async function desarchiverProjet(id) {
 // --- DETAIL PROJET ---
 async function ouvrirDetailProjet(projet) {
   projetActif = projet
+  vueProjet = 'liste'
   showPage('detail')
   document.getElementById('detail-titre').textContent = projet.nom
   document.getElementById('detail-client').textContent = projet.client || ''
   document.getElementById('detail-badge').innerHTML = `<span class="badge ${projet.statut.replace(' ', '-')}">${projet.statut}</span>`
+  const btnVue = document.getElementById('btn-vue-projet')
+  if (btnVue) btnVue.textContent = '🗂️ Vue Kanban'
   chargerTachesDetail()
   chargerCommentaires()
 }
 
 async function chargerTachesDetail() {
   if (!projetActif) return
- let query = db.from('taches').select('*').eq('projet_id', projetActif.id).order('created_at', { ascending: false })
-if (!projetActif.archive) query = query.eq('archive', false)
-const { data } = await query
+  let query = db.from('taches').select('*').eq('projet_id', projetActif.id).order('created_at', { ascending: false })
+  if (!projetActif.archive) query = query.eq('archive', false)
+  const { data } = await query
   const container = document.getElementById('detail-taches')
+  const kanbanEl = document.getElementById('detail-kanban')
+  const ganttSection = document.getElementById('section-gantt')
   const aujourd_hui = new Date().toISOString().split('T')[0]
 
   if (!data || !data.length) {
     container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1rem;">Aucune tâche pour ce projet.</p>'
     document.getElementById('detail-gantt').innerHTML = '<p style="color:var(--text-muted); font-size:0.85rem;">Aucune tâche avec des dates.</p>'
+    ;['body-en-attente','body-en-cours','body-fait'].forEach(id => {
+      const el = document.getElementById(id)
+      if (el) el.innerHTML = '<p class="kanban-empty">Aucune tâche</p>'
+    })
     return
   }
 
@@ -198,31 +208,125 @@ const { data } = await query
     return { ...t, assignations: assignations || [] }
   }))
 
-  container.innerHTML = tachesAvecAssignations.map(t => {
-    const enRetard = t.date_fin_prevue && t.date_fin_prevue < aujourd_hui && t.statut !== 'fait'
-    const classe = enRetard ? 'retard' : t.priorite
-    const membres = t.assignations.map(a => a.employes?.nom).filter(Boolean).join(', ')
-    return `
-      <div class="tache-item ${classe}">
-        <div class="tache-info">
-          <div class="tache-desc">${t.description}</div>
-          <div class="tache-meta">
-            ${membres ? '👤 ' + membres + ' · ' : ''}
-            ${t.date_debut ? formatDate(t.date_debut) + ' → ' : ''}
-            ${t.date_fin_prevue ? formatDate(t.date_fin_prevue) : ''}
-            ${enRetard ? ' · <span style="color:var(--rouge)">⚠ Retard</span>' : ''}
+  if (vueProjet === 'kanban') {
+    container.style.display = 'none'
+    ganttSection.style.display = 'none'
+    kanbanEl.classList.remove('hidden')
+    afficherKanban(tachesAvecAssignations, aujourd_hui)
+  } else {
+    container.style.display = 'block'
+    ganttSection.style.display = 'block'
+    kanbanEl.classList.add('hidden')
+
+    container.innerHTML = tachesAvecAssignations.map(t => {
+      const enRetard = t.date_fin_prevue && t.date_fin_prevue < aujourd_hui && t.statut !== 'fait'
+      const classe = enRetard ? 'retard' : t.priorite
+      const membres = t.assignations.map(a => a.employes?.nom).filter(Boolean).join(', ')
+      return `
+        <div class="tache-item ${classe}">
+          <div class="tache-info">
+            <div class="tache-desc">${t.description}</div>
+            <div class="tache-meta">
+              ${membres ? '👤 ' + membres + ' · ' : ''}
+              ${t.date_debut ? formatDate(t.date_debut) + ' → ' : ''}
+              ${t.date_fin_prevue ? formatDate(t.date_fin_prevue) : ''}
+              ${enRetard ? ' · <span style="color:var(--rouge)">⚠ Retard</span>' : ''}
+            </div>
+          </div>
+          <div style="display:flex; gap:0.4rem; flex-wrap:wrap; justify-content:flex-end; align-items:center;">
+            <span class="badge ${t.statut.replace(' ', '-')}" style="cursor:pointer;" title="Cliquer pour changer le statut" onclick="changerStatutTache('${t.id}', '${t.statut}', event)">↻ ${t.statut}</span>
+            <span class="badge ${t.priorite}">${t.priorite}</span>
+            <button class="btn btn-secondary" style="padding:2px 10px; font-size:0.75rem;" onclick="ouvrirEditionTache('${t.id}')">✏️ Éditer</button>
           </div>
         </div>
-        <div style="display:flex; gap:0.4rem; flex-wrap:wrap; justify-content:flex-end; align-items:center;">
-          <span class="badge ${t.statut.replace(' ', '-')}" style="cursor:pointer;" title="Cliquer pour changer le statut" onclick="changerStatutTache('${t.id}', '${t.statut}', event)">↻ ${t.statut}</span>
-          <span class="badge ${t.priorite}">${t.priorite}</span>
-          <button class="btn btn-secondary" style="padding:2px 10px; font-size:0.75rem;" onclick="ouvrirEditionTache('${t.id}')">✏️ Éditer</button>
-        </div>
-      </div>
-    `
-  }).join('')
+      `
+    }).join('')
 
-  afficherGantt(tachesAvecAssignations, aujourd_hui)
+    afficherGantt(tachesAvecAssignations, aujourd_hui)
+  }
+}
+
+function basculerVueProjet() {
+  vueProjet = vueProjet === 'liste' ? 'kanban' : 'liste'
+  const btn = document.getElementById('btn-vue-projet')
+  if (btn) btn.textContent = vueProjet === 'kanban' ? '☰ Vue liste' : '🗂️ Vue Kanban'
+  chargerTachesDetail()
+}
+
+function afficherKanban(taches, aujourd_hui) {
+  const colonnes = {
+    'en attente': 'body-en-attente',
+    'en cours':   'body-en-cours',
+    'fait':       'body-fait'
+  }
+  const counts = {
+    'en attente': 'count-en-attente',
+    'en cours':   'count-en-cours',
+    'fait':       'count-fait'
+  }
+
+  for (const [statut, bodyId] of Object.entries(colonnes)) {
+    const tachesDuStatut = taches.filter(t => t.statut === statut)
+    const col = document.getElementById(bodyId)
+    const countEl = document.getElementById(counts[statut])
+    if (countEl) countEl.textContent = tachesDuStatut.length
+
+    if (!tachesDuStatut.length) {
+      col.innerHTML = '<p class="kanban-empty">Glisser une tâche ici</p>'
+      continue
+    }
+
+    col.innerHTML = tachesDuStatut.map(t => {
+      const enRetard = t.date_fin_prevue && aujourd_hui && t.date_fin_prevue < aujourd_hui && t.statut !== 'fait'
+      const membres = t.assignations?.map(a => a.employes?.nom).filter(Boolean).join(', ') || ''
+      return `
+        <div class="kanban-card ${t.priorite}${enRetard ? ' retard' : ''}"
+             draggable="true" data-id="${t.id}" data-statut="${t.statut}"
+             ondragstart="onDragStart(event)" ondragend="onDragEnd(event)">
+          ${t.priorite === 'urgent' ? '<div style="font-size:0.65rem; font-weight:700; color:var(--rouge); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.3rem;">🔴 Urgent</div>' : ''}
+          <div class="kanban-card-desc">${t.description}</div>
+          ${membres ? `<div class="kanban-card-meta">👤 ${membres}</div>` : ''}
+          ${t.date_fin_prevue ? `<div class="kanban-card-meta${enRetard ? ' retard' : ''}">📅 ${formatDate(t.date_fin_prevue)}${enRetard ? ' ⚠' : ''}</div>` : ''}
+          <div style="display:flex; gap:0.4rem; margin-top:0.6rem;">
+            <button class="btn btn-secondary" style="padding:2px 8px; font-size:0.72rem; flex:1;" onclick="ouvrirEditionTache('${t.id}')">✏️ Éditer</button>
+          </div>
+        </div>
+      `
+    }).join('')
+  }
+}
+
+function onDragStart(event) {
+  event.dataTransfer.setData('tacheId', event.currentTarget.dataset.id)
+  event.dataTransfer.effectAllowed = 'move'
+  setTimeout(() => event.currentTarget.classList.add('dragging'), 0)
+}
+
+function onDragEnd(event) {
+  event.currentTarget.classList.remove('dragging')
+  document.querySelectorAll('.kanban-col').forEach(c => c.classList.remove('drag-over'))
+}
+
+function onDragOver(event) {
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'move'
+  event.currentTarget.classList.add('drag-over')
+}
+
+function onDragLeave(event) {
+  if (!event.currentTarget.contains(event.relatedTarget)) {
+    event.currentTarget.classList.remove('drag-over')
+  }
+}
+
+async function onDrop(event) {
+  event.preventDefault()
+  event.currentTarget.classList.remove('drag-over')
+  const tacheId = event.dataTransfer.getData('tacheId')
+  const nouveauStatut = event.currentTarget.dataset.statut
+  if (!tacheId || !nouveauStatut) return
+  await db.from('taches').update({ statut: nouveauStatut }).eq('id', tacheId)
+  chargerTachesDetail()
 }
 
 // --- GANTT ---

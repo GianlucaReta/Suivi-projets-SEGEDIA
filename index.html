@@ -96,15 +96,48 @@
       </div>
       <p id="detail-client" style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1.5rem;"></p>
 
-      <div class="page-header">
-        <div class="section-title">Tâches</div>
-        <button class="btn btn-primary" onclick="ouvrirModalTache()">+ Ajouter tâche</button>
+      <div class="page-header" style="margin-top:0;">
+        <div class="section-title" style="margin-top:0; margin-bottom:0;">Tâches</div>
+        <div style="display:flex; gap:0.5rem;">
+          <button class="btn btn-secondary" id="btn-vue-projet" onclick="basculerVueProjet()">🗂️ Vue Kanban</button>
+          <button class="btn btn-primary" onclick="ouvrirModalTache()">+ Ajouter tâche</button>
+        </div>
       </div>
+
       <div id="detail-taches"></div>
 
-      <div class="section-title">Gantt</div>
-      <div class="gantt-container">
-        <div id="detail-gantt"></div>
+      <!-- KANBAN BOARD -->
+      <div id="detail-kanban" class="hidden">
+        <div class="kanban-board">
+          <div class="kanban-col" data-statut="en attente" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragleave="onDragLeave(event)">
+            <div class="kanban-col-header attente">
+              <span>⏳ En attente</span>
+              <span class="kanban-count" id="count-en-attente">0</span>
+            </div>
+            <div class="kanban-col-body" id="body-en-attente"></div>
+          </div>
+          <div class="kanban-col" data-statut="en cours" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragleave="onDragLeave(event)">
+            <div class="kanban-col-header cours">
+              <span>🔵 En cours</span>
+              <span class="kanban-count" id="count-en-cours">0</span>
+            </div>
+            <div class="kanban-col-body" id="body-en-cours"></div>
+          </div>
+          <div class="kanban-col" data-statut="fait" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragleave="onDragLeave(event)">
+            <div class="kanban-col-header fait">
+              <span>✅ Fait</span>
+              <span class="kanban-count" id="count-fait">0</span>
+            </div>
+            <div class="kanban-col-body" id="body-fait"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="section-gantt">
+        <div class="section-title">Gantt</div>
+        <div class="gantt-container">
+          <div id="detail-gantt"></div>
+        </div>
       </div>
 
       <div class="section-title">Commentaires</div>
