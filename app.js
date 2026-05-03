@@ -193,6 +193,9 @@ async function chargerTachesDetail() {
   const ganttSection = document.getElementById('section-gantt')
   const aujourd_hui = new Date().toISOString().split('T')[0]
 
+  // Toujours appliquer la bonne vue avant d'afficher les données
+  appliquerVueProjet()
+
   if (!data || !data.length) {
     container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1rem;">Aucune tâche pour ce projet.</p>'
     document.getElementById('detail-gantt').innerHTML = '<p style="color:var(--text-muted); font-size:0.85rem;">Aucune tâche avec des dates.</p>'
@@ -209,14 +212,8 @@ async function chargerTachesDetail() {
   }))
 
   if (vueProjet === 'kanban') {
-    container.style.display = 'none'
-    ganttSection.style.display = 'none'
-    kanbanEl.classList.remove('hidden')
     afficherKanban(tachesAvecAssignations, aujourd_hui)
   } else {
-    container.style.display = 'block'
-    ganttSection.style.display = 'block'
-    kanbanEl.classList.add('hidden')
 
     container.innerHTML = tachesAvecAssignations.map(t => {
       const enRetard = t.date_fin_prevue && t.date_fin_prevue < aujourd_hui && t.statut !== 'fait'
@@ -250,7 +247,24 @@ function basculerVueProjet() {
   vueProjet = vueProjet === 'liste' ? 'kanban' : 'liste'
   const btn = document.getElementById('btn-vue-projet')
   if (btn) btn.textContent = vueProjet === 'kanban' ? '☰ Vue liste' : '🗂️ Vue Kanban'
+  appliquerVueProjet()
   chargerTachesDetail()
+}
+
+function appliquerVueProjet() {
+  const container  = document.getElementById('detail-taches')
+  const kanbanEl   = document.getElementById('detail-kanban')
+  const ganttSection = document.getElementById('section-gantt')
+  if (!container || !kanbanEl) return
+  if (vueProjet === 'kanban') {
+    container.style.display  = 'none'
+    if (ganttSection) ganttSection.style.display = 'none'
+    kanbanEl.style.display   = 'block'
+  } else {
+    container.style.display  = 'block'
+    if (ganttSection) ganttSection.style.display = 'block'
+    kanbanEl.style.display   = 'none'
+  }
 }
 
 function afficherKanban(taches, aujourd_hui) {
