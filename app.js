@@ -49,12 +49,15 @@ async function chargerDashboard() {
     return
   }
   container.innerHTML = retard.map(t => `
-    <div class="tache-item retard">
+    <div class="tache-item retard" style="cursor:pointer;" onclick="ouvrirEditionTache('${t.id}')">
       <div class="tache-info">
         <div class="tache-desc">${t.description}</div>
         <div class="tache-meta">Fin prévue : ${formatDate(t.date_fin_prevue)}</div>
       </div>
-      <span class="badge retard">Retard</span>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="badge retard">Retard</span>
+        <span style="font-size:11px; color:var(--muted); padding:2px 8px; border:1px solid var(--border); border-radius:5px; background:var(--surface-alt);">Ouvrir</span>
+      </div>
     </div>
   `).join('')
 }
