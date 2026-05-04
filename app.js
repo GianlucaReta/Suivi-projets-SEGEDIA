@@ -12,6 +12,7 @@ let filtreProjetEquipe = 'tous'
 let filtreProjetStatut = 'tous'
 let filtreTacheStatut = 'tous'
 let vueProjet = 'liste'
+let vueTachesGlobal = 'liste'
 
 // Utilisateur actif (persisté en localStorage)
 let utilisateurActifId    = localStorage.getItem('suivi_user_id')    || null
@@ -29,7 +30,7 @@ function showPage(page) {
   })
   if (page === 'dashboard') chargerDashboard()
   if (page === 'projets') chargerProjets()
-  if (page === 'taches') chargerTachesGlobal()
+  if (page === 'taches') { projetActif = null; chargerTachesGlobal() }
   if (page === 'employes') chargerEmployes()
   if (page === 'archives') chargerArchives()
   if (page === 'calendrier') afficherCalendrier()
@@ -815,54 +816,138 @@ function renderFiltresTache() {
 
 function setFiltreTacheStatut(val) { filtreTacheStatut = val; chargerTachesGlobal() }
 
+function setVueTachesGlobal(vue) {
+  vueTachesGlobal = vue
+  ;[['btn-taches-liste','liste'],['btn-taches-kanban','kanban']].forEach(([id, v]) => {
+    const btn = document.getElementById(id)
+    if (!btn) return
+    btn.style.background  = vue === v ? 'var(--brand-soft)' : 'transparent'
+    btn.style.color       = vue === v ? 'var(--brand-deep)' : 'var(--muted)'
+    btn.style.fontWeight  = vue === v ? '600' : '500'
+  })
+  chargerTachesGlobal()
+}
+
 async function chargerTachesGlobal() {
   const aujourd_hui = new Date().toISOString().split('T')[0]
+
+  // Filtre visible uniquement en vue liste
   const filterEl = document.getElementById('filtres-taches')
-  if (filterEl) filterEl.innerHTML = renderFiltresTache()
-  const { data } = await db.from('taches').select('*, projets(nom)').eq('archive', false).order('date_fin_prevue', { ascending: true })
-  const container = document.getElementById('liste-taches-global')
+  if (filterEl) filterEl.style.display = vueTachesGlobal === 'liste' ? 'block' : 'none'
+  if (filterEl && vueTachesGlobal === 'liste') filterEl.innerHTML = renderFiltresTache()
+
+  // Basculer les conteneurs
+  const listeEl  = document.getElementById('liste-taches-global')
+  const kanbanEl = document.getElementById('kanban-taches-global')
+  if (listeEl)  listeEl.style.display  = vueTachesGlobal === 'liste'  ? 'block' : 'none'
+  if (kanbanEl) kanbanEl.style.display = vueTachesGlobal === 'kanban' ? 'block' : 'none'
+
+  const { data } = await db.from('taches').select('*, projets(nom, equipe)').eq('archive', false).order('date_fin_prevue', { ascending: true })
   if (!data || !data.length) {
-    container.innerHTML = '<p style="color:var(--text-muted);">Aucune tâche.</p>'
+    if (listeEl) listeEl.innerHTML = '<p style="color:var(--muted);">Aucune tâche.</p>'
     return
   }
+
   const tachesAvecAssignations = await Promise.all(data.map(async t => {
     const { data: assignations } = await db.from('tache_assignations').select('employes(nom)').eq('tache_id', t.id)
     return { ...t, assignations: assignations || [] }
   }))
+
+  // Stats bar
+  const actives  = tachesAvecAssignations.filter(t => t.statut !== 'fait').length
+  const enRetardAll = tachesAvecAssignations.filter(t => t.date_fin_prevue && t.date_fin_prevue < aujourd_hui && t.statut !== 'fait').length
+  const statsEl = document.getElementById('taches-stats-bar')
+  if (statsEl) statsEl.innerHTML = `${actives} tâche${actives>1?'s':''} actives · <span style="color:${enRetardAll>0?'var(--danger)':'var(--success)'};">${enRetardAll} en retard</span>`
+
+  if (vueTachesGlobal === 'kanban') {
+    afficherKanbanGlobal(tachesAvecAssignations, aujourd_hui)
+    return
+  }
+
+  // ── VUE LISTE ──────────────────────────────────────────────
   const filtered = tachesAvecAssignations.filter(t => {
     const enRetard = t.date_fin_prevue && t.date_fin_prevue < aujourd_hui && t.statut !== 'fait'
     if (filtreTacheStatut === 'retard') return enRetard
     if (filtreTacheStatut === 'urgent') return t.priorite === 'urgent' && t.statut !== 'fait'
-    if (filtreTacheStatut !== 'tous') return t.statut === filtreTacheStatut
+    if (filtreTacheStatut !== 'tous')   return t.statut === filtreTacheStatut
     return true
   })
   if (!filtered.length) {
-    container.innerHTML = '<p style="color:var(--text-muted);">Aucune tâche pour ce filtre.</p>'
+    listeEl.innerHTML = '<p style="color:var(--muted);">Aucune tâche pour ce filtre.</p>'
     return
   }
-  container.innerHTML = filtered.map(t => {
+  listeEl.innerHTML = filtered.map(t => {
     const enRetard = t.date_fin_prevue && t.date_fin_prevue < aujourd_hui && t.statut !== 'fait'
-    const classe = enRetard ? 'retard' : t.priorite
-    const membres = t.assignations.map(a => a.employes?.nom).filter(Boolean).join(', ')
+    const classe   = enRetard ? 'retard' : t.priorite
+    const membres  = t.assignations.map(a => a.employes?.nom).filter(Boolean).join(', ')
     return `
       <div class="tache-item ${classe}" style="cursor:pointer;" onclick="ouvrirEditionTache('${t.id}')">
         <div class="tache-info">
           <div class="tache-desc">${t.description}</div>
           <div class="tache-meta">
-            ${t.projets?.nom ? t.projets.nom + ' · ' : ''}
+            ${t.projets?.nom ? t.projets.nom + ' · ' : '<span style="color:var(--muted-soft);">Sans projet · </span>'}
             ${membres ? membres + ' · ' : ''}
             ${t.date_fin_prevue ? formatDate(t.date_fin_prevue) : 'Pas de date'}
-            ${enRetard ? ' · <span style="color:var(--danger); font-weight:600;">Retard</span>' : ''}
+            ${enRetard ? ' · <span style="color:var(--danger);font-weight:600;">Retard</span>' : ''}
           </div>
         </div>
-        <div style="display:flex; gap:0.4rem; flex-direction:column; align-items:flex-end;">
-          <span class="badge ${t.statut.replace(' ', '-')}" style="cursor:pointer;" title="Cliquer pour changer le statut" onclick="changerStatutTache('${t.id}', '${t.statut}', event)">↻ ${t.statut}</span>
+        <div style="display:flex;gap:0.4rem;flex-direction:column;align-items:flex-end;">
+          <span class="badge ${t.statut.replace(' ','-')}" style="cursor:pointer;" title="Cliquer pour changer le statut" onclick="changerStatutTache('${t.id}','${t.statut}',event)">↻ ${t.statut}</span>
           <span class="badge ${t.priorite}">${t.priorite}</span>
-          <span style="font-size:11px; color:var(--muted); padding:2px 8px; border:1px solid var(--border); border-radius:5px; background:var(--surface-alt); white-space:nowrap;">Éditer</span>
+          <span style="font-size:11px;color:var(--muted);padding:2px 8px;border:1px solid var(--border);border-radius:5px;background:var(--surface-alt);white-space:nowrap;">Éditer</span>
         </div>
-      </div>
-    `
+      </div>`
   }).join('')
+}
+
+function afficherKanbanGlobal(taches, aujourd_hui) {
+  const colonnes = { 'en attente': 'g-body-en-attente', 'en cours': 'g-body-en-cours', 'fait': 'g-body-fait' }
+  const counts   = { 'en attente': 'g-count-en-attente', 'en cours': 'g-count-en-cours', 'fait': 'g-count-fait' }
+
+  for (const [statut, bodyId] of Object.entries(colonnes)) {
+    const tachesDuStatut = taches.filter(t => t.statut === statut)
+    const col     = document.getElementById(bodyId)
+    const countEl = document.getElementById(counts[statut])
+    if (!col) continue
+    if (countEl) countEl.textContent = tachesDuStatut.length
+
+    if (!tachesDuStatut.length) {
+      col.innerHTML = '<p class="kanban-empty">Glisser une tâche ici</p>'
+      continue
+    }
+
+    col.innerHTML = tachesDuStatut.map(t => {
+      const enRetard = t.date_fin_prevue && t.date_fin_prevue < aujourd_hui && t.statut !== 'fait'
+      const membres  = t.assignations?.map(a => a.employes?.nom).filter(Boolean) || []
+      const isUrgent = t.priorite === 'urgent'
+      const projetNom   = t.projets?.nom || null
+      const projetEquipe= t.projets?.equipe || 'technique'
+      const equipeColor = { technique:'var(--brand)', operationnel:'var(--success)', commercial:'var(--warn)' }[projetEquipe] || 'var(--muted)'
+
+      const avatars = membres.slice(0, 3).map(nom => {
+        const ini = initialesNom(nom)
+        return `<div title="${nom}" style="width:24px;height:24px;border-radius:6px;background:${avatarColor(ini)};color:#fff;font-size:9.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:2px solid #fff;flex-shrink:0;">${ini}</div>`
+      }).join('')
+
+      return `
+        <div class="kanban-card ${t.priorite}${enRetard?' retard':''}"
+             draggable="true" data-id="${t.id}" data-statut="${t.statut}"
+             ondragstart="onDragStart(event)" ondragend="onDragEnd(event)"
+             onclick="ouvrirEditionTache('${t.id}')"
+             style="${isUrgent && statut==='en cours' ? 'box-shadow:0 0 0 1.5px var(--brand),0 2px 6px rgba(238,126,36,0.12);' : ''}">
+          <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px;">
+            <span style="width:4px;height:4px;border-radius:2px;background:${equipeColor};display:inline-block;flex-shrink:0;"></span>
+            <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${projetNom || 'Sans projet'}</span>
+          </div>
+          <div class="kanban-card-desc">${t.description}</div>
+          ${isUrgent ? `<div style="display:inline-flex;align-items:center;margin-top:8px;font-size:10px;font-weight:600;color:var(--brand-deep);background:var(--brand-soft);padding:1px 7px;border-radius:3px;">Urgent</div>` : ''}
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+            <div style="display:flex;gap:2px;">${avatars || '<div style="width:24px;height:24px;border-radius:6px;background:var(--surface-alt);border:2px solid var(--border);"></div>'}</div>
+            ${t.date_fin_prevue ? `<div style="font-size:10.5px;color:${enRetard?'var(--danger)':'var(--muted)'};font-weight:${enRetard?'600':'500'};font-family:'IBM Plex Mono',monospace;">${enRetard?'⚑ ':''}${formatDate(t.date_fin_prevue)}</div>` : ''}
+          </div>
+        </div>`
+    }).join('')
+  }
 }
 
 // --- EMPLOYES ---

@@ -194,10 +194,49 @@
     <!-- TACHES -->
     <div id="page-taches" class="page">
       <div class="page-header">
-        <h1 class="page-title">Toutes les tâches</h1>
+        <div>
+          <h1 class="page-title">Tâches</h1>
+          <div id="taches-stats-bar" style="font-size:12px; color:var(--muted); margin-top:3px;"></div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <div style="display:flex; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:3px; gap:2px;">
+            <button id="btn-taches-liste" onclick="setVueTachesGlobal('liste')" style="background:var(--brand-soft);color:var(--brand-deep);border:none;cursor:pointer;padding:5px 14px;border-radius:5px;font-size:12px;font-weight:600;font-family:inherit;display:flex;align-items:center;gap:5px;">
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M1.5 3h10M1.5 6.5h10M1.5 10h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg> Liste
+            </button>
+            <button id="btn-taches-kanban" onclick="setVueTachesGlobal('kanban')" style="background:transparent;color:var(--muted);border:none;cursor:pointer;padding:5px 14px;border-radius:5px;font-size:12px;font-weight:500;font-family:inherit;display:flex;align-items:center;gap:5px;">
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="1" y="1" width="4" height="11" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="7" y="1" width="5" height="7" rx="1" stroke="currentColor" stroke-width="1.3"/></svg> Kanban
+            </button>
+          </div>
+          <button class="btn btn-primary" onclick="ouvrirModalTache()">+ Nouvelle tâche</button>
+        </div>
       </div>
       <div id="filtres-taches"></div>
       <div id="liste-taches-global"></div>
+      <div id="kanban-taches-global" style="display:none;">
+        <div class="kanban-board">
+          <div class="kanban-col" data-statut="en attente" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragleave="onDragLeave(event)">
+            <div class="kanban-col-header attente">
+              <span>En attente</span>
+              <span class="kanban-count" id="g-count-en-attente">0</span>
+            </div>
+            <div class="kanban-col-body" id="g-body-en-attente"></div>
+          </div>
+          <div class="kanban-col" data-statut="en cours" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragleave="onDragLeave(event)">
+            <div class="kanban-col-header cours">
+              <span>En cours</span>
+              <span class="kanban-count" id="g-count-en-cours">0</span>
+            </div>
+            <div class="kanban-col-body" id="g-body-en-cours"></div>
+          </div>
+          <div class="kanban-col" data-statut="fait" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragleave="onDragLeave(event)">
+            <div class="kanban-col-header fait">
+              <span>Terminées</span>
+              <span class="kanban-count" id="g-count-fait">0</span>
+            </div>
+            <div class="kanban-col-body" id="g-body-fait"></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- EQUIPE -->
