@@ -274,7 +274,7 @@ async function chargerTachesDetail() {
       const classe = enRetard ? 'retard' : t.priorite
       const membres = t.assignations.map(a => a.employes?.nom).filter(Boolean).join(', ')
       return `
-        <div class="tache-item ${classe}">
+        <div class="tache-item ${classe}" style="cursor:pointer;" onclick="ouvrirEditionTache('${t.id}')">
           <div class="tache-info">
             <div class="tache-desc">${t.description}</div>
             <div class="tache-meta">
@@ -287,7 +287,7 @@ async function chargerTachesDetail() {
           <div style="display:flex; gap:0.4rem; flex-wrap:wrap; justify-content:flex-end; align-items:center;">
             <span class="badge ${t.statut.replace(' ', '-')}" style="cursor:pointer;" title="Cliquer pour changer le statut" onclick="changerStatutTache('${t.id}', '${t.statut}', event)">↻ ${t.statut}</span>
             <span class="badge ${t.priorite}">${t.priorite}</span>
-            <button class="btn btn-secondary" style="padding:2px 10px; font-size:0.75rem;" onclick="ouvrirEditionTache('${t.id}')">Éditer</button>
+            <span style="font-size:11px; color:var(--muted); padding:2px 8px; border:1px solid var(--border); border-radius:5px; background:var(--surface-alt); white-space:nowrap;">Éditer</span>
           </div>
         </div>
       `
@@ -651,19 +651,20 @@ async function chargerTachesGlobal() {
     const classe = enRetard ? 'retard' : t.priorite
     const membres = t.assignations.map(a => a.employes?.nom).filter(Boolean).join(', ')
     return `
-      <div class="tache-item ${classe}">
+      <div class="tache-item ${classe}" style="cursor:pointer;" onclick="ouvrirEditionTache('${t.id}')">
         <div class="tache-info">
           <div class="tache-desc">${t.description}</div>
           <div class="tache-meta">
-            📁 ${t.projets?.nom || 'Sans projet'} ·
-            ${membres ? '👤 ' + membres + ' · ' : ''}
-            ${t.date_fin_prevue ? '📅 ' + formatDate(t.date_fin_prevue) : 'Pas de date'}
-            ${enRetard ? ' · <span style="color:var(--rouge)">⚠ Retard</span>' : ''}
+            ${t.projets?.nom ? t.projets.nom + ' · ' : ''}
+            ${membres ? membres + ' · ' : ''}
+            ${t.date_fin_prevue ? formatDate(t.date_fin_prevue) : 'Pas de date'}
+            ${enRetard ? ' · <span style="color:var(--danger); font-weight:600;">Retard</span>' : ''}
           </div>
         </div>
         <div style="display:flex; gap:0.4rem; flex-direction:column; align-items:flex-end;">
           <span class="badge ${t.statut.replace(' ', '-')}" style="cursor:pointer;" title="Cliquer pour changer le statut" onclick="changerStatutTache('${t.id}', '${t.statut}', event)">↻ ${t.statut}</span>
           <span class="badge ${t.priorite}">${t.priorite}</span>
+          <span style="font-size:11px; color:var(--muted); padding:2px 8px; border:1px solid var(--border); border-radius:5px; background:var(--surface-alt); white-space:nowrap;">Éditer</span>
         </div>
       </div>
     `
