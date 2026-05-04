@@ -45,7 +45,7 @@ async function chargerDashboard() {
 
   const container = document.getElementById('dashboard-retard')
   if (!retard || retard.length === 0) {
-    container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">Aucune tâche en retard 🎉</p>'
+    container.innerHTML = '<p style="color:var(--muted); font-size:0.9rem; padding:12px 0;">Aucune tâche en retard — tout est à jour !</p>'
     return
   }
   container.innerHTML = retard.map(t => `
@@ -60,71 +60,125 @@ async function chargerDashboard() {
 }
 
 // --- PROJETS ---
-function renderFiltresProjet() {
-  const equipes = [
-    { val: 'tous', label: 'Toutes équipes' },
-    { val: 'technique', label: 'Technique' },
-    { val: 'operationnel', label: 'Opérationnel' },
-    { val: 'commercial', label: 'Commercial' }
+function renderTabsProjet(counts) {
+  const tabs = [
+    { val: 'tous',       label: 'Tous',        count: counts.tous },
+    { val: 'en cours',   label: 'Actifs',       count: counts['en cours'] },
+    { val: 'en attente', label: 'En attente',   count: counts['en attente'] },
+    { val: 'fait',       label: 'Terminés',     count: counts['fait'] },
   ]
-  const statuts = [
-    { val: 'tous', label: 'Tous statuts' },
-    { val: 'en cours', label: 'En cours' },
-    { val: 'en attente', label: 'En attente' },
-    { val: 'fait', label: 'Fait' }
-  ]
-  return `<div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-bottom:1rem; align-items:center;">
-    ${equipes.map(e => `<button class="btn ${filtreProjetEquipe === e.val ? 'btn-primary' : 'btn-secondary'}" style="padding:3px 12px; font-size:0.78rem;" onclick="setFiltreProjetEquipe('${e.val}')">${e.label}</button>`).join('')}
-    <span style="color:var(--border); margin:0 4px;">|</span>
-    ${statuts.map(s => `<button class="btn ${filtreProjetStatut === s.val ? 'btn-primary' : 'btn-secondary'}" style="padding:3px 12px; font-size:0.78rem;" onclick="setFiltreProjetStatut('${s.val}')">${s.label}</button>`).join('')}
+  return `<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; gap:12px; flex-wrap:wrap;">
+    <div style="display:flex; gap:2px; background:var(--surface); padding:3px; border-radius:8px; border:1px solid var(--border);">
+      ${tabs.map(t => `
+        <button onclick="setFiltreProjetStatut('${t.val}')" style="
+          background:${filtreProjetStatut === t.val ? 'var(--brand-soft)' : 'transparent'};
+          color:${filtreProjetStatut === t.val ? 'var(--brand-deep)' : 'var(--muted)'};
+          border:none; cursor:pointer; padding:6px 12px; border-radius:6px;
+          font-size:12.5px; font-weight:${filtreProjetStatut === t.val ? '600' : '500'};
+          font-family:inherit; display:flex; align-items:center; gap:6px; white-space:nowrap;
+        ">${t.label}<span style="font-size:10.5px; font-family:'IBM Plex Mono',monospace; background:${filtreProjetStatut === t.val ? 'white' : 'var(--surface-alt)'}; color:${filtreProjetStatut === t.val ? 'var(--brand-deep)' : 'var(--muted)'}; padding:1px 5px; border-radius:3px;">${t.count}</span></button>
+      `).join('')}
+    </div>
   </div>`
 }
 
 function setFiltreProjetEquipe(val) { filtreProjetEquipe = val; chargerProjets() }
 function setFiltreProjetStatut(val) { filtreProjetStatut = val; chargerProjets() }
 
+function statutBadge(statut) {
+  const map = {
+    'en cours':   { dot: 'var(--success)', bg: 'var(--success-bg)', color: 'var(--success)', label: 'En cours' },
+    'en attente': { dot: 'var(--warn)',    bg: 'var(--warn-bg)',    color: 'var(--warn)',    label: 'En attente' },
+    'fait':       { dot: 'var(--muted)',   bg: 'var(--surface-alt)', color: 'var(--muted)', label: 'Terminé' },
+  }
+  const s = map[statut] || map['en attente']
+  return `<span style="display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; padding:3px 8px; border-radius:4px; background:${s.bg}; color:${s.color};">
+    <span style="width:6px;height:6px;border-radius:3px;background:${s.dot};display:inline-block;"></span>${s.label}
+  </span>`
+}
+
 async function chargerProjets() {
   const { data } = await db.from('projets').select('*').eq('archive', false).order('created_at', { ascending: false })
   const filterEl = document.getElementById('filtres-projets')
-  if (filterEl) filterEl.innerHTML = renderFiltresProjet()
   const container = document.getElementById('liste-projets')
+
   if (!data || !data.length) {
-    container.innerHTML = '<p style="color:var(--text-muted);">Aucun projet pour le moment.</p>'
+    if (filterEl) filterEl.innerHTML = ''
+    container.innerHTML = '<p style="color:var(--muted); padding:20px;">Aucun projet pour le moment.</p>'
     return
   }
-  const filtered = data.filter(p => {
-    if (filtreProjetEquipe !== 'tous' && p.equipe !== filtreProjetEquipe) return false
-    if (filtreProjetStatut !== 'tous' && p.statut !== filtreProjetStatut) return false
-    return true
-  })
-  container.innerHTML = ''
+
+  // Compter par statut pour les tabs
+  const counts = { tous: data.length, 'en cours': 0, 'en attente': 0, 'fait': 0 }
+  data.forEach(p => { if (counts[p.statut] !== undefined) counts[p.statut]++ })
+  if (filterEl) filterEl.innerHTML = renderTabsProjet(counts)
+
+  const filtered = data.filter(p => filtreProjetStatut === 'tous' || p.statut === filtreProjetStatut)
+
   if (!filtered.length) {
-    container.innerHTML = '<p style="color:var(--text-muted);">Aucun projet pour ces filtres.</p>'
+    container.innerHTML = '<p style="color:var(--muted); padding:20px;">Aucun projet pour ce filtre.</p>'
     return
   }
-  for (const projet of filtered) {
+
+  // Charger les progressions
+  const projetsAvecPct = await Promise.all(filtered.map(async projet => {
     const { count: total } = await db.from('taches').select('*', { count: 'exact', head: true }).eq('projet_id', projet.id).eq('archive', false)
     const { count: faites } = await db.from('taches').select('*', { count: 'exact', head: true }).eq('projet_id', projet.id).eq('archive', false).eq('statut', 'fait')
     const pct = (total || 0) > 0 ? Math.round(((faites || 0) / (total || 1)) * 100) : 0
-    const card = document.createElement('div')
-    card.className = `projet-card ${projet.equipe || 'technique'}`
-    card.innerHTML = `
-      <h3>${projet.nom}</h3>
-      <p class="client">${projet.client || 'Aucun client'}</p>
-      ${(total || 0) > 0 ? `
-        <div style="margin:0.6rem 0 0.2rem; background:var(--bg); border-radius:4px; height:5px; overflow:hidden;">
-          <div style="width:${pct}%; height:100%; background:${pct === 100 ? 'var(--vert)' : 'var(--bleu)'}; border-radius:4px;"></div>
-        </div>
-        <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:0.3rem;">${faites || 0}/${total} tâches terminées · ${pct}%</div>
-      ` : ''}
-      <div class="projet-card-footer">
-        <span class="badge ${projet.statut.replace(' ', '-')}">${projet.statut}</span>
-        <span class="nb-taches">${total || 0} tâche${(total || 0) > 1 ? 's' : ''}</span>
-      </div>
-    `
-    card.addEventListener('click', () => ouvrirDetailProjet(projet))
-    container.appendChild(card)
-  }
+    return { ...projet, total: total || 0, faites: faites || 0, pct }
+  }))
+
+  const aujourd_hui = new Date().toISOString().split('T')[0]
+
+  container.style.display = 'block'
+  container.innerHTML = `
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden;">
+      <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+        <thead>
+          <tr style="background:var(--surface-alt); border-bottom:1px solid var(--border-soft);">
+            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; font-weight:600;">Projet</th>
+            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; font-weight:600;">Client</th>
+            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; font-weight:600;">Équipe</th>
+            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; font-weight:600; min-width:140px;">Avancement</th>
+            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; font-weight:600;">Statut</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${projetsAvecPct.map(p => {
+            const equipeLabel = { technique: 'Technique', operationnel: 'Opérationnel', commercial: 'Commercial' }[p.equipe] || p.equipe || '—'
+            const equipeColor = { technique: 'var(--brand)', operationnel: 'var(--success)', commercial: 'var(--warn)' }[p.equipe] || 'var(--muted)'
+            return `<tr onclick="ouvrirDetailProjetId('${p.id}')" style="border-bottom:1px solid var(--border-soft); cursor:pointer; transition:background 0.12s;" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background='transparent'">
+              <td style="padding:12px 16px; vertical-align:middle;">
+                <div style="font-size:10px; color:var(--muted); font-family:'IBM Plex Mono',monospace; letter-spacing:0.04em; margin-bottom:2px;">${p.equipe?.toUpperCase() || 'PROJET'}</div>
+                <div style="font-weight:600; color:var(--ink); font-size:13px;">${p.nom}</div>
+              </td>
+              <td style="padding:12px 16px; color:var(--ink-soft); vertical-align:middle;">${p.client || '—'}</td>
+              <td style="padding:12px 16px; vertical-align:middle;">
+                <span style="font-size:11px; font-weight:500; color:${equipeColor}; background:${equipeColor}18; padding:2px 8px; border-radius:4px;">${equipeLabel}</span>
+              </td>
+              <td style="padding:12px 16px; vertical-align:middle;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <div style="flex:1; height:4px; background:var(--surface-alt); border-radius:2px; overflow:hidden; min-width:80px;">
+                    <div style="width:${p.pct}%; height:100%; background:${p.pct === 100 ? 'var(--success)' : 'var(--brand)'}; border-radius:2px;"></div>
+                  </div>
+                  <span style="font-size:11px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; min-width:30px;">${p.pct}%</span>
+                </div>
+                <div style="font-size:10.5px; color:var(--muted); margin-top:2px;">${p.faites}/${p.total} tâches</div>
+              </td>
+              <td style="padding:12px 16px; vertical-align:middle;">${statutBadge(p.statut)}</td>
+            </tr>`
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="font-size:11.5px; color:var(--muted); margin-top:10px; text-align:right;">${filtered.length} projet${filtered.length > 1 ? 's' : ''} affiché${filtered.length > 1 ? 's' : ''}</div>
+  `
+}
+
+// Ouvrir un projet par ID depuis le tableau
+async function ouvrirDetailProjetId(id) {
+  const { data } = await db.from('projets').select('*').eq('id', id).single()
+  if (data) ouvrirDetailProjet(data)
 }
 
 // --- ARCHIVES ---
@@ -178,7 +232,7 @@ async function ouvrirDetailProjet(projet) {
   document.getElementById('detail-client').textContent = projet.client || ''
   document.getElementById('detail-badge').innerHTML = `<span class="badge ${projet.statut.replace(' ', '-')}">${projet.statut}</span>`
   const btnVue = document.getElementById('btn-vue-projet')
-  if (btnVue) btnVue.textContent = '🗂️ Vue Kanban'
+  if (btnVue) btnVue.textContent = 'Vue Kanban'
   chargerTachesDetail()
   chargerCommentaires()
 }
@@ -224,16 +278,16 @@ async function chargerTachesDetail() {
           <div class="tache-info">
             <div class="tache-desc">${t.description}</div>
             <div class="tache-meta">
-              ${membres ? '👤 ' + membres + ' · ' : ''}
+              ${membres ? membres + ' · ' : ''}
               ${t.date_debut ? formatDate(t.date_debut) + ' → ' : ''}
               ${t.date_fin_prevue ? formatDate(t.date_fin_prevue) : ''}
-              ${enRetard ? ' · <span style="color:var(--rouge)">⚠ Retard</span>' : ''}
+              ${enRetard ? ' · <span style="color:var(--danger); font-weight:600;">Retard</span>' : ''}
             </div>
           </div>
           <div style="display:flex; gap:0.4rem; flex-wrap:wrap; justify-content:flex-end; align-items:center;">
             <span class="badge ${t.statut.replace(' ', '-')}" style="cursor:pointer;" title="Cliquer pour changer le statut" onclick="changerStatutTache('${t.id}', '${t.statut}', event)">↻ ${t.statut}</span>
             <span class="badge ${t.priorite}">${t.priorite}</span>
-            <button class="btn btn-secondary" style="padding:2px 10px; font-size:0.75rem;" onclick="ouvrirEditionTache('${t.id}')">✏️ Éditer</button>
+            <button class="btn btn-secondary" style="padding:2px 10px; font-size:0.75rem;" onclick="ouvrirEditionTache('${t.id}')">Éditer</button>
           </div>
         </div>
       `
@@ -246,7 +300,7 @@ async function chargerTachesDetail() {
 function basculerVueProjet() {
   vueProjet = vueProjet === 'liste' ? 'kanban' : 'liste'
   const btn = document.getElementById('btn-vue-projet')
-  if (btn) btn.textContent = vueProjet === 'kanban' ? '☰ Vue liste' : '🗂️ Vue Kanban'
+  if (btn) btn.textContent = vueProjet === 'kanban' ? 'Vue liste' : 'Vue Kanban'
   appliquerVueProjet()
   chargerTachesDetail()
 }
@@ -265,6 +319,18 @@ function appliquerVueProjet() {
     if (ganttSection) ganttSection.style.display = 'block'
     kanbanEl.style.display   = 'none'
   }
+}
+
+function initialesNom(nom) {
+  if (!nom) return '?'
+  const parts = nom.trim().split(' ')
+  return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase()
+}
+
+function avatarColor(initiales) {
+  const colors = ['#1A1815','#EE7E24','#3A3733','#7A766F','#C25E10','#5A4A3A']
+  const code = (initiales.charCodeAt(0) || 0) + (initiales.charCodeAt(1) || 0)
+  return colors[code % colors.length]
 }
 
 function afficherKanban(taches, aujourd_hui) {
@@ -292,17 +358,31 @@ function afficherKanban(taches, aujourd_hui) {
 
     col.innerHTML = tachesDuStatut.map(t => {
       const enRetard = t.date_fin_prevue && aujourd_hui && t.date_fin_prevue < aujourd_hui && t.statut !== 'fait'
-      const membres = t.assignations?.map(a => a.employes?.nom).filter(Boolean).join(', ') || ''
+      const membres = t.assignations?.map(a => a.employes?.nom).filter(Boolean) || []
+      const isUrgent = t.priorite === 'urgent'
+      const highlight = isUrgent && statut === 'en cours'
+
+      const avatars = membres.slice(0, 3).map(nom => {
+        const ini = initialesNom(nom)
+        const col = avatarColor(ini)
+        return `<div title="${nom}" style="width:24px;height:24px;border-radius:6px;background:${col};color:#fff;font-size:9.5px;font-weight:600;display:flex;align-items:center;justify-content:center;letter-spacing:0.02em;border:2px solid #fff;flex-shrink:0;">${ini}</div>`
+      }).join('')
+
       return `
         <div class="kanban-card ${t.priorite}${enRetard ? ' retard' : ''}"
              draggable="true" data-id="${t.id}" data-statut="${t.statut}"
-             ondragstart="onDragStart(event)" ondragend="onDragEnd(event)">
-          ${t.priorite === 'urgent' ? '<div style="font-size:0.65rem; font-weight:700; color:var(--rouge); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.3rem;">🔴 Urgent</div>' : ''}
+             ondragstart="onDragStart(event)" ondragend="onDragEnd(event)"
+             onclick="ouvrirEditionTache('${t.id}')"
+             style="${highlight ? 'box-shadow:0 0 0 1.5px var(--brand),0 2px 6px rgba(238,126,36,0.12);' : ''}">
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+            <span style="width:4px;height:4px;border-radius:2px;background:${isUrgent ? 'var(--brand)' : 'var(--muted-soft)'};display:inline-block;flex-shrink:0;"></span>
+            <span style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${projetActif?.nom || ''}</span>
+          </div>
           <div class="kanban-card-desc">${t.description}</div>
-          ${membres ? `<div class="kanban-card-meta">👤 ${membres}</div>` : ''}
-          ${t.date_fin_prevue ? `<div class="kanban-card-meta${enRetard ? ' retard' : ''}">📅 ${formatDate(t.date_fin_prevue)}${enRetard ? ' ⚠' : ''}</div>` : ''}
-          <div style="display:flex; gap:0.4rem; margin-top:0.6rem;">
-            <button class="btn btn-secondary" style="padding:2px 8px; font-size:0.72rem; flex:1;" onclick="ouvrirEditionTache('${t.id}')">✏️ Éditer</button>
+          ${t.priorite === 'urgent' ? `<div style="display:inline-flex; align-items:center; margin-top:8px; font-size:10px; font-weight:600; color:var(--brand-deep); background:var(--brand-soft); padding:1px 7px; border-radius:3px;">Urgent</div>` : ''}
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+            <div style="display:flex; gap:-4px;">${avatars || '<div style="width:24px;height:24px;border-radius:6px;background:var(--surface-alt);border:2px solid var(--border);"></div>'}</div>
+            ${t.date_fin_prevue ? `<div style="font-size:10.5px; color:${enRetard ? 'var(--danger)' : 'var(--muted)'}; font-weight:${enRetard ? '600' : '500'}; font-family:'IBM Plex Mono',monospace;">${enRetard ? '⚑ ' : ''}${formatDate(t.date_fin_prevue)}</div>` : ''}
           </div>
         </div>
       `
