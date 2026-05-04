@@ -13,6 +13,11 @@ let filtreProjetStatut = 'tous'
 let filtreTacheStatut = 'tous'
 let vueProjet = 'liste'
 
+// Utilisateur actif (persisté en localStorage)
+let utilisateurActifId    = localStorage.getItem('suivi_user_id')    || null
+let utilisateurActifNom   = localStorage.getItem('suivi_user_nom')   || null
+let utilisateurActifEquipe= localStorage.getItem('suivi_user_equipe')|| null
+
 // --- NAVIGATION ---
 function showPage(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
@@ -30,36 +35,222 @@ function showPage(page) {
   if (page === 'calendrier') afficherCalendrier()
 }
 
+// --- UTILISATEUR ACTIF ---
+function selectionnerUtilisateur(id, nom, equipe) {
+  utilisateurActifId     = id
+  utilisateurActifNom    = nom
+  utilisateurActifEquipe = equipe
+  localStorage.setItem('suivi_user_id',     id)
+  localStorage.setItem('suivi_user_nom',    nom)
+  localStorage.setItem('suivi_user_equipe', equipe)
+  fermerModals()
+  mettreAJourSidebarUser()
+  chargerDashboard()
+}
+
+function mettreAJourSidebarUser() {
+  const avatarEl = document.getElementById('sidebar-user-avatar')
+  const nomEl    = document.getElementById('sidebar-user-nom')
+  const roleEl   = document.getElementById('sidebar-user-role')
+  if (utilisateurActifNom) {
+    if (avatarEl) avatarEl.textContent = initialesNom(utilisateurActifNom)
+    if (nomEl)    nomEl.textContent    = utilisateurActifNom
+    if (roleEl)   roleEl.textContent   = utilisateurActifEquipe || 'Utilisateur'
+  }
+}
+
+async function ouvrirSelecteurUtilisateur() {
+  document.getElementById('modal-selecteur-user').classList.remove('hidden')
+  const { data } = await db.from('employes').select('*').order('nom')
+  const container = document.getElementById('liste-selecteur-users')
+  if (!container || !data) return
+  container.innerHTML = data.map(e => {
+    const actif = utilisateurActifId === e.id
+    const ini   = initialesNom(e.nom)
+    return `
+      <div onclick="selectionnerUtilisateur('${e.id}','${e.nom}','${e.equipe}')"
+           style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer;border:1.5px solid ${actif ? 'var(--brand)' : 'var(--border)'};background:${actif ? 'var(--brand-soft)' : 'var(--surface)'};margin-bottom:8px;">
+        <div style="width:36px;height:36px;border-radius:8px;background:${avatarColor(ini)};color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0;">${ini}</div>
+        <div>
+          <div style="font-weight:600;color:var(--ink);">${e.nom}</div>
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">${e.equipe}</div>
+        </div>
+        ${actif ? '<div style="margin-left:auto;color:var(--brand);font-weight:700;">✓</div>' : ''}
+      </div>`
+  }).join('')
+}
+
 // --- DASHBOARD ---
 async function chargerDashboard() {
   const aujourd_hui = new Date().toISOString().split('T')[0]
-  const { data: projets } = await db.from('projets').select('*').eq('statut', 'en cours').eq('archive', false)
-  const { data: retard } = await db.from('taches').select('*').lt('date_fin_prevue', aujourd_hui).neq('statut', 'fait').eq('archive', false)
-  const { data: urgent } = await db.from('taches').select('*').eq('priorite', 'urgent').neq('statut', 'fait').eq('archive', false)
-  const { data: fait } = await db.from('taches').select('*').eq('statut', 'fait').eq('archive', false)
 
-  document.getElementById('stat-projets').textContent = projets?.length || 0
-  document.getElementById('stat-retard').textContent = retard?.length || 0
-  document.getElementById('stat-urgent').textContent = urgent?.length || 0
-  document.getElementById('stat-fait').textContent = fait?.length || 0
-
-  const container = document.getElementById('dashboard-retard')
-  if (!retard || retard.length === 0) {
-    container.innerHTML = '<p style="color:var(--muted); font-size:0.9rem; padding:12px 0;">Aucune tâche en retard — tout est à jour !</p>'
-    return
+  // Greeting
+  const greetingEl = document.getElementById('dashboard-greeting')
+  if (greetingEl) {
+    const now     = new Date()
+    const semaine = getNumSemaine(now)
+    const dateStr = now.toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' })
+    const nom = utilisateurActifNom
+    greetingEl.innerHTML = nom
+      ? `<h1 class="page-title" style="font-size:26px;letter-spacing:-0.02em;">Bonjour, ${nom}</h1>
+         <p style="color:var(--muted);font-size:12.5px;margin-top:3px;text-transform:capitalize;">${dateStr} · Semaine ${semaine}</p>`
+      : `<h1 class="page-title" style="font-size:26px;">Dashboard</h1>
+         <p style="color:var(--muted);font-size:12.5px;margin-top:3px;text-transform:capitalize;">${dateStr}</p>`
   }
-  container.innerHTML = retard.map(t => `
-    <div class="tache-item retard" style="cursor:pointer;" onclick="ouvrirEditionTache('${t.id}')">
-      <div class="tache-info">
-        <div class="tache-desc">${t.description}</div>
-        <div class="tache-meta">Fin prévue : ${formatDate(t.date_fin_prevue)}</div>
+
+  // Stats
+  const [r1, r2, r3, r4] = await Promise.all([
+    db.from('projets').select('*', { count:'exact', head:true }).eq('statut','en cours').eq('archive', false),
+    db.from('taches').select('*',  { count:'exact', head:true }).lt('date_fin_prevue', aujourd_hui).neq('statut','fait').eq('archive', false),
+    db.from('taches').select('*',  { count:'exact', head:true }).eq('priorite','urgent').neq('statut','fait').eq('archive', false),
+    db.from('taches').select('*',  { count:'exact', head:true }).eq('statut','fait').eq('archive', false),
+  ])
+  document.getElementById('stat-projets').textContent = r1.count ?? 0
+  document.getElementById('stat-retard').textContent  = r2.count ?? 0
+  document.getElementById('stat-urgent').textContent  = r3.count ?? 0
+  document.getElementById('stat-fait').textContent    = r4.count ?? 0
+
+  // ── Projets actifs ──────────────────────────────────────────
+  const { data: projets } = await db.from('projets').select('*').eq('statut','en cours').eq('archive', false).order('created_at', { ascending: false })
+  const containerPP = document.getElementById('dashboard-projets-prioritaires')
+
+  if (projets && projets.length) {
+    const avecPct = await Promise.all(projets.slice(0, 6).map(async p => {
+      const { count: total } = await db.from('taches').select('*', { count:'exact', head:true }).eq('projet_id', p.id).eq('archive', false)
+      const { count: faites } = await db.from('taches').select('*', { count:'exact', head:true }).eq('projet_id', p.id).eq('archive', false).eq('statut','fait')
+      const pct = (total || 0) > 0 ? Math.round(((faites || 0) / (total || 1)) * 100) : 0
+      return { ...p, pct }
+    }))
+
+    containerPP.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--border-soft);display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-weight:700;font-size:14px;color:var(--ink);">Projets actifs</div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:1px;">En cours d'exécution</div>
+          </div>
+          <button onclick="showPage('projets')" style="font-size:11.5px;color:var(--brand);background:none;border:none;cursor:pointer;font-family:inherit;font-weight:600;">Voir tous →</button>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+          <thead>
+            <tr style="background:var(--surface-alt);">
+              <th style="padding:8px 16px;text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">Projet</th>
+              <th style="padding:8px 16px;text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">Client</th>
+              <th style="padding:8px 16px;text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;font-weight:600;min-width:100px;">Avancement</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${avecPct.map(p => `
+              <tr onclick="ouvrirDetailProjetId('${p.id}')" style="border-top:1px solid var(--border-soft);cursor:pointer;" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''">
+                <td style="padding:10px 16px;vertical-align:middle;">
+                  <div style="font-weight:600;color:var(--ink);">${p.nom}</div>
+                  <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin-top:1px;">${p.equipe || '—'}</div>
+                </td>
+                <td style="padding:10px 16px;color:var(--ink-soft);vertical-align:middle;font-size:12px;">${p.client || '—'}</td>
+                <td style="padding:10px 16px;vertical-align:middle;">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div style="flex:1;height:4px;background:var(--surface-alt);border-radius:2px;min-width:60px;">
+                      <div style="width:${p.pct}%;height:100%;background:${p.pct===100?'var(--success)':'var(--brand)'};border-radius:2px;"></div>
+                    </div>
+                    <span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);">${p.pct}%</span>
+                  </div>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`
+  } else {
+    containerPP.innerHTML = '<p style="color:var(--muted);">Aucun projet en cours.</p>'
+  }
+
+  // ── Mes tâches ───────────────────────────────────────────────
+  const containerMT = document.getElementById('dashboard-mes-taches')
+  if (utilisateurActifId) {
+    const { data: assignations } = await db.from('tache_assignations')
+      .select('taches(*, projets(nom))')
+      .eq('employe_id', utilisateurActifId)
+
+    const mesTaches = (assignations || [])
+      .map(a => a.taches)
+      .filter(t => t && t.statut !== 'fait' && !t.archive)
+      .sort((a, b) => {
+        if (!a.date_fin_prevue) return 1
+        if (!b.date_fin_prevue) return -1
+        return a.date_fin_prevue.localeCompare(b.date_fin_prevue)
+      })
+
+    const enRetardCount = mesTaches.filter(t => t.date_fin_prevue && t.date_fin_prevue < aujourd_hui).length
+
+    containerMT.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--border-soft);display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-weight:700;font-size:14px;color:var(--ink);">Mes tâches</div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:1px;">${mesTaches.length} à traiter${enRetardCount > 0 ? ` · <span style="color:var(--danger);">${enRetardCount} en retard</span>` : ''}</div>
+          </div>
+          <button onclick="showPage('taches')" style="font-size:11.5px;color:var(--brand);background:none;border:none;cursor:pointer;font-family:inherit;font-weight:600;">Tout voir →</button>
+        </div>
+        <div style="padding:8px;">
+          ${mesTaches.length === 0
+            ? '<p style="color:var(--muted);font-size:13px;padding:12px 8px;">Aucune tâche assignée — tout est à jour !</p>'
+            : mesTaches.slice(0, 7).map(t => {
+                const enRetard = t.date_fin_prevue && t.date_fin_prevue < aujourd_hui
+                return `
+                  <div onclick="ouvrirEditionTache('${t.id}')" style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;cursor:pointer;margin-bottom:2px;" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''">
+                    <div style="width:15px;height:15px;border-radius:4px;border:1.5px solid ${enRetard ? 'var(--danger)' : 'var(--border)'};flex-shrink:0;"></div>
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-size:12.5px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.description}</div>
+                      <div style="font-size:11px;color:var(--muted);margin-top:1px;">${t.projets?.nom || 'Sans projet'}</div>
+                    </div>
+                    <div style="font-size:11px;color:${enRetard ? 'var(--danger)' : 'var(--muted)'};font-weight:${enRetard ? '600' : '400'};font-family:'IBM Plex Mono',monospace;flex-shrink:0;white-space:nowrap;">
+                      ${t.date_fin_prevue ? formatDate(t.date_fin_prevue) : ''}
+                    </div>
+                  </div>`
+              }).join('')}
+        </div>
+      </div>`
+  } else {
+    containerMT.innerHTML = `
+      <div style="background:var(--brand-soft);border:1px solid #f0d5b0;border-radius:12px;padding:20px;text-align:center;">
+        <div style="font-size:28px;margin-bottom:8px;">👤</div>
+        <div style="font-weight:700;color:var(--ink);margin-bottom:4px;">Personnalisez votre dashboard</div>
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:14px;">Sélectionnez votre profil pour voir vos tâches assignées</div>
+        <button onclick="ouvrirSelecteurUtilisateur()" class="btn btn-primary" style="font-size:12.5px;">Choisir mon profil</button>
+      </div>`
+  }
+
+  // ── Tâches en retard (globales) ──────────────────────────────
+  const { data: retard } = await db.from('taches')
+    .select('*, projets(nom)')
+    .lt('date_fin_prevue', aujourd_hui)
+    .neq('statut', 'fait')
+    .eq('archive', false)
+    .order('date_fin_prevue', { ascending: true })
+
+  const containerR = document.getElementById('dashboard-retard')
+  if (!retard || !retard.length) { containerR.innerHTML = ''; return }
+
+  containerR.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border-soft);">
+        <div style="font-weight:700;font-size:14px;color:var(--danger);">Retards équipe</div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:1px;">${retard.length} tâche${retard.length > 1 ? 's' : ''} en retard</div>
       </div>
-      <div style="display:flex; align-items:center; gap:8px;">
-        <span class="badge retard">Retard</span>
-        <span style="font-size:11px; color:var(--muted); padding:2px 8px; border:1px solid var(--border); border-radius:5px; background:var(--surface-alt);">Ouvrir</span>
+      <div style="padding:8px;">
+        ${retard.slice(0, 5).map(t => {
+          const jours = Math.floor((new Date(aujourd_hui) - new Date(t.date_fin_prevue)) / 86400000)
+          return `
+            <div onclick="ouvrirEditionTache('${t.id}')" style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;cursor:pointer;margin-bottom:2px;" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''">
+              <div style="width:6px;height:6px;border-radius:3px;background:var(--danger);flex-shrink:0;"></div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:12.5px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.description}</div>
+                <div style="font-size:11px;color:var(--muted);">${t.projets?.nom || 'Sans projet'}</div>
+              </div>
+              <div style="font-size:11px;color:var(--danger);font-weight:600;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">+${jours}j</div>
+            </div>`
+        }).join('')}
       </div>
-    </div>
-  `).join('')
+    </div>`
 }
 
 // --- PROJETS ---
@@ -901,6 +1092,7 @@ function initiales(nom) {
 }
 
 // --- INIT ---
+mettreAJourSidebarUser()
 chargerDashboard()
 chargerEmployes()
 // --- CALENDRIER ---

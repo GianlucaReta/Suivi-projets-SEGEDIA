@@ -495,6 +495,17 @@ body {
 .badge.retard     { background: var(--danger-bg);  color: var(--danger); }
 .badge.retard::before { background: var(--danger); }
 
+/* ─── DASHBOARD DEUX COLONNES ───────────────────────────────── */
+.dashboard-cols {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .dashboard-cols { grid-template-columns: 1fr; }
+}
+
 /* ─── TÂCHES ────────────────────────────────────────────────── */
 .tache-item {
   background: var(--surface);
