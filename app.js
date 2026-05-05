@@ -615,7 +615,8 @@ async function onDrop(event) {
   const nouveauStatut = event.currentTarget.dataset.statut
   if (!tacheId || !nouveauStatut) return
   await db.from('taches').update({ statut: nouveauStatut }).eq('id', tacheId)
-  chargerTachesDetail()
+  if (projetActif) chargerTachesDetail()
+  else chargerTachesGlobal()
 }
 
 // --- GANTT ---
