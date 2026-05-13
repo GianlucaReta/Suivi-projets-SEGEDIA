@@ -707,13 +707,8 @@ body {
 
 /* ─── GANTT ─────────────────────────────────────────────────── */
 .gantt-container {
-  background: var(--surface);
-  border-radius: var(--radius);
-  padding: 16px;
-  overflow-x: auto;
   margin-top: 6px;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
+  margin-bottom: 8px;
 }
 
 /* ─── FILTRES ───────────────────────────────────────────────── */

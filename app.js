@@ -11,6 +11,7 @@ let projetEnEdition = null
 let filtreProjetEquipe = 'tous'
 let filtreProjetStatut = 'tous'
 let filtreTacheStatut = 'tous'
+let filtreTacheEquipe = 'tous'
 let vueProjet = 'liste'
 let vueTachesGlobal = 'liste'
 
@@ -262,19 +263,38 @@ function renderTabsProjet(counts) {
     { val: 'en attente', label: 'En attente',   count: counts['en attente'] },
     { val: 'fait',       label: 'Terminés',     count: counts['fait'] },
   ]
-  return `<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; gap:12px; flex-wrap:wrap;">
-    <div style="display:flex; gap:2px; background:var(--surface); padding:3px; border-radius:8px; border:1px solid var(--border);">
-      ${tabs.map(t => `
-        <button onclick="setFiltreProjetStatut('${t.val}')" style="
-          background:${filtreProjetStatut === t.val ? 'var(--brand-soft)' : 'transparent'};
-          color:${filtreProjetStatut === t.val ? 'var(--brand-deep)' : 'var(--muted)'};
-          border:none; cursor:pointer; padding:6px 12px; border-radius:6px;
-          font-size:12.5px; font-weight:${filtreProjetStatut === t.val ? '600' : '500'};
-          font-family:inherit; display:flex; align-items:center; gap:6px; white-space:nowrap;
-        ">${t.label}<span style="font-size:10.5px; font-family:'IBM Plex Mono',monospace; background:${filtreProjetStatut === t.val ? 'white' : 'var(--surface-alt)'}; color:${filtreProjetStatut === t.val ? 'var(--brand-deep)' : 'var(--muted)'}; padding:1px 5px; border-radius:3px;">${t.count}</span></button>
-      `).join('')}
+  const equipes = [
+    { val: 'tous',         label: 'Toutes les équipes' },
+    { val: 'technique',    label: '🔧 Technique' },
+    { val: 'operationnel', label: '⚙️ Opérationnel' },
+    { val: 'commercial',   label: '💼 Commercial' },
+  ]
+  return `
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:12px; flex-wrap:wrap;">
+      <div style="display:flex; gap:2px; background:var(--surface); padding:3px; border-radius:8px; border:1px solid var(--border);">
+        ${tabs.map(t => `
+          <button onclick="setFiltreProjetStatut('${t.val}')" style="
+            background:${filtreProjetStatut === t.val ? 'var(--brand-soft)' : 'transparent'};
+            color:${filtreProjetStatut === t.val ? 'var(--brand-deep)' : 'var(--muted)'};
+            border:none; cursor:pointer; padding:6px 12px; border-radius:6px;
+            font-size:12.5px; font-weight:${filtreProjetStatut === t.val ? '600' : '500'};
+            font-family:inherit; display:flex; align-items:center; gap:6px; white-space:nowrap;
+          ">${t.label}<span style="font-size:10.5px; font-family:'IBM Plex Mono',monospace; background:${filtreProjetStatut === t.val ? 'white' : 'var(--surface-alt)'}; color:${filtreProjetStatut === t.val ? 'var(--brand-deep)' : 'var(--muted)'}; padding:1px 5px; border-radius:3px;">${t.count}</span></button>
+        `).join('')}
+      </div>
     </div>
-  </div>`
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;">
+      ${equipes.map(e => `
+        <button onclick="setFiltreProjetEquipe('${e.val}')" style="
+          background:${filtreProjetEquipe === e.val ? 'var(--ink)' : 'var(--surface)'};
+          color:${filtreProjetEquipe === e.val ? '#fff' : 'var(--muted)'};
+          border:1px solid ${filtreProjetEquipe === e.val ? 'var(--ink)' : 'var(--border)'};
+          cursor:pointer; padding:4px 12px; border-radius:20px;
+          font-size:12px; font-weight:${filtreProjetEquipe === e.val ? '600' : '400'};
+          font-family:inherit; white-space:nowrap; transition:all 0.1s;
+        ">${e.label}</button>
+      `).join('')}
+    </div>`
 }
 
 function setFiltreProjetEquipe(val) { filtreProjetEquipe = val; chargerProjets() }
@@ -308,7 +328,11 @@ async function chargerProjets() {
   data.forEach(p => { if (counts[p.statut] !== undefined) counts[p.statut]++ })
   if (filterEl) filterEl.innerHTML = renderTabsProjet(counts)
 
-  const filtered = data.filter(p => filtreProjetStatut === 'tous' || p.statut === filtreProjetStatut)
+  const filtered = data.filter(p => {
+    const okStatut = filtreProjetStatut === 'tous' || p.statut === filtreProjetStatut
+    const okEquipe = filtreProjetEquipe === 'tous' || p.equipe === filtreProjetEquipe
+    return okStatut && okEquipe
+  })
 
   if (!filtered.length) {
     container.innerHTML = '<p style="color:var(--muted); padding:20px;">Aucun projet pour ce filtre.</p>'
@@ -624,98 +648,112 @@ function afficherGantt(taches, aujourd_hui) {
   const avecDates = taches.filter(t => t.date_debut && t.date_fin_prevue)
   const ganttEl = document.getElementById('detail-gantt')
   if (!avecDates.length) {
-    ganttEl.innerHTML = '<p style="color:var(--text-muted); font-size:0.85rem;">Aucune tâche avec des dates.</p>'
+    ganttEl.innerHTML = '<p style="color:var(--muted); font-size:0.85rem; padding:8px 0;">Aucune tâche avec des dates — ajoutez une date de début et de fin à vos tâches pour voir le Gantt.</p>'
     return
   }
 
   const dates = avecDates.flatMap(t => [new Date(t.date_debut), new Date(t.date_fin_prevue)])
   const minDate = new Date(Math.min(...dates))
   const maxDate = new Date(Math.max(...dates))
-  minDate.setDate(minDate.getDate() - 1)
-  maxDate.setDate(maxDate.getDate() + 1)
-  const totalJours = Math.ceil((maxDate - minDate) / 86400000)
-  const largeurJour = 36
+  minDate.setDate(minDate.getDate() - 2)
+  maxDate.setDate(maxDate.getDate() + 3)
+
+  // Cap à 150 jours pour éviter un Gantt infini
+  const totalJoursRaw = Math.ceil((maxDate - minDate) / 86400000)
+  const totalJours = Math.min(totalJoursRaw, 150)
+  if (totalJoursRaw > 150) maxDate.setTime(minDate.getTime() + 150 * 86400000)
+
+  const largeurJour = 24
+  const largeurLabel = 160
   const largeurTotal = totalJours * largeurJour
+  const rowHeight = 32
   const aujourd_huiDate = new Date()
   aujourd_huiDate.setHours(0,0,0,0)
 
-  // Construire les mois
+  // Mois headers
   const moisNoms = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
   let mois = []
   let curMois = new Date(minDate.getFullYear(), minDate.getMonth(), 1)
-  while (curMois <= maxDate) {
-    mois.push(new Date(curMois))
-    curMois.setMonth(curMois.getMonth() + 1)
-  }
+  while (curMois <= maxDate) { mois.push(new Date(curMois)); curMois.setMonth(curMois.getMonth() + 1) }
 
-  // Header mois
-  let headerSem = ''
+  let headerMois = ''
   for (const m of mois) {
     const debutMois = new Date(m.getFullYear(), m.getMonth(), 1)
-    const finMois = new Date(m.getFullYear(), m.getMonth() + 1, 0)
-    const debutClamp = debutMois < minDate ? minDate : debutMois
-    const finClamp = finMois > maxDate ? maxDate : finMois
-    const left = Math.ceil((debutClamp - minDate) / 86400000) * largeurJour
-    const width = (Math.ceil((finClamp - debutClamp) / 86400000) + 1) * largeurJour
-    headerSem += `<div style="position:absolute; left:${left}px; top:0; width:${width}px; font-size:0.7rem; font-weight:700; color:var(--indigo); border-left:2px solid var(--indigo); padding-left:6px; height:20px; line-height:20px; overflow:hidden; opacity:0.8;">${moisNoms[m.getMonth()]} ${m.getFullYear()}</div>`
+    const finMois   = new Date(m.getFullYear(), m.getMonth() + 1, 0)
+    const debutC = debutMois < minDate ? minDate : debutMois
+    const finC   = finMois   > maxDate ? maxDate : finMois
+    const left  = Math.ceil((debutC - minDate) / 86400000) * largeurJour
+    const width = (Math.ceil((finC - debutC) / 86400000) + 1) * largeurJour
+    headerMois += `<div style="position:absolute;left:${left}px;top:0;width:${width}px;font-size:10px;font-weight:700;color:var(--brand-deep);border-left:1px solid var(--border);padding-left:5px;height:18px;line-height:18px;overflow:hidden;white-space:nowrap;">${moisNoms[m.getMonth()]} ${m.getFullYear()}</div>`
   }
 
-  // Header jours
+  // Jours headers
   let headerJours = ''
   for (let i = 0; i < totalJours; i++) {
-    const d = new Date(minDate)
-    d.setDate(d.getDate() + i)
-    const isToday = d.getTime() === aujourd_huiDate.getTime()
+    const d = new Date(minDate); d.setDate(d.getDate() + i)
+    const isToday   = d.getTime() === aujourd_huiDate.getTime()
     const isWeekend = d.getDay() === 0 || d.getDay() === 6
-    headerJours += `<div style="position:absolute; left:${i * largeurJour}px; top:0; width:${largeurJour}px; text-align:center; font-size:0.65rem; color:${isToday ? 'var(--bleu)' : isWeekend ? 'var(--text-muted)' : 'var(--text)'}; font-weight:${isToday ? '700' : '400'}; height:20px; line-height:20px;">${d.getDate()}</div>`
+    headerJours += `<div style="position:absolute;left:${i*largeurJour}px;top:0;width:${largeurJour}px;text-align:center;font-size:9px;color:${isToday?'var(--brand)':isWeekend?'var(--muted-soft)':'var(--muted)'};font-weight:${isToday?'700':'400'};height:18px;line-height:18px;border-left:1px solid var(--border-soft);">${d.getDate()}</div>`
   }
 
-  // Lignes fond (weekends + aujourd'hui)
-  let fond = ''
+  // Fond commun (1 seule fois, pas par ligne)
+  let fondCommun = ''
   for (let i = 0; i < totalJours; i++) {
-    const d = new Date(minDate)
-    d.setDate(d.getDate() + i)
-    const isToday = d.getTime() === aujourd_huiDate.getTime()
+    const d = new Date(minDate); d.setDate(d.getDate() + i)
+    const isToday   = d.getTime() === aujourd_huiDate.getTime()
     const isWeekend = d.getDay() === 0 || d.getDay() === 6
-    if (isWeekend) fond += `<div style="position:absolute; left:${i*largeurJour}px; top:0; width:${largeurJour}px; height:100%; background:rgba(0,0,0,0.03);"></div>`
-    if (isToday) fond += `<div style="position:absolute; left:${i*largeurJour}px; top:0; width:${largeurJour}px; height:100%; background:rgba(59,130,246,0.08); border-left:2px solid var(--bleu);"></div>`
+    if (isWeekend) fondCommun += `<div style="position:absolute;left:${i*largeurJour}px;top:0;width:${largeurJour}px;height:100%;background:rgba(0,0,0,0.025);"></div>`
+    if (isToday)   fondCommun += `<div style="position:absolute;left:${i*largeurJour}px;top:0;width:2px;height:100%;background:var(--brand);opacity:0.5;z-index:1;"></div>`
   }
 
-  // Barres tâches
-  const rows = avecDates.map(t => {
-    const debut = new Date(t.date_debut)
-    const fin = new Date(t.date_fin_prevue)
-    debut.setHours(0,0,0,0)
-    fin.setHours(0,0,0,0)
-    const left = Math.ceil((debut - minDate) / 86400000) * largeurJour
-    const width = Math.max((Math.ceil((fin - debut) / 86400000) + 1) * largeurJour, largeurJour)
+  // Labels colonne gauche (fixed)
+  const labelsHtml = avecDates.map(t => `
+    <div style="height:${rowHeight}px;display:flex;align-items:center;padding:0 8px;border-bottom:1px solid var(--border-soft);overflow:hidden;">
+      <span style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);" title="${t.description}">${t.description}</span>
+    </div>`).join('')
+
+  // Barres tâches (sans fond intégré)
+  const barsHtml = avecDates.map(t => {
+    const debut = new Date(t.date_debut); debut.setHours(0,0,0,0)
+    const fin   = new Date(t.date_fin_prevue); fin.setHours(0,0,0,0)
+    const leftJ  = Math.max(0, Math.round((debut - minDate) / 86400000))
+    const rightJ = Math.min(totalJours, Math.round((fin - minDate) / 86400000) + 1)
+    const left  = leftJ * largeurJour
+    const width = Math.max((rightJ - leftJ) * largeurJour, largeurJour)
     const enRetard = fin < aujourd_huiDate && t.statut !== 'fait'
-    const couleur = enRetard ? 'var(--rouge)' : t.priorite === 'urgent' ? 'var(--orange)' : 'var(--bleu)'
+    const couleur  = enRetard ? 'var(--danger)' : t.priorite === 'urgent' ? 'var(--brand)' : '#4F87C5'
+    const opacity  = t.statut === 'fait' ? '0.4' : '0.85'
+    const label    = t.description.length > 14 ? t.description.slice(0,14)+'…' : t.description
     return `
-      <div style="display:flex; align-items:center; margin-bottom:6px; height:28px;">
-        <div style="width:150px; flex-shrink:0; font-size:0.78rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:8px; color:var(--text);" title="${t.description}">${t.description}</div>
-        <div style="position:relative; width:${largeurTotal}px; height:22px; flex-shrink:0;">
-          ${fond}
-          <div style="position:absolute; left:${left}px; width:${width}px; height:18px; top:2px; background:${couleur}; border-radius:4px; opacity:0.85; display:flex; align-items:center; padding:0 6px;">
-            <span style="font-size:0.65rem; color:white; white-space:nowrap; overflow:hidden;">${t.statut}</span>
-          </div>
+      <div style="height:${rowHeight}px;position:relative;border-bottom:1px solid var(--border-soft);">
+        <div onclick="ouvrirEditionTache('${t.id}')" title="${t.description} · ${t.statut}" style="position:absolute;left:${left}px;width:${width}px;height:20px;top:6px;background:${couleur};border-radius:4px;opacity:${opacity};display:flex;align-items:center;padding:0 6px;cursor:pointer;z-index:2;">
+          <span style="font-size:9.5px;color:#fff;white-space:nowrap;overflow:hidden;font-weight:500;">${t.statut==='fait'?'✓ ':''}${label}</span>
         </div>
-      </div>
-    `
+      </div>`
   }).join('')
 
+  const totalHeight = avecDates.length * rowHeight
+
   ganttEl.innerHTML = `
-    <div style="overflow-x:auto;">
-      <div style="min-width:${150 + largeurTotal}px;">
-        <div style="display:flex; margin-bottom:2px;">
-          <div style="width:150px; flex-shrink:0;"></div>
-          <div style="position:relative; width:${largeurTotal}px; height:20px; flex-shrink:0;">${headerSem}</div>
+    <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface);">
+      <!-- Colonne labels (fixed) -->
+      <div style="flex-shrink:0;width:${largeurLabel}px;border-right:2px solid var(--border);background:var(--surface);z-index:3;">
+        <div style="height:38px;background:var(--surface-alt);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 8px;">
+          <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;">Tâche</span>
         </div>
-        <div style="display:flex; margin-bottom:6px; border-bottom:1px solid var(--border); padding-bottom:4px;">
-          <div style="width:150px; flex-shrink:0;"></div>
-          <div style="position:relative; width:${largeurTotal}px; height:20px; flex-shrink:0;">${headerJours}</div>
+        ${labelsHtml}
+      </div>
+      <!-- Zone scrollable -->
+      <div style="overflow-x:auto;flex:1;min-width:0;">
+        <div style="min-width:${largeurTotal}px;">
+          <div style="position:relative;height:20px;background:var(--surface-alt);border-bottom:1px solid var(--border-soft);">${headerMois}</div>
+          <div style="position:relative;height:18px;background:var(--surface-alt);border-bottom:1px solid var(--border);">${headerJours}</div>
+          <!-- Fond + barres -->
+          <div style="position:relative;height:${totalHeight}px;">
+            <div style="position:absolute;inset:0;overflow:hidden;pointer-events:none;">${fondCommun}</div>
+            ${barsHtml}
+          </div>
         </div>
-        ${rows}
       </div>
     </div>
   `
@@ -810,12 +848,23 @@ function renderFiltresTache() {
     { val: 'urgent', label: '🔴 Urgent' },
     { val: 'retard', label: '⚠ Retard' }
   ]
-  return `<div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-bottom:1rem; align-items:center;">
-    ${statuts.map(s => `<button class="btn ${filtreTacheStatut === s.val ? 'btn-primary' : 'btn-secondary'}" style="padding:3px 12px; font-size:0.78rem;" onclick="setFiltreTacheStatut('${s.val}')">${s.label}</button>`).join('')}
-  </div>`
+  const equipes = [
+    { val: 'tous', label: 'Toutes' },
+    { val: 'technique', label: '🔧 Technique' },
+    { val: 'operationnel', label: '⚙️ Opérationnel' },
+    { val: 'commercial', label: '💼 Commercial' },
+  ]
+  return `
+    <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-bottom:0.5rem; align-items:center;">
+      ${statuts.map(s => `<button class="btn ${filtreTacheStatut === s.val ? 'btn-primary' : 'btn-secondary'}" style="padding:3px 12px; font-size:0.78rem;" onclick="setFiltreTacheStatut('${s.val}')">${s.label}</button>`).join('')}
+    </div>
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:1rem; align-items:center;">
+      ${equipes.map(e => `<button style="background:${filtreTacheEquipe===e.val?'var(--ink)':'var(--surface)'};color:${filtreTacheEquipe===e.val?'#fff':'var(--muted)'};border:1px solid ${filtreTacheEquipe===e.val?'var(--ink)':'var(--border)'};cursor:pointer;padding:3px 11px;border-radius:20px;font-size:11.5px;font-weight:${filtreTacheEquipe===e.val?'600':'400'};font-family:inherit;white-space:nowrap;" onclick="setFiltreTacheEquipe('${e.val}')">${e.label}</button>`).join('')}
+    </div>`
 }
 
 function setFiltreTacheStatut(val) { filtreTacheStatut = val; chargerTachesGlobal() }
+function setFiltreTacheEquipe(val) { filtreTacheEquipe = val; chargerTachesGlobal() }
 
 function setVueTachesGlobal(vue) {
   vueTachesGlobal = vue
@@ -868,10 +917,12 @@ async function chargerTachesGlobal() {
   // ── VUE LISTE ──────────────────────────────────────────────
   const filtered = tachesAvecAssignations.filter(t => {
     const enRetard = t.date_fin_prevue && t.date_fin_prevue < aujourd_hui && t.statut !== 'fait'
-    if (filtreTacheStatut === 'retard') return enRetard
-    if (filtreTacheStatut === 'urgent') return t.priorite === 'urgent' && t.statut !== 'fait'
-    if (filtreTacheStatut !== 'tous')   return t.statut === filtreTacheStatut
-    return true
+    const okStatut = filtreTacheStatut === 'retard' ? enRetard
+      : filtreTacheStatut === 'urgent' ? (t.priorite === 'urgent' && t.statut !== 'fait')
+      : filtreTacheStatut !== 'tous'   ? t.statut === filtreTacheStatut
+      : true
+    const okEquipe = filtreTacheEquipe === 'tous' || (t.projets?.equipe === filtreTacheEquipe)
+    return okStatut && okEquipe
   })
   if (!filtered.length) {
     listeEl.innerHTML = '<p style="color:var(--muted);">Aucune tâche pour ce filtre.</p>'
