@@ -302,6 +302,10 @@
           <div id="factures-stats-bar" style="font-size:12px; color:var(--muted); margin-top:3px;"></div>
         </div>
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button onclick="togglePanelExclus()" class="btn btn-secondary" style="font-size:12px; display:flex; align-items:center; gap:6px;">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.93 2.93l1.06 1.06M10.01 10.01l1.06 1.06M2.93 11.07l1.06-1.06M10.01 3.99l1.06-1.06" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            Clients exclus
+          </button>
           <label class="btn btn-secondary" style="cursor:pointer;">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="margin-right:5px;"><path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Importer CSV
@@ -309,13 +313,16 @@
           </label>
         </div>
       </div>
-      <div id="filtres-factures" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;"></div>
-      <div id="liste-factures"></div>
 
-      <!-- Clients exclus de l'import -->
-      <div style="margin-top:28px; border-top:1px solid var(--border); padding-top:20px;">
-        <div style="font-size:13px; font-weight:700; color:var(--ink); margin-bottom:4px;">Clients exclus de l'import CSV</div>
-        <div style="font-size:12px; color:var(--muted); margin-bottom:12px;">Les factures de ces clients seront ignorées lors de chaque import.</div>
+      <!-- Panel clients exclus (rétractable) -->
+      <div id="panel-clients-exclus" style="display:none; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 20px; margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <div>
+            <div style="font-size:13px; font-weight:700; color:var(--ink);">Clients exclus</div>
+            <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">Masqués de l'affichage et ignorés à l'import CSV.</div>
+          </div>
+          <button onclick="togglePanelExclus()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:0;">×</button>
+        </div>
         <div id="liste-clients-exclus" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;"></div>
         <div style="display:flex; gap:8px; align-items:center;">
           <input id="input-nouveau-client-exclu" type="text" placeholder="Nom exact du client à exclure…"
@@ -324,6 +331,9 @@
           <button onclick="ajouterClientExclu()" class="btn btn-secondary" style="font-size:12.5px;">+ Ajouter</button>
         </div>
       </div>
+
+      <div id="filtres-factures" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;"></div>
+      <div id="liste-factures"></div>
     </div>
 
   </main>

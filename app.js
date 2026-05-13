@@ -342,9 +342,13 @@ async function chargerDashboard() {
   // ── Widget factures (Gianluca seulement) ─────────────────────
   const containerF = document.getElementById('dashboard-factures')
   if (containerF && utilisateurAccesFactures) {
-    const { data: facturesTout } = await db.from('factures').select('montant,solde,date_echeance')
-    const fNonSolde  = (facturesTout || []).filter(f => !f.solde)
-    const fEnRetard  = fNonSolde.filter(f => f.date_echeance && f.date_echeance < aujourd_hui)
+    const [{ data: facturesTout }, { data: exclusDash }] = await Promise.all([
+      db.from('factures').select('client,montant,solde,date_echeance'),
+      db.from('clients_exclus').select('nom')
+    ])
+    const nomsExclusDash = new Set((exclusDash || []).map(e => e.nom))
+    const fNonSolde  = (facturesTout || []).filter(f => !f.solde && !nomsExclusDash.has(f.client))
+    const fEnRetard  = fNonSolde.filter(f => !nomsExclusDash.has(f.client) && f.date_echeance && f.date_echeance < aujourd_hui)
     const totalAtt   = fNonSolde.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
     const totalRetard= fEnRetard.reduce((s, f)  => s + (parseFloat(f.montant) || 0), 0)
     const fmt = v => v.toLocaleString('fr-FR', { minimumFractionDigits: 2 })
@@ -1597,11 +1601,18 @@ async function chargerFactures() {
     document.getElementById('liste-factures').innerHTML = '<p style="color:var(--muted);">Accès restreint.</p>'
     return
   }
+  // Charger la liste d'exclusion ET le panel en parallèle
+  const [{ data: exclusData }, { data: factures }] = await Promise.all([
+    db.from('clients_exclus').select('nom'),
+    db.from('factures').select('*').order('date_echeance', { ascending: true })
+  ])
   chargerClientsExclus()
-  const aujourd_hui = new Date().toISOString().split('T')[0]
-  const { data: factures } = await db.from('factures').select('*').order('date_echeance', { ascending: true })
 
-  const toutes   = factures || []
+  const nomsExclus = new Set((exclusData || []).map(e => e.nom))
+  const aujourd_hui = new Date().toISOString().split('T')[0]
+
+  // Exclure les clients masqués de TOUT l'affichage et des stats
+  const toutes   = (factures || []).filter(f => !nomsExclus.has(f.client))
   const nonSolde = toutes.filter(f => !f.solde)
   const enRetard = nonSolde.filter(f => f.date_echeance && f.date_echeance < aujourd_hui)
   const montantTotal  = nonSolde.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
@@ -1710,7 +1721,13 @@ async function chargerFactures() {
 
 function setFiltreFactures(val) { filtreFactures = val; chargerFactures() }
 
-// ── CLIENTS EXCLUS DE L'IMPORT ───────────────────────────
+// ── CLIENTS EXCLUS ───────────────────────────────────────
+function togglePanelExclus() {
+  const panel = document.getElementById('panel-clients-exclus')
+  if (!panel) return
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none'
+}
+
 async function chargerClientsExclus() {
   const { data } = await db.from('clients_exclus').select('*').order('nom')
   const container = document.getElementById('liste-clients-exclus')
@@ -1739,13 +1756,13 @@ async function ajouterClientExclu() {
     return
   }
   input.value = ''
-  chargerClientsExclus()
+  chargerFactures()
 }
 
 async function supprimerClientExclu(id, nom) {
-  if (!confirm(`Retirer "${nom}" de la liste d'exclusion ?`)) return
+  if (!confirm(`Retirer "${nom}" de la liste d'exclusion ?\nSes factures réapparaîtront dans le tableau.`)) return
   await db.from('clients_exclus').delete().eq('id', id)
-  chargerClientsExclus()
+  chargerFactures()
 }
 
 async function marquerFactureSoldee(id) {
