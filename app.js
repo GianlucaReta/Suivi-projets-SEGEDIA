@@ -1597,6 +1597,7 @@ async function chargerFactures() {
     document.getElementById('liste-factures').innerHTML = '<p style="color:var(--muted);">Accès restreint.</p>'
     return
   }
+  chargerClientsExclus()
   const aujourd_hui = new Date().toISOString().split('T')[0]
   const { data: factures } = await db.from('factures').select('*').order('date_echeance', { ascending: true })
 
@@ -1709,6 +1710,44 @@ async function chargerFactures() {
 
 function setFiltreFactures(val) { filtreFactures = val; chargerFactures() }
 
+// ── CLIENTS EXCLUS DE L'IMPORT ───────────────────────────
+async function chargerClientsExclus() {
+  const { data } = await db.from('clients_exclus').select('*').order('nom')
+  const container = document.getElementById('liste-clients-exclus')
+  if (!container) return
+  if (!data || !data.length) {
+    container.innerHTML = '<span style="font-size:12px;color:var(--muted);">Aucun client exclu.</span>'
+    return
+  }
+  container.innerHTML = data.map(c => `
+    <div style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 12px;background:var(--surface);border:1px solid var(--border);border-radius:20px;font-size:12px;color:var(--ink);">
+      <span style="font-weight:500;">${c.nom}</span>
+      <button onclick="supprimerClientExclu('${c.id}','${c.nom.replace(/'/g,"\\'")}')"
+        title="Retirer de la liste"
+        style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;line-height:1;padding:0;display:flex;align-items:center;" >×</button>
+    </div>`).join('')
+}
+
+async function ajouterClientExclu() {
+  const input = document.getElementById('input-nouveau-client-exclu')
+  const nom = input?.value?.trim().toUpperCase()
+  if (!nom) return
+  const { error } = await db.from('clients_exclus').insert({ nom })
+  if (error) {
+    if (error.code === '23505') alert(`"${nom}" est déjà dans la liste.`)
+    else alert('Erreur : ' + error.message)
+    return
+  }
+  input.value = ''
+  chargerClientsExclus()
+}
+
+async function supprimerClientExclu(id, nom) {
+  if (!confirm(`Retirer "${nom}" de la liste d'exclusion ?`)) return
+  await db.from('clients_exclus').delete().eq('id', id)
+  chargerClientsExclus()
+}
+
 async function marquerFactureSoldee(id) {
   await db.from('factures').update({ solde: true }).eq('id', id)
   chargerFactures()
@@ -1777,12 +1816,19 @@ async function importerCSVFactures(file) {
   const rows = parseCSVDISTRILOG(text)
   if (!rows.length) { alert('Fichier vide ou format invalide.'); return }
 
+  // Charger la liste des clients exclus
+  const { data: exclus } = await db.from('clients_exclus').select('nom')
+  const nomsExclus = new Set((exclus || []).map(e => e.nom))
+
   // Ignorer la ligne header
   const dataRows = rows.slice(1).filter(r => r[5] && r[5].trim())
 
+  let nbExclus = 0
   const factures = dataRows.map(cols => {
     const numero        = cols[5]?.trim() || null
     const client        = cols[0]?.trim() || 'Client inconnu'
+    // Exclure les clients de la liste (comparaison exacte)
+    if (nomsExclus.has(client)) { nbExclus++; return null }
     const montantStr    = (cols[4] || '0').trim().replace(',', '.')
     const montant       = parseFloat(montantStr) || 0
     const date_emission = parseDateEmissionDL(cols[1])
@@ -1794,7 +1840,10 @@ async function importerCSVFactures(file) {
     return { numero, client, montant, date_emission, date_echeance, solde, ville, commentaire }
   }).filter(Boolean)
 
-  if (!factures.length) { alert('Aucune facture valide trouvée dans le fichier.'); return }
+  if (!factures.length) {
+    alert(`Aucune facture valide trouvée.${nbExclus > 0 ? `\n(${nbExclus} ligne${nbExclus>1?'s':''} ignorée${nbExclus>1?'s':''} — clients exclus)` : ''}`)
+    return
+  }
 
   // Upsert (update si existe, insert sinon)
   const { error } = await db.from('factures').upsert(factures, { onConflict: 'numero', ignoreDuplicates: false })
@@ -1802,5 +1851,8 @@ async function importerCSVFactures(file) {
 
   // Réinitialiser l'input file
   document.getElementById('input-csv-factures').value = ''
+  const msg = `✓ ${factures.length} facture${factures.length > 1 ? 's' : ''} importée${factures.length > 1 ? 's' : ''}.`
+    + (nbExclus > 0 ? `\n${nbExclus} ligne${nbExclus > 1 ? 's ignorées' : ' ignorée'} (clients exclus).` : '')
+  alert(msg)
   chargerFactures()
 }

@@ -311,6 +311,19 @@
       </div>
       <div id="filtres-factures" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;"></div>
       <div id="liste-factures"></div>
+
+      <!-- Clients exclus de l'import -->
+      <div style="margin-top:28px; border-top:1px solid var(--border); padding-top:20px;">
+        <div style="font-size:13px; font-weight:700; color:var(--ink); margin-bottom:4px;">Clients exclus de l'import CSV</div>
+        <div style="font-size:12px; color:var(--muted); margin-bottom:12px;">Les factures de ces clients seront ignorées lors de chaque import.</div>
+        <div id="liste-clients-exclus" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;"></div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input id="input-nouveau-client-exclu" type="text" placeholder="Nom exact du client à exclure…"
+            style="padding:7px 12px; border:1px solid var(--border); border-radius:8px; font-size:12.5px; font-family:inherit; width:260px; background:var(--surface-alt);"
+            onkeydown="if(event.key==='Enter')ajouterClientExclu()" />
+          <button onclick="ajouterClientExclu()" class="btn btn-secondary" style="font-size:12.5px;">+ Ajouter</button>
+        </div>
+      </div>
     </div>
 
   </main>
