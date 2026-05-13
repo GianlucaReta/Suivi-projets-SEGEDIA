@@ -14,11 +14,13 @@ let filtreTacheStatut = 'tous'
 let filtreTacheEquipe = 'tous'
 let vueProjet = 'liste'
 let vueTachesGlobal = 'liste'
+let filtreFactures  = 'toutes'
 
 // Utilisateur actif (persisté en localStorage)
-let utilisateurActifId    = localStorage.getItem('suivi_user_id')    || null
-let utilisateurActifNom   = localStorage.getItem('suivi_user_nom')   || null
-let utilisateurActifEquipe= localStorage.getItem('suivi_user_equipe')|| null
+let utilisateurActifId       = localStorage.getItem('suivi_user_id')          || null
+let utilisateurActifNom      = localStorage.getItem('suivi_user_nom')         || null
+let utilisateurActifEquipe   = localStorage.getItem('suivi_user_equipe')      || null
+let utilisateurAccesFactures = localStorage.getItem('suivi_acces_factures') === '1'
 
 // --- NAVIGATION ---
 function showPage(page) {
@@ -35,16 +37,19 @@ function showPage(page) {
   if (page === 'employes') chargerEmployes()
   if (page === 'archives') chargerArchives()
   if (page === 'calendrier') afficherCalendrier()
+  if (page === 'factures') chargerFactures()
 }
 
 // --- UTILISATEUR ACTIF ---
-function selectionnerUtilisateur(id, nom, equipe) {
-  utilisateurActifId     = id
-  utilisateurActifNom    = nom
-  utilisateurActifEquipe = equipe
-  localStorage.setItem('suivi_user_id',     id)
-  localStorage.setItem('suivi_user_nom',    nom)
-  localStorage.setItem('suivi_user_equipe', equipe)
+function selectionnerUtilisateur(id, nom, equipe, accesFactures = false) {
+  utilisateurActifId       = id
+  utilisateurActifNom      = nom
+  utilisateurActifEquipe   = equipe
+  utilisateurAccesFactures = accesFactures
+  localStorage.setItem('suivi_user_id',          id)
+  localStorage.setItem('suivi_user_nom',         nom)
+  localStorage.setItem('suivi_user_equipe',      equipe)
+  localStorage.setItem('suivi_acces_factures',   accesFactures ? '1' : '0')
   fermerModals()
   mettreAJourSidebarUser()
   chargerDashboard()
@@ -59,6 +64,12 @@ function mettreAJourSidebarUser() {
     if (nomEl)    nomEl.textContent    = utilisateurActifNom
     if (roleEl)   roleEl.textContent   = utilisateurActifEquipe || 'Utilisateur'
   }
+  // Afficher/masquer l'onglet Factures selon les droits
+  const navFinance  = document.getElementById('nav-finance')
+  const navSectionF = document.getElementById('nav-section-finance')
+  const show = utilisateurAccesFactures ? 'block' : 'none'
+  if (navFinance)  navFinance.style.display  = show
+  if (navSectionF) navSectionF.style.display = show
 }
 
 async function ouvrirSelecteurUtilisateur() {
@@ -70,7 +81,7 @@ async function ouvrirSelecteurUtilisateur() {
     const actif = utilisateurActifId === e.id
     const ini   = initialesNom(e.nom)
     return `
-      <div onclick="selectionnerUtilisateur('${e.id}','${e.nom}','${e.equipe}')"
+      <div onclick="selectionnerUtilisateur('${e.id}','${e.nom}','${e.equipe}',${!!e.acces_factures})"
            style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer;border:1.5px solid ${actif ? 'var(--brand)' : 'var(--border)'};background:${actif ? 'var(--brand-soft)' : 'var(--surface)'};margin-bottom:8px;">
         <div style="width:36px;height:36px;border-radius:8px;background:${avatarColor(ini)};color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0;">${ini}</div>
         <div>
@@ -1424,4 +1435,193 @@ function afficherCalTimeline(items, type) {
 async function ouvrirDetailProjetParId(id) {
   const { data } = await db.from('projets').select('*').eq('id', id).single()
   if (data) ouvrirDetailProjet(data)
+}
+
+// ═══════════════════════════════════════════════════════
+// --- FACTURES ---
+// ═══════════════════════════════════════════════════════
+
+async function chargerFactures() {
+  if (!utilisateurAccesFactures) {
+    document.getElementById('liste-factures').innerHTML = '<p style="color:var(--muted);">Accès restreint.</p>'
+    return
+  }
+  const aujourd_hui = new Date().toISOString().split('T')[0]
+  const { data: factures } = await db.from('factures').select('*').order('date_echeance', { ascending: true })
+
+  const toutes   = factures || []
+  const nonSolde = toutes.filter(f => !f.solde)
+  const enRetard = nonSolde.filter(f => f.date_echeance && f.date_echeance < aujourd_hui)
+  const montantTotal  = nonSolde.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
+  const montantRetard = enRetard.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
+
+  // Stats bar
+  const statsEl = document.getElementById('factures-stats-bar')
+  if (statsEl) statsEl.innerHTML = `
+    <span>${nonSolde.length} en attente · </span>
+    <span style="color:${enRetard.length > 0 ? 'var(--danger)' : 'var(--success)'};">${enRetard.length} en retard</span>
+    <span> · Total à encaisser : <b style="font-family:'IBM Plex Mono',monospace;">${montantTotal.toLocaleString('fr-FR', {minimumFractionDigits:2})} €</b></span>
+    ${enRetard.length > 0 ? ` · <span style="color:var(--danger);">Retards : <b style="font-family:'IBM Plex Mono',monospace;">${montantRetard.toLocaleString('fr-FR', {minimumFractionDigits:2})} €</b></span>` : ''}
+  `
+
+  // Filtres
+  const filtres = [
+    { val:'toutes',  label:'Toutes' },
+    { val:'attente', label:'En attente' },
+    { val:'retard',  label:'En retard' },
+    { val:'soldees', label:'Soldées' }
+  ]
+  const filtresEl = document.getElementById('filtres-factures')
+  if (filtresEl) filtresEl.innerHTML = filtres.map(f => `
+    <button onclick="setFiltreFactures('${f.val}')" style="
+      background:${filtreFactures===f.val ? 'var(--ink)' : 'var(--surface)'};
+      color:${filtreFactures===f.val ? '#fff' : 'var(--muted)'};
+      border:1px solid ${filtreFactures===f.val ? 'var(--ink)' : 'var(--border)'};
+      cursor:pointer; padding:4px 14px; border-radius:20px; font-size:12px;
+      font-weight:${filtreFactures===f.val ? '600' : '400'}; font-family:inherit; white-space:nowrap;
+    ">${f.label}</button>
+  `).join('')
+
+  // Filtrer
+  const filtered = toutes.filter(f => {
+    const retard = !f.solde && f.date_echeance && f.date_echeance < aujourd_hui
+    if (filtreFactures === 'attente') return !f.solde && !retard
+    if (filtreFactures === 'retard')  return retard
+    if (filtreFactures === 'soldees') return f.solde
+    return true
+  })
+
+  const listeEl = document.getElementById('liste-factures')
+  if (!filtered.length) {
+    listeEl.innerHTML = '<p style="color:var(--muted); padding:20px;">Aucune facture pour ce filtre.</p>'
+    return
+  }
+
+  listeEl.innerHTML = `
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden;">
+      <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+        <thead>
+          <tr style="background:var(--surface-alt); border-bottom:1px solid var(--border);">
+            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">N° Facture</th>
+            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Client</th>
+            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Ville</th>
+            <th style="padding:10px 16px; text-align:right; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Montant</th>
+            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Émission</th>
+            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Échéance</th>
+            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Statut</th>
+            <th style="padding:10px 16px; text-align:center; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filtered.map(f => {
+            const enRetard = !f.solde && f.date_echeance && f.date_echeance < aujourd_hui
+            const joursRetard = enRetard ? Math.floor((new Date(aujourd_hui) - new Date(f.date_echeance)) / 86400000) : 0
+            const statutHtml = f.solde
+              ? `<span style="color:var(--success); font-weight:600; font-size:11px;">Soldée</span>`
+              : enRetard
+              ? `<span style="color:var(--danger); font-weight:600; font-size:11px;">+${joursRetard}j retard</span>`
+              : `<span style="color:var(--warn); font-weight:500; font-size:11px;">En attente</span>`
+            return `
+              <tr style="border-bottom:1px solid var(--border-soft);" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''">
+                <td style="padding:10px 16px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-soft);">${f.numero}</td>
+                <td style="padding:10px 16px; font-weight:600; color:var(--ink);">${f.client}</td>
+                <td style="padding:10px 16px; color:var(--ink-soft); font-size:12px;">${f.ville || '—'}</td>
+                <td style="padding:10px 16px; text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:600; color:${enRetard ? 'var(--danger)' : 'var(--ink)'};">${parseFloat(f.montant).toLocaleString('fr-FR', {minimumFractionDigits:2})} €</td>
+                <td style="padding:10px 16px; color:var(--ink-soft); font-size:12px;">${f.date_emission ? formatDate(f.date_emission) : '—'}</td>
+                <td style="padding:10px 16px; color:${enRetard ? 'var(--danger)' : 'var(--ink-soft)'}; font-weight:${enRetard ? '600' : '400'}; font-size:12px;">${f.date_echeance ? formatDate(f.date_echeance) : '—'}</td>
+                <td style="padding:10px 16px;">${statutHtml}</td>
+                <td style="padding:10px 16px; text-align:center;">
+                  ${!f.solde ? `<button onclick="marquerFactureSoldee('${f.id}')" style="font-size:11px; padding:3px 10px; border-radius:5px; background:var(--success); color:#fff; border:none; cursor:pointer; font-family:inherit;">✓ Soldée</button>` : `<button onclick="marquerFactureNonSoldee('${f.id}')" style="font-size:11px; padding:3px 10px; border-radius:5px; background:var(--surface-alt); color:var(--muted); border:1px solid var(--border); cursor:pointer; font-family:inherit;">Annuler</button>`}
+                </td>
+              </tr>`
+          }).join('')}
+        </tbody>
+      </table>
+      <div style="padding:10px 16px; font-size:11.5px; color:var(--muted); border-top:1px solid var(--border-soft);">
+        ${filtered.length} facture${filtered.length > 1 ? 's' : ''} affichée${filtered.length > 1 ? 's' : ''}
+      </div>
+    </div>
+  `
+}
+
+function setFiltreFactures(val) { filtreFactures = val; chargerFactures() }
+
+async function marquerFactureSoldee(id) {
+  await db.from('factures').update({ solde: true }).eq('id', id)
+  chargerFactures()
+}
+
+async function marquerFactureNonSoldee(id) {
+  await db.from('factures').update({ solde: false }).eq('id', id)
+  chargerFactures()
+}
+
+// ── Parser CSV DISTRILOG ──────────────────────────────────
+function parseCSVDISTRILOG(text) {
+  const rows = []
+  let col = '', cols = [], inQ = false
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (c === '"') { inQ = !inQ }
+    else if (c === ';' && !inQ) { cols.push(col.trim()); col = '' }
+    else if ((c === '\n' || c === '\r') && !inQ) {
+      cols.push(col.trim()); col = ''
+      if (cols.some(x => x)) rows.push(cols)
+      cols = []
+      if (c === '\r' && text[i+1] === '\n') i++
+    } else { col += c }
+  }
+  if (col || cols.length) { cols.push(col.trim()); if (cols.some(x => x)) rows.push(cols) }
+  return rows
+}
+
+function parseDateEmissionDL(str) {
+  if (!str) return null
+  const part = str.split(' ')[0]
+  const [d, m, y] = part.split('/')
+  if (!d || !m || !y) return null
+  return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
+}
+
+function parseDateEcheanceDL(str) {
+  if (!str) return null
+  const [d, m, y] = str.trim().split('/')
+  if (!d || !m || !y) return null
+  const annee = y.length === 2 ? '20' + y : y
+  return `${annee}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
+}
+
+async function importerCSVFactures(file) {
+  if (!file) return
+  const text = await file.text()
+  const rows = parseCSVDISTRILOG(text)
+  if (!rows.length) { alert('Fichier vide ou format invalide.'); return }
+
+  // Ignorer la ligne header
+  const dataRows = rows.slice(1).filter(r => r[5] && r[5].trim())
+
+  const factures = dataRows.map(cols => {
+    const numero        = cols[5]?.trim() || null
+    const client        = cols[0]?.trim() || 'Client inconnu'
+    const montantStr    = (cols[4] || '0').trim().replace(',', '.')
+    const montant       = parseFloat(montantStr) || 0
+    const date_emission = parseDateEmissionDL(cols[1])
+    const date_echeance = parseDateEcheanceDL(cols[11])
+    const solde         = (cols[6] || '').trim() === 'Oui'
+    const ville         = cols[7]?.trim() || null
+    const commentaire   = cols[3]?.trim().slice(0, 500) || null
+    if (!numero) return null
+    return { numero, client, montant, date_emission, date_echeance, solde, ville, commentaire }
+  }).filter(Boolean)
+
+  if (!factures.length) { alert('Aucune facture valide trouvée dans le fichier.'); return }
+
+  // Upsert (update si existe, insert sinon)
+  const { error } = await db.from('factures').upsert(factures, { onConflict: 'numero', ignoreDuplicates: false })
+  if (error) { console.error(error); alert('Erreur import : ' + error.message); return }
+
+  // Réinitialiser l'input file
+  document.getElementById('input-csv-factures').value = ''
+  chargerFactures()
+}
 }
