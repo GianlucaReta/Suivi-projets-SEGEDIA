@@ -25,6 +25,18 @@
       </div>
     </div>
 
+    <!-- RECHERCHE GLOBALE -->
+    <div style="padding:0 12px 10px; position:relative;">
+      <div style="position:relative;">
+        <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);pointer-events:none;" width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="5.5" cy="5.5" r="4" stroke="#9ca3af" stroke-width="1.3"/><path d="M8.5 8.5L11 11" stroke="#9ca3af" stroke-width="1.3" stroke-linecap="round"/></svg>
+        <input id="search-input" type="text" placeholder="Rechercher…"
+          oninput="onSearchInput(this.value)"
+          onkeydown="if(event.key==='Escape')fermerRecherche()"
+          style="width:100%;box-sizing:border-box;padding:7px 10px 7px 28px;border:1px solid var(--border);border-radius:8px;background:var(--surface-alt);font-size:12.5px;font-family:inherit;color:var(--ink);outline:none;" />
+      </div>
+      <div id="search-results" style="display:none;position:absolute;left:12px;right:12px;top:calc(100% + 2px);background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.1);z-index:200;max-height:340px;overflow-y:auto;padding:4px;"></div>
+    </div>
+
     <div class="sidebar-section-label">Pilotage</div>
     <div class="sidebar-nav">
       <button class="nav-item active" onclick="showPage('dashboard')">
@@ -118,6 +130,7 @@
         <div>
           <div id="dashboard-mes-taches"></div>
           <div id="dashboard-retard" style="margin-top:16px;"></div>
+          <div id="dashboard-factures" style="margin-top:16px;"></div>
         </div>
       </div>
 
@@ -389,6 +402,18 @@
       <button class="btn btn-secondary" onclick="fermerModals()">Annuler</button>
       <button class="btn btn-danger" id="btn-supprimer-tache" onclick="supprimerTache()" style="display:none;">🗑️ Supprimer</button>
       <button class="btn btn-primary" onclick="sauvegarderTache()">✓ Enregistrer</button>
+    </div>
+
+    <!-- Commentaires (visible seulement en édition) -->
+    <div id="section-commentaires-tache" style="display:none; margin-top:16px; border-top:1px solid var(--border); padding-top:14px;">
+      <div style="font-size:12px; font-weight:600; color:var(--ink); margin-bottom:8px;">Commentaires</div>
+      <div id="commentaires-tache-liste" style="max-height:160px; overflow-y:auto; margin-bottom:10px;"></div>
+      <div style="display:flex; gap:8px; align-items:flex-end;">
+        <textarea id="input-commentaire-tache" placeholder="Ajouter un commentaire…"
+          style="flex:1; padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px; font-family:inherit; resize:none; height:56px; background:var(--surface-alt);"
+          onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey))ajouterCommentaireTache()"></textarea>
+        <button onclick="ajouterCommentaireTache()" class="btn btn-primary" style="font-size:12px; padding:7px 14px; white-space:nowrap;">Envoyer</button>
+      </div>
     </div>
   </div>
 </div>

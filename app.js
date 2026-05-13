@@ -4,6 +4,80 @@ const SUPABASE_KEY = 'sb_publishable_BqknWAgxurkaidzDdyQ60g_GnlnIcYk'
 const { createClient } = supabase
 const db = createClient(SUPABASE_URL, SUPABASE_KEY)
 
+// ── RECHERCHE GLOBALE ────────────────────────────────────
+let _searchTimeout = null
+function onSearchInput(val) {
+  clearTimeout(_searchTimeout)
+  if (!val || val.length < 2) { fermerRecherche(); return }
+  _searchTimeout = setTimeout(() => lancerRecherche(val), 220)
+}
+
+async function lancerRecherche(query) {
+  const q = query.toLowerCase().trim()
+  if (!q) return
+  const [r1, r2, r3] = await Promise.all([
+    db.from('projets').select('id,nom,client').eq('archive', false),
+    db.from('taches').select('id,description,statut,projets(nom)').eq('archive', false),
+    utilisateurAccesFactures
+      ? db.from('factures').select('id,numero,client,montant,solde')
+      : Promise.resolve({ data: [] })
+  ])
+  const projets  = (r1.data || []).filter(p => p.nom?.toLowerCase().includes(q) || p.client?.toLowerCase().includes(q))
+  const taches   = (r2.data || []).filter(t => t.description?.toLowerCase().includes(q))
+  const factures = (r3.data || []).filter(f => f.numero?.toLowerCase().includes(q) || f.client?.toLowerCase().includes(q))
+  afficherResultatsRecherche({ projets, taches, factures }, query)
+}
+
+function afficherResultatsRecherche({ projets, taches, factures }, query) {
+  const el = document.getElementById('search-results')
+  if (!el) return
+  const total = projets.length + taches.length + factures.length
+  if (!total) {
+    el.innerHTML = `<div style="padding:12px 14px;color:var(--muted);font-size:12.5px;">Aucun résultat pour « ${query} »</div>`
+    el.style.display = 'block'
+    return
+  }
+  let html = ''
+  if (projets.length) {
+    html += `<div style="padding:6px 10px 2px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">Projets</div>`
+    html += projets.slice(0, 4).map(p => `
+      <div onclick="ouvrirDetailProjetId('${p.id}');fermerRecherche()" style="padding:7px 10px;cursor:pointer;border-radius:6px;display:flex;align-items:center;gap:6px;" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''">
+        <span style="font-size:12.5px;font-weight:600;color:var(--ink);">${p.nom}</span>
+        ${p.client ? `<span style="font-size:11px;color:var(--muted);">· ${p.client}</span>` : ''}
+      </div>`).join('')
+  }
+  if (taches.length) {
+    html += `<div style="padding:6px 10px 2px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;font-weight:600;${projets.length ? 'border-top:1px solid var(--border-soft);margin-top:4px;' : ''}">Tâches</div>`
+    html += taches.slice(0, 4).map(t => `
+      <div onclick="ouvrirEditionTache('${t.id}');fermerRecherche()" style="padding:7px 10px;cursor:pointer;border-radius:6px;" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''">
+        <div style="font-size:12.5px;color:var(--ink);">${t.description}</div>
+        <div style="font-size:10.5px;color:var(--muted);">${t.projets?.nom || 'Sans projet'}</div>
+      </div>`).join('')
+  }
+  if (factures.length) {
+    html += `<div style="padding:6px 10px 2px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;font-weight:600;${(projets.length||taches.length) ? 'border-top:1px solid var(--border-soft);margin-top:4px;' : ''}">Factures</div>`
+    html += factures.slice(0, 4).map(f => `
+      <div onclick="showPage('factures');fermerRecherche()" style="padding:7px 10px;cursor:pointer;border-radius:6px;display:flex;align-items:center;gap:8px;" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''">
+        <span style="font-size:11.5px;font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);">${f.numero}</span>
+        <span style="font-size:12.5px;font-weight:600;color:var(--ink);">${f.client}</span>
+      </div>`).join('')
+  }
+  el.innerHTML = html
+  el.style.display = 'block'
+}
+
+function fermerRecherche() {
+  const el = document.getElementById('search-results')
+  if (el) el.style.display = 'none'
+  const inp = document.getElementById('search-input')
+  if (inp) inp.value = ''
+}
+
+// Fermer la recherche si clic extérieur
+document.addEventListener('click', e => {
+  if (!e.target.closest('#search-results') && !e.target.closest('#search-input')) fermerRecherche()
+})
+
 let projetActif = null
 let tousLesEmployes = []
 let tacheEnEdition = null
@@ -264,6 +338,44 @@ async function chargerDashboard() {
         }).join('')}
       </div>
     </div>`
+
+  // ── Widget factures (Gianluca seulement) ─────────────────────
+  const containerF = document.getElementById('dashboard-factures')
+  if (containerF && utilisateurAccesFactures) {
+    const { data: facturesTout } = await db.from('factures').select('montant,solde,date_echeance')
+    const fNonSolde  = (facturesTout || []).filter(f => !f.solde)
+    const fEnRetard  = fNonSolde.filter(f => f.date_echeance && f.date_echeance < aujourd_hui)
+    const totalAtt   = fNonSolde.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
+    const totalRetard= fEnRetard.reduce((s, f)  => s + (parseFloat(f.montant) || 0), 0)
+    const fmt = v => v.toLocaleString('fr-FR', { minimumFractionDigits: 2 })
+    containerF.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--border-soft);display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-weight:700;font-size:14px;color:var(--ink);">Factures</div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:1px;">${fNonSolde.length} en attente · <span style="color:${fEnRetard.length > 0 ? 'var(--danger)' : 'var(--success)'};">${fEnRetard.length} en retard</span></div>
+          </div>
+          <button onclick="showPage('factures')" style="font-size:11.5px;color:var(--brand);background:none;border:none;cursor:pointer;font-family:inherit;font-weight:600;">Voir →</button>
+        </div>
+        <div style="padding:14px 16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <span style="font-size:12px;color:var(--muted);">À encaisser</span>
+            <span style="font-size:15px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--ink);">${fmt(totalAtt)} €</span>
+          </div>
+          ${fEnRetard.length > 0 ? `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#fef2f2;border-radius:7px;">
+            <span style="font-size:11.5px;color:var(--danger);font-weight:500;">${fEnRetard.length} facture${fEnRetard.length > 1 ? 's' : ''} en retard</span>
+            <span style="font-size:13px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--danger);">${fmt(totalRetard)} €</span>
+          </div>` : `
+          <div style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:#f0fdf4;border-radius:7px;">
+            <span style="color:var(--success);font-size:13px;">✓</span>
+            <span style="font-size:11.5px;color:var(--success);font-weight:500;">Aucune facture en retard</span>
+          </div>`}
+        </div>
+      </div>`
+  } else if (containerF) {
+    containerF.innerHTML = ''
+  }
 }
 
 // --- PROJETS ---
@@ -802,6 +914,9 @@ async function ouvrirEditionTache(id) {
 
   document.getElementById('btn-supprimer-tache').style.display = 'block'
   document.querySelector('#modal-tache h2').textContent = 'Modifier la tâche'
+  // Afficher la section commentaires (uniquement en édition)
+  const secCom = document.getElementById('section-commentaires-tache')
+  if (secCom) { secCom.style.display = 'block'; chargerCommentairesTache(id) }
   document.getElementById('modal-tache').classList.remove('hidden')
 }
 
@@ -847,6 +962,39 @@ async function supprimerTache() {
   fermerModals()
   if (projetActif) chargerTachesDetail()
   else chargerTachesGlobal()
+}
+
+// ── COMMENTAIRES SUR TÂCHES ──────────────────────────────
+async function chargerCommentairesTache(tacheId) {
+  const { data } = await db.from('commentaires_taches')
+    .select('*')
+    .eq('tache_id', tacheId)
+    .order('created_at', { ascending: false })
+  const container = document.getElementById('commentaires-tache-liste')
+  if (!container) return
+  if (!data || !data.length) {
+    container.innerHTML = '<p style="color:var(--muted);font-size:12px;padding:4px 0;">Aucun commentaire.</p>'
+    return
+  }
+  container.innerHTML = data.map(c => `
+    <div style="padding:8px 0;border-bottom:1px solid var(--border-soft);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+        <span style="font-size:11px;font-weight:600;color:var(--ink);">${c.auteur}</span>
+        <span style="font-size:10.5px;color:var(--muted);">${new Date(c.created_at).toLocaleDateString('fr-FR', {day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
+      </div>
+      <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.5;white-space:pre-wrap;">${c.contenu}</div>
+    </div>
+  `).join('')
+}
+
+async function ajouterCommentaireTache() {
+  if (!tacheEnEdition) return
+  const input = document.getElementById('input-commentaire-tache')
+  const contenu = input?.value?.trim()
+  if (!contenu) return
+  const auteur = utilisateurActifNom || 'Anonyme'
+  const { error } = await db.from('commentaires_taches').insert({ tache_id: tacheEnEdition.id, auteur, contenu })
+  if (!error) { input.value = ''; chargerCommentairesTache(tacheEnEdition.id) }
 }
 
 // --- TACHES GLOBAL ---
@@ -1118,6 +1266,9 @@ function ouvrirModalTache() {
   document.getElementById('erreur-dates').style.display = 'none'
   document.getElementById('btn-supprimer-tache').style.display = 'none'
   document.querySelector('#modal-tache h2').textContent = 'Nouvelle tâche'
+  // Cacher les commentaires pour une nouvelle tâche
+  const secCom = document.getElementById('section-commentaires-tache')
+  if (secCom) secCom.style.display = 'none'
   document.getElementById('modal-tache').classList.remove('hidden')
 }
 
@@ -1509,6 +1660,7 @@ async function chargerFactures() {
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Émission</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Échéance</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Statut</th>
+            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Note</th>
             <th style="padding:10px 16px; text-align:center; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Action</th>
           </tr>
         </thead>
@@ -1521,6 +1673,7 @@ async function chargerFactures() {
               : enRetard
               ? `<span style="color:var(--danger); font-weight:600; font-size:11px;">+${joursRetard}j retard</span>`
               : `<span style="color:var(--warn); font-weight:500; font-size:11px;">En attente</span>`
+            const noteId = `note-${f.id}`
             return `
               <tr style="border-bottom:1px solid var(--border-soft);" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''">
                 <td style="padding:10px 16px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-soft);">${f.numero}</td>
@@ -1530,6 +1683,16 @@ async function chargerFactures() {
                 <td style="padding:10px 16px; color:var(--ink-soft); font-size:12px;">${f.date_emission ? formatDate(f.date_emission) : '—'}</td>
                 <td style="padding:10px 16px; color:${enRetard ? 'var(--danger)' : 'var(--ink-soft)'}; font-weight:${enRetard ? '600' : '400'}; font-size:12px;">${f.date_echeance ? formatDate(f.date_echeance) : '—'}</td>
                 <td style="padding:10px 16px;">${statutHtml}</td>
+                <td style="padding:6px 16px; max-width:200px;">
+                  <div id="${noteId}-view" onclick="basculerNoteFacture('${f.id}')" title="Cliquer pour modifier" style="cursor:pointer;font-size:11.5px;color:${f.note ? 'var(--ink-soft)' : 'var(--muted)'};min-height:20px;line-height:1.4;white-space:pre-wrap;">${f.note || '+ Ajouter note'}</div>
+                  <div id="${noteId}-edit" style="display:none;">
+                    <textarea id="${noteId}-input" style="width:100%;box-sizing:border-box;padding:5px 7px;border:1px solid var(--brand);border-radius:6px;font-size:11.5px;font-family:inherit;resize:none;height:60px;background:var(--surface);">${f.note || ''}</textarea>
+                    <div style="display:flex;gap:5px;margin-top:4px;">
+                      <button onclick="sauvegarderNoteFacture('${f.id}')" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:var(--brand);color:#fff;border:none;cursor:pointer;font-family:inherit;">✓</button>
+                      <button onclick="annulerNoteFacture('${f.id}')" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;">✕</button>
+                    </div>
+                  </div>
+                </td>
                 <td style="padding:10px 16px; text-align:center;">
                   ${!f.solde ? `<button onclick="marquerFactureSoldee('${f.id}')" style="font-size:11px; padding:3px 10px; border-radius:5px; background:var(--success); color:#fff; border:none; cursor:pointer; font-family:inherit;">✓ Soldée</button>` : `<button onclick="marquerFactureNonSoldee('${f.id}')" style="font-size:11px; padding:3px 10px; border-radius:5px; background:var(--surface-alt); color:var(--muted); border:1px solid var(--border); cursor:pointer; font-family:inherit;">Annuler</button>`}
                 </td>
@@ -1553,6 +1716,23 @@ async function marquerFactureSoldee(id) {
 
 async function marquerFactureNonSoldee(id) {
   await db.from('factures').update({ solde: false }).eq('id', id)
+  chargerFactures()
+}
+
+function basculerNoteFacture(id) {
+  document.getElementById(`note-${id}-view`).style.display = 'none'
+  document.getElementById(`note-${id}-edit`).style.display = 'block'
+  document.getElementById(`note-${id}-input`).focus()
+}
+
+function annulerNoteFacture(id) {
+  document.getElementById(`note-${id}-view`).style.display = 'block'
+  document.getElementById(`note-${id}-edit`).style.display = 'none'
+}
+
+async function sauvegarderNoteFacture(id) {
+  const note = document.getElementById(`note-${id}-input`)?.value?.trim() || null
+  await db.from('factures').update({ note }).eq('id', id)
   chargerFactures()
 }
 
