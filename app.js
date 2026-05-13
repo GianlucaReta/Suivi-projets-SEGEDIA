@@ -1833,28 +1833,49 @@ async function importerCSVFactures(file) {
   const rows = parseCSVDISTRILOG(text)
   if (!rows.length) { alert('Fichier vide ou format invalide.'); return }
 
-  // Charger la liste des clients exclus
-  const { data: exclus } = await db.from('clients_exclus').select('nom')
-  const nomsExclus = new Set((exclus || []).map(e => e.nom))
+  // Charger clients exclus + factures existantes en parallèle
+  const [{ data: exclus }, { data: existantes }] = await Promise.all([
+    db.from('clients_exclus').select('nom'),
+    db.from('factures').select('numero, solde, note')
+  ])
+  const nomsExclus  = new Set((exclus     || []).map(e => e.nom))
+  // Map numero → { solde, note } pour préserver les données manuelles
+  const existantesMap = new Map((existantes || []).map(f => [f.numero, f]))
 
   // Ignorer la ligne header
   const dataRows = rows.slice(1).filter(r => r[5] && r[5].trim())
 
-  let nbExclus = 0
+  let nbExclus = 0, nbNouveaux = 0, nbMisAJour = 0
   const factures = dataRows.map(cols => {
-    const numero        = cols[5]?.trim() || null
-    const client        = cols[0]?.trim() || 'Client inconnu'
-    // Exclure les clients de la liste (comparaison exacte)
+    const numero  = cols[5]?.trim() || null
+    const client  = cols[0]?.trim() || 'Client inconnu'
+
+    // 1. Exclure les clients de la liste (comparaison exacte)
     if (nomsExclus.has(client)) { nbExclus++; return null }
+    if (!numero) return null
+
     const montantStr    = (cols[4] || '0').trim().replace(',', '.')
     const montant       = parseFloat(montantStr) || 0
     const date_emission = parseDateEmissionDL(cols[1])
     const date_echeance = parseDateEcheanceDL(cols[11])
-    const solde         = (cols[6] || '').trim() === 'Oui'
+    const soldeCSV      = (cols[6] || '').trim() === 'Oui'
     const ville         = cols[7]?.trim() || null
     const commentaire   = cols[3]?.trim().slice(0, 500) || null
-    if (!numero) return null
-    return { numero, client, montant, date_emission, date_echeance, solde, ville, commentaire }
+
+    const existant = existantesMap.get(numero)
+    if (existant) {
+      nbMisAJour++
+      // Règle anti-régression : le statut soldé ne peut jamais reculer.
+      // Si marqué manuellement "soldé" dans l'app → on garde true même si le CSV dit non.
+      // Si DISTRILOG dit soldé → on met true.
+      const solde = existant.solde || soldeCSV
+      // La note manuelle n'est jamais écrasée par le CSV
+      const note = existant.note ?? null
+      return { numero, client, montant, date_emission, date_echeance, solde, ville, commentaire, note }
+    } else {
+      nbNouveaux++
+      return { numero, client, montant, date_emission, date_echeance, solde: soldeCSV, ville, commentaire }
+    }
   }).filter(Boolean)
 
   if (!factures.length) {
@@ -1862,14 +1883,17 @@ async function importerCSVFactures(file) {
     return
   }
 
-  // Upsert (update si existe, insert sinon)
+  // Upsert garanti sans doublon (clé unique : numero)
   const { error } = await db.from('factures').upsert(factures, { onConflict: 'numero', ignoreDuplicates: false })
   if (error) { console.error(error); alert('Erreur import : ' + error.message); return }
 
   // Réinitialiser l'input file
   document.getElementById('input-csv-factures').value = ''
-  const msg = `✓ ${factures.length} facture${factures.length > 1 ? 's' : ''} importée${factures.length > 1 ? 's' : ''}.`
-    + (nbExclus > 0 ? `\n${nbExclus} ligne${nbExclus > 1 ? 's ignorées' : ' ignorée'} (clients exclus).` : '')
-  alert(msg)
+  const lignes = [
+    nbNouveaux  > 0 ? `${nbNouveaux} nouvelle${nbNouveaux>1?'s':''} facture${nbNouveaux>1?'s':''}` : null,
+    nbMisAJour  > 0 ? `${nbMisAJour} mise${nbMisAJour>1?'s':''} à jour` : null,
+    nbExclus    > 0 ? `${nbExclus} ignorée${nbExclus>1?'s':''} (clients exclus)` : null,
+  ].filter(Boolean)
+  alert('✓ Import terminé\n' + lignes.join(' · '))
   chargerFactures()
 }
