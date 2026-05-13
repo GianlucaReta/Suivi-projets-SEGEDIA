@@ -548,7 +548,10 @@ async function chargerArchives() {
         <span class="badge fait">Archivé</span>
         <span class="nb-taches">${count || 0} tâche${count > 1 ? 's' : ''}</span>
       </div>
-      <button class="btn btn-secondary" style="margin-top:0.8rem; width:100%; font-size:0.8rem;" onclick="event.stopPropagation(); desarchiverProjet('${projet.id}')">↩ Désarchiver</button>
+      <div style="display:flex; gap:0.5rem; margin-top:0.8rem;">
+        <button class="btn btn-secondary" style="flex:1; font-size:0.8rem;" onclick="event.stopPropagation(); desarchiverProjet('${projet.id}')">↩ Désarchiver</button>
+        <button class="btn btn-danger" style="font-size:0.8rem; padding:0.4rem 0.8rem;" onclick="event.stopPropagation(); supprimerProjetDefinitif('${projet.id}', '${projet.nom.replace(/'/g, "\\'")}')" title="Supprimer définitivement">🗑</button>
+      </div>
     `
     card.addEventListener('click', () => ouvrirDetailProjet(projet))
     container.appendChild(card)
@@ -561,6 +564,24 @@ async function archiverProjet() {
   await db.from('projets').update({ archive: true }).eq('id', projetActif.id)
   await db.from('taches').update({ archive: true }).eq('projet_id', projetActif.id)
   showPage('projets')
+}
+
+async function supprimerProjetDefinitif(id, nom) {
+  const confirmation = confirm(`⚠️ Supprimer définitivement "${nom}" ?\n\nCette action est irréversible : le projet et toutes ses tâches seront effacés définitivement.`)
+  if (!confirmation) return
+  // Double confirmation pour une suppression définitive
+  const double = confirm(`Dernière confirmation : supprimer "${nom}" et toutes ses tâches de façon permanente ?`)
+  if (!double) return
+  // Supprimer dans l'ordre : assignations → commentaires → tâches → projet
+  const { data: taches } = await db.from('taches').select('id').eq('projet_id', id)
+  const tacheIds = (taches || []).map(t => t.id)
+  if (tacheIds.length) {
+    await db.from('tache_assignations').delete().in('tache_id', tacheIds)
+    await db.from('commentaires_taches').delete().in('tache_id', tacheIds)
+  }
+  await db.from('taches').delete().eq('projet_id', id)
+  await db.from('projets').delete().eq('id', id)
+  chargerArchives()
 }
 
 async function desarchiverProjet(id) {
