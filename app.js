@@ -1624,4 +1624,3 @@ async function importerCSVFactures(file) {
   document.getElementById('input-csv-factures').value = ''
   chargerFactures()
 }
-}
