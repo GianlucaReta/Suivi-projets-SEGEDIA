@@ -380,6 +380,9 @@ async function chargerDashboard() {
   } else if (containerF) {
     containerF.innerHTML = ''
   }
+
+  // Historique des actions
+  chargerHistorique()
 }
 
 // --- PROJETS ---
@@ -974,7 +977,9 @@ async function changerStatutTache(id, statutActuel, event) {
   event.stopPropagation()
   const ordre = ['en attente', 'en cours', 'fait']
   const nouveauStatut = ordre[(ordre.indexOf(statutActuel) + 1) % ordre.length]
+  const { data: t } = await db.from('taches').select('description').eq('id', id).single()
   await db.from('taches').update({ statut: nouveauStatut }).eq('id', id)
+  if (t) logAction('tache_statut', 'taches', id, `"${t.description}" → ${nouveauStatut}`)
   if (projetActif) chargerTachesDetail()
   else chargerTachesGlobal()
 }
@@ -1019,7 +1024,11 @@ async function ajouterCommentaireTache() {
   if (!contenu) return
   const auteur = utilisateurActifNom || 'Anonyme'
   const { error } = await db.from('commentaires_taches').insert({ tache_id: tacheEnEdition.id, auteur, contenu })
-  if (!error) { input.value = ''; chargerCommentairesTache(tacheEnEdition.id) }
+  if (!error) {
+    input.value = ''
+    logAction('commentaire', 'taches', tacheEnEdition.id, `Commentaire sur "${tacheEnEdition.description}"`)
+    chargerCommentairesTache(tacheEnEdition.id)
+  }
 }
 
 // --- TACHES GLOBAL ---
@@ -1614,8 +1623,61 @@ async function ouvrirDetailProjetParId(id) {
 }
 
 // ═══════════════════════════════════════════════════════
+// --- HISTORIQUE DES ACTIONS ---
+// ═══════════════════════════════════════════════════════
+
+async function logAction(type, entite, entiteId, description) {
+  const auteur = utilisateurActifNom || 'Anonyme'
+  await db.from('historique_actions').insert({ type, entite, entite_id: entiteId, description, auteur })
+}
+
+async function chargerHistorique() {
+  const container = document.getElementById('dashboard-historique')
+  if (!container) return
+  const { data } = await db.from('historique_actions')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(15)
+  if (!data || !data.length) {
+    container.innerHTML = ''
+    return
+  }
+  const icones = {
+    tache_statut:     '↻',
+    facture_soldee:   '✓',
+    facture_annulee:  '↩',
+    commentaire:      '💬',
+    projet_statut:    '📁',
+  }
+  container.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border-soft);">
+        <div style="font-weight:700;font-size:14px;color:var(--ink);">Activité récente</div>
+      </div>
+      <div style="padding:6px 8px;">
+        ${data.map(a => {
+          const icone = icones[a.type] || '·'
+          const date  = new Date(a.created_at)
+          const quand = date.toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
+                      + ' ' + date.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })
+          return `
+            <div style="display:flex;align-items:flex-start;gap:10px;padding:7px 8px;border-radius:7px;" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''">
+              <div style="width:22px;height:22px;border-radius:6px;background:var(--surface-alt);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;margin-top:1px;">${icone}</div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:12.5px;color:var(--ink);line-height:1.4;">${a.description}</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:2px;">${a.auteur} · ${quand}</div>
+              </div>
+            </div>`
+        }).join('')}
+      </div>
+    </div>`
+}
+
+// ═══════════════════════════════════════════════════════
 // --- FACTURES ---
 // ═══════════════════════════════════════════════════════
+
+let filtreFacturesClient = ''
 
 async function chargerFactures() {
   if (!utilisateurAccesFactures) {
@@ -1648,7 +1710,8 @@ async function chargerFactures() {
     ${enRetard.length > 0 ? ` · <span style="color:var(--danger);">Retards : <b style="font-family:'IBM Plex Mono',monospace;">${montantRetard.toLocaleString('fr-FR', {minimumFractionDigits:2})} €</b></span>` : ''}
   `
 
-  // Filtres
+  // Filtres statut + recherche client
+  const clients = [...new Set(toutes.map(f => f.client).filter(Boolean))].sort()
   const filtres = [
     { val:'toutes',  label:'Toutes' },
     { val:'attente', label:'En attente' },
@@ -1656,23 +1719,31 @@ async function chargerFactures() {
     { val:'soldees', label:'Soldées' }
   ]
   const filtresEl = document.getElementById('filtres-factures')
-  if (filtresEl) filtresEl.innerHTML = filtres.map(f => `
-    <button onclick="setFiltreFactures('${f.val}')" style="
-      background:${filtreFactures===f.val ? 'var(--ink)' : 'var(--surface)'};
-      color:${filtreFactures===f.val ? '#fff' : 'var(--muted)'};
-      border:1px solid ${filtreFactures===f.val ? 'var(--ink)' : 'var(--border)'};
-      cursor:pointer; padding:4px 14px; border-radius:20px; font-size:12px;
-      font-weight:${filtreFactures===f.val ? '600' : '400'}; font-family:inherit; white-space:nowrap;
-    ">${f.label}</button>
-  `).join('')
+  if (filtresEl) filtresEl.innerHTML = `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;width:100%;">
+      ${filtres.map(f => `
+        <button onclick="setFiltreFactures('${f.val}')" style="
+          background:${filtreFactures===f.val ? 'var(--ink)' : 'var(--surface)'};
+          color:${filtreFactures===f.val ? '#fff' : 'var(--muted)'};
+          border:1px solid ${filtreFactures===f.val ? 'var(--ink)' : 'var(--border)'};
+          cursor:pointer;padding:4px 14px;border-radius:20px;font-size:12px;
+          font-weight:${filtreFactures===f.val ? '600' : '400'};font-family:inherit;white-space:nowrap;
+        ">${f.label}</button>`).join('')}
+      <select onchange="setFiltreFacturesClient(this.value)" style="margin-left:auto;padding:4px 10px;border:1px solid var(--border);border-radius:20px;font-size:12px;font-family:inherit;background:var(--surface);color:${filtreFacturesClient ? 'var(--ink)' : 'var(--muted)'};cursor:pointer;">
+        <option value="">Tous les clients</option>
+        ${clients.map(c => `<option value="${c}" ${filtreFacturesClient===c ? 'selected' : ''}>${c}</option>`).join('')}
+      </select>
+    </div>`
 
-  // Filtrer
+  // Filtrer (statut + client)
   const filtered = toutes.filter(f => {
     const retard = !f.solde && f.date_echeance && f.date_echeance < aujourd_hui
-    if (filtreFactures === 'attente') return !f.solde && !retard
-    if (filtreFactures === 'retard')  return retard
-    if (filtreFactures === 'soldees') return f.solde
-    return true
+    const okStatut = filtreFactures === 'attente' ? (!f.solde && !retard)
+      : filtreFactures === 'retard'  ? retard
+      : filtreFactures === 'soldees' ? f.solde
+      : true
+    const okClient = !filtreFacturesClient || f.client === filtreFacturesClient
+    return okStatut && okClient
   })
 
   const listeEl = document.getElementById('liste-factures')
@@ -1693,6 +1764,7 @@ async function chargerFactures() {
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Émission</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Échéance</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Statut</th>
+            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Payé le</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Note</th>
             <th style="padding:10px 16px; text-align:center; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Action</th>
           </tr>
@@ -1716,6 +1788,7 @@ async function chargerFactures() {
                 <td style="padding:10px 16px; color:var(--ink-soft); font-size:12px;">${f.date_emission ? formatDate(f.date_emission) : '—'}</td>
                 <td style="padding:10px 16px; color:${enRetard ? 'var(--danger)' : 'var(--ink-soft)'}; font-weight:${enRetard ? '600' : '400'}; font-size:12px;">${f.date_echeance ? formatDate(f.date_echeance) : '—'}</td>
                 <td style="padding:10px 16px;">${statutHtml}</td>
+                <td style="padding:10px 16px; font-size:12px; color:var(--success); font-family:'IBM Plex Mono',monospace;">${f.date_paiement ? formatDate(f.date_paiement) : (f.solde ? '<span style="color:var(--muted);">—</span>' : '')}</td>
                 <td style="padding:6px 16px; max-width:200px;">
                   <div id="${noteId}-view" onclick="basculerNoteFacture('${f.id}')" title="Cliquer pour modifier" style="cursor:pointer;font-size:11.5px;color:${f.note ? 'var(--ink-soft)' : 'var(--muted)'};min-height:20px;line-height:1.4;white-space:pre-wrap;">${f.note || '+ Ajouter note'}</div>
                   <div id="${noteId}-edit" style="display:none;">
@@ -1741,6 +1814,7 @@ async function chargerFactures() {
 }
 
 function setFiltreFactures(val) { filtreFactures = val; chargerFactures() }
+function setFiltreFacturesClient(val) { filtreFacturesClient = val; chargerFactures() }
 
 // ── CLIENTS EXCLUS ───────────────────────────────────────
 function togglePanelExclus() {
@@ -1787,12 +1861,20 @@ async function supprimerClientExclu(id, nom) {
 }
 
 async function marquerFactureSoldee(id) {
-  await db.from('factures').update({ solde: true }).eq('id', id)
+  const date_paiement = new Date().toISOString().split('T')[0]
+  const { data: f } = await db.from('factures').select('numero,client,montant').eq('id', id).single()
+  await db.from('factures').update({ solde: true, date_paiement }).eq('id', id)
+  if (f) {
+    const montantFmt = parseFloat(f.montant).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
+    logAction('facture_soldee', 'factures', id, `Facture ${f.numero} soldée — ${f.client} — ${montantFmt} €`)
+  }
   chargerFactures()
 }
 
 async function marquerFactureNonSoldee(id) {
-  await db.from('factures').update({ solde: false }).eq('id', id)
+  const { data: f } = await db.from('factures').select('numero,client').eq('id', id).single()
+  await db.from('factures').update({ solde: false, date_paiement: null }).eq('id', id)
+  if (f) logAction('facture_annulee', 'factures', id, `Facture ${f.numero} remise en attente — ${f.client}`)
   chargerFactures()
 }
 
