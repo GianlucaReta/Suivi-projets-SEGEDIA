@@ -2308,8 +2308,8 @@ async function chargerAnalytique() {
       const finStr   = fin.toISOString().split('T')[0]
       const arr = toutes.filter(f => f.date_echeance && f.date_echeance >= debutStr && f.date_echeance <= finStr && !f.solde)
       const montant = arr.reduce((s,f)=>s+(parseFloat(f.montant)||0),0)
-      const num = `S${Math.ceil((debut.getDate()) / 7)}\n${debut.getDate()}/${debut.getMonth()+1}`
-      points.push({ label: `S${debut.getDate()}/${debut.getMonth()+1}`, montant })
+      const moisCourts = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc']
+      points.push({ label: `${debut.getDate()} ${moisCourts[debut.getMonth()]}`, montant })
     }
   } else if (analytiquePeriode === 'annuel') {
     // 5 dernières années
