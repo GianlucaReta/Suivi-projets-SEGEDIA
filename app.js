@@ -96,6 +96,36 @@ let utilisateurActifNom      = localStorage.getItem('suivi_user_nom')         ||
 let utilisateurActifEquipe   = localStorage.getItem('suivi_user_equipe')      || null
 let utilisateurAccesFactures = localStorage.getItem('suivi_acces_factures') === '1'
 
+// ── SIDEBAR TOGGLE ──────────────────────────────────────────
+let _sidebarCollapsed = localStorage.getItem('suivi_sidebar_collapsed') === '1'
+
+function toggleSidebar() {
+  _sidebarCollapsed = !_sidebarCollapsed
+  localStorage.setItem('suivi_sidebar_collapsed', _sidebarCollapsed ? '1' : '0')
+  appliqueSidebarState()
+}
+
+function appliqueSidebarState() {
+  const sidebar = document.getElementById('main-sidebar')
+  const main    = document.querySelector('.main')
+  const btn     = document.getElementById('sidebar-toggle-btn')
+  if (!sidebar || !main || !btn) return
+  if (_sidebarCollapsed) {
+    sidebar.classList.add('collapsed')
+    main.classList.add('sidebar-collapsed')
+    btn.classList.add('collapsed')
+    btn.title = 'Agrandir le menu'
+  } else {
+    sidebar.classList.remove('collapsed')
+    main.classList.remove('sidebar-collapsed')
+    btn.classList.remove('collapsed')
+    btn.title = 'Réduire le menu'
+  }
+}
+
+// Appliquer l'état sauvegardé au chargement
+document.addEventListener('DOMContentLoaded', appliqueSidebarState)
+
 // --- NAVIGATION ---
 function showPage(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
@@ -1800,10 +1830,11 @@ async function chargerFactures() {
   const clients = [...new Set(toutes.map(f => f.client).filter(Boolean))].sort()
   _clientsListeFactures = clients
   const filtres = [
-    { val:'toutes',  label:'Toutes' },
-    { val:'attente', label:'En attente' },
-    { val:'retard',  label:'En retard' },
-    { val:'soldees', label:'Soldées' }
+    { val:'toutes',   label:'Toutes' },
+    { val:'attente',  label:'En attente' },
+    { val:'retard',   label:'En retard' },
+    { val:'soldees',  label:'Soldées' },
+    { val:'acompte',  label:'💰 Avec acompte' }
   ]
   const filtresEl = document.getElementById('filtres-factures')
   if (filtresEl) filtresEl.innerHTML = `
@@ -1831,9 +1862,10 @@ async function chargerFactures() {
   // Filtrer (statut + client)
   const filtered = toutes.filter(f => {
     const retard = !f.solde && f.date_echeance && f.date_echeance < aujourd_hui
-    const okStatut = filtreFactures === 'attente' ? (!f.solde && !retard)
-      : filtreFactures === 'retard'  ? retard
-      : filtreFactures === 'soldees' ? f.solde
+    const okStatut = filtreFactures === 'attente'  ? (!f.solde && !retard)
+      : filtreFactures === 'retard'   ? retard
+      : filtreFactures === 'soldees'  ? f.solde
+      : filtreFactures === 'acompte'  ? (parseFloat(f.montant_paye) > 0 && !f.solde)
       : true
     const okClient = !filtreFacturesClient || f.client === filtreFacturesClient
     return okStatut && okClient
@@ -1920,7 +1952,7 @@ async function chargerFactures() {
                       ? `<button onclick="annulerLitige('${f.id}')" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:#ede9fe;color:#5b21b6;border:none;cursor:pointer;font-family:inherit;white-space:nowrap;">Clore litige</button>`
                       : `<button onclick="marquerLitige('${f.id}')" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;white-space:nowrap;">⚠ Litige</button>`)
                   : ''}
-                <button onclick="editerMontantPaye('${f.id}',${montantPaye})" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;white-space:nowrap;">+ Acompte</button>
+                <button onclick="editerMontantPaye('${f.id}',${montantPaye})" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:${montantPaye > 0 ? '#fee2e2' : 'var(--surface-alt)'};color:${montantPaye > 0 ? '#991b1b' : 'var(--muted)'};border:1px solid ${montantPaye > 0 ? '#fca5a5' : 'var(--border)'};cursor:pointer;font-family:inherit;white-space:nowrap;font-weight:${montantPaye > 0 ? '700' : '400'};">${montantPaye > 0 ? '💰 Acompte' : '+ Acompte'}</button>
               </div>`
 
             return `
