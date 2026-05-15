@@ -73,6 +73,109 @@ body {
   position: fixed;
   top: 0; left: 0; bottom: 0;
   z-index: 100;
+  transition: width 0.22s cubic-bezier(.4,0,.2,1);
+  overflow: hidden;
+}
+
+/* ─── SIDEBAR RÉDUITE ──────────────────────────────────────── */
+.sidebar.collapsed {
+  width: 56px;
+}
+
+.sidebar.collapsed .sidebar-logo-text,
+.sidebar.collapsed .sidebar-section-label,
+.sidebar.collapsed .nav-item span:not(.nav-icon),
+.sidebar.collapsed .sidebar-user-name,
+.sidebar.collapsed .sidebar-user-role,
+.sidebar.collapsed #search-input,
+.sidebar.collapsed #search-results,
+.sidebar.collapsed .sidebar-user > svg {
+  display: none !important;
+}
+
+.sidebar.collapsed .sidebar-logo {
+  padding: 4px 4px 18px;
+  justify-content: center;
+}
+
+.sidebar.collapsed .sidebar-nav {
+  align-items: center;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 8px;
+  width: 36px;
+}
+
+.sidebar.collapsed .nav-item.active::before {
+  left: -10px;
+}
+
+.sidebar.collapsed .sidebar-footer {
+  padding-left: 0;
+}
+
+.sidebar.collapsed .sidebar-user {
+  justify-content: center;
+  padding: 4px 0;
+}
+
+.sidebar.collapsed .sidebar-user-avatar {
+  margin: 0;
+}
+
+/* Bouton toggle sidebar */
+.sidebar-toggle-btn {
+  position: fixed;
+  top: 16px;
+  left: 196px;
+  z-index: 110;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.10);
+  transition: left 0.22s cubic-bezier(.4,0,.2,1), transform 0.22s;
+  color: var(--ink-soft);
+  padding: 0;
+}
+
+.sidebar-toggle-btn:hover {
+  background: var(--surface-alt);
+  color: var(--ink);
+}
+
+.sidebar-toggle-btn.collapsed {
+  left: 20px;
+}
+
+/* Tooltip pour nav items en mode réduit */
+.sidebar.collapsed .nav-item {
+  position: relative;
+}
+
+.sidebar.collapsed .nav-item:hover::after {
+  content: attr(data-label);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 9px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 200;
+  font-family: inherit;
 }
 
 .sidebar-logo {
@@ -236,6 +339,12 @@ body {
   max-width: calc(100vw - 232px);
   overflow-x: hidden;
   padding: 24px 28px 32px;
+  transition: margin-left 0.22s cubic-bezier(.4,0,.2,1), max-width 0.22s cubic-bezier(.4,0,.2,1);
+}
+
+.main.sidebar-collapsed {
+  margin-left: 56px;
+  max-width: calc(100vw - 56px);
 }
 
 .page { display: none; }
