@@ -65,6 +65,7 @@ Deno.serve(async () => {
     .select("*")
     .lt("date_echeance", aujourd_hui)
     .eq("solde", false)
+    .eq("litige", false)
     .not("date_echeance", "is", null)
     .order("date_echeance", { ascending: true });
 
@@ -79,6 +80,40 @@ Deno.serve(async () => {
   }
 
   const montantTotal = factures.reduce((s: number, f: any) => s + (parseFloat(f.montant) || 0), 0);
+
+  // ── Section J+1 : factures échues hier exactement ─────────
+  const hierDate = new Date(maintenant);
+  hierDate.setUTCDate(hierDate.getUTCDate() - 1);
+  const hier = hierDate.toISOString().split("T")[0];
+  const facturesJ1 = factures.filter((f: any) => f.date_echeance === hier);
+
+  let sectionJ1 = "";
+  if (facturesJ1.length > 0) {
+    const lignesJ1 = facturesJ1.map((f: any) => {
+      const montantFmtJ1 = parseFloat(f.montant).toLocaleString("fr-FR", { minimumFractionDigits: 2 });
+      return `
+        <tr>
+          <td style="padding:7px 12px;border-bottom:1px solid #fde68a;font-family:monospace;font-size:13px;color:#78350f;">${f.numero}</td>
+          <td style="padding:7px 12px;border-bottom:1px solid #fde68a;font-weight:600;color:#78350f;">${f.client}</td>
+          <td style="padding:7px 12px;border-bottom:1px solid #fde68a;text-align:right;font-family:monospace;font-weight:600;color:#78350f;">${montantFmtJ1} €</td>
+        </tr>`;
+    }).join("");
+    sectionJ1 = `
+      <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:16px;margin-bottom:24px;">
+        <h3 style="color:#78350f;font-size:15px;margin:0 0 8px;">🔔 Nouvelles échéances dépassées aujourd'hui (J+1)</h3>
+        <p style="color:#92400e;font-size:12px;margin:0 0 12px;">${facturesJ1.length} facture${facturesJ1.length > 1 ? "s" : ""} arrivée${facturesJ1.length > 1 ? "s" : ""} à échéance hier</p>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="background:#fef3c7;">
+              <th style="padding:6px 12px;text-align:left;font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:0.06em;">N° Facture</th>
+              <th style="padding:6px 12px;text-align:left;font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:0.06em;">Client</th>
+              <th style="padding:6px 12px;text-align:right;font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:0.06em;">Montant</th>
+            </tr>
+          </thead>
+          <tbody>${lignesJ1}</tbody>
+        </table>
+      </div>`;
+  }
 
   const lignes = factures.map((f: any) => {
     const joursRetard = Math.floor(
@@ -99,6 +134,7 @@ Deno.serve(async () => {
 
   const html = `
     <div style="font-family:sans-serif;max-width:700px;margin:auto;color:#1a1a1a;">
+      ${sectionJ1}
       <h2 style="color:#1a1a1a;font-size:18px;margin-bottom:4px;">Factures en retard de paiement</h2>
       <p style="color:#6b7280;font-size:13px;margin-top:0;">${factures.length} facture${factures.length > 1 ? "s" : ""} non soldée${factures.length > 1 ? "s" : ""} · Total : <strong>${montantFmt} €</strong></p>
       <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:13px;">
