@@ -1420,6 +1420,13 @@ function formatDate(dateStr) {
   return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
+function formatPhone(p) {
+  if (!p) return null
+  const d = p.replace(/\D/g, '')
+  if (d.length === 10) return d.replace(/(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/, '$1 $2 $3 $4 $5')
+  return p
+}
+
 function initiales(nom) {
   return nom.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 }
@@ -1680,6 +1687,49 @@ async function chargerHistorique() {
 let filtreFacturesClient = ''
 let ongletFactures = 'liste'
 let calEncMois = new Date()
+let analytiquePeriode = 'mensuel'
+let _clientsListeFactures = []
+
+function setAnalytiquePeriode(p) { analytiquePeriode = p; chargerAnalytique() }
+
+function filtrerClientSuggestions(val) {
+  const el = document.getElementById('client-suggestions')
+  if (!el) return
+  const cleared = !val || !val.trim()
+  if (cleared) { setFiltreFacturesClient(''); el.style.display = 'none'; return }
+  const q = val.toLowerCase()
+  const matches = _clientsListeFactures.filter(c => c.toLowerCase().includes(q)).slice(0, 10)
+  if (!matches.length) { el.style.display = 'none'; return }
+  el.innerHTML = matches.map(c => {
+    const esc = c.replace(/\\/g,'\\\\').replace(/'/g,"\\'")
+    return `<div onclick="setFiltreFacturesClient('${esc}');document.getElementById('search-client-factures').value='${esc}';document.getElementById('client-suggestions').style.display='none'"
+      style="padding:7px 10px;cursor:pointer;border-radius:6px;font-size:12.5px;color:var(--ink);"
+      onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''">${c}</div>`
+  }).join('')
+  el.style.display = 'block'
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#client-search-wrapper')) {
+    const el = document.getElementById('client-suggestions')
+    if (el) el.style.display = 'none'
+  }
+})
+
+function editerContactFacture(id, champ, valActuelle, el) {
+  const type = champ === 'email_client' ? 'email' : 'tel'
+  el.dataset.original = el.innerHTML
+  const escVal = (valActuelle || '').replace(/"/g,'&quot;')
+  el.innerHTML = `<input type="${type}" value="${escVal}"
+    style="width:100%;padding:2px 5px;border:1px solid var(--brand);border-radius:4px;font-size:11.5px;font-family:inherit;box-sizing:border-box;"
+    onblur="sauvegarderContactFacture('${id}','${champ}',this.value)"
+    onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.parentElement.innerHTML=this.parentElement.dataset.original}" />`
+  el.querySelector('input').focus()
+}
+async function sauvegarderContactFacture(id, champ, valeur) {
+  const val = valeur.trim() || null
+  await db.from('factures').update({ [champ]: val }).eq('id', id)
+  chargerFactures()
+}
 
 function setOngletFactures(onglet) {
   ongletFactures = onglet
@@ -1748,6 +1798,7 @@ async function chargerFactures() {
 
   // Filtres statut + recherche client
   const clients = [...new Set(toutes.map(f => f.client).filter(Boolean))].sort()
+  _clientsListeFactures = clients
   const filtres = [
     { val:'toutes',  label:'Toutes' },
     { val:'attente', label:'En attente' },
@@ -1765,10 +1816,16 @@ async function chargerFactures() {
           cursor:pointer;padding:4px 14px;border-radius:20px;font-size:12px;
           font-weight:${filtreFactures===f.val ? '600' : '400'};font-family:inherit;white-space:nowrap;
         ">${f.label}</button>`).join('')}
-      <select onchange="setFiltreFacturesClient(this.value)" style="margin-left:auto;padding:4px 10px;border:1px solid var(--border);border-radius:20px;font-size:12px;font-family:inherit;background:var(--surface);color:${filtreFacturesClient ? 'var(--ink)' : 'var(--muted)'};cursor:pointer;">
-        <option value="">Tous les clients</option>
-        ${clients.map(c => `<option value="${c}" ${filtreFacturesClient===c ? 'selected' : ''}>${c}</option>`).join('')}
-      </select>
+      <div id="client-search-wrapper" style="position:relative;margin-left:auto;">
+        <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none;" width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="5" cy="5" r="3.5" stroke="#9ca3af" stroke-width="1.3"/><path d="M8 8l2.5 2.5" stroke="#9ca3af" stroke-width="1.3" stroke-linecap="round"/></svg>
+        <input id="search-client-factures" type="text" placeholder="Rechercher un client…"
+          value="${filtreFacturesClient}"
+          oninput="filtrerClientSuggestions(this.value)"
+          onkeydown="if(event.key==='Escape'){setFiltreFacturesClient('');this.value='';document.getElementById('client-suggestions').style.display='none'}"
+          style="padding:5px 30px 5px 28px;border:1px solid var(--border);border-radius:20px;font-size:12px;font-family:inherit;background:var(--surface);color:var(--ink);width:220px;outline:none;" />
+        ${filtreFacturesClient ? `<button onclick="setFiltreFacturesClient('');document.getElementById('search-client-factures').value=''" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:0;">×</button>` : ''}
+        <div id="client-suggestions" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.1);z-index:100;max-height:240px;overflow-y:auto;min-width:240px;padding:4px;"></div>
+      </div>
     </div>`
 
   // Filtrer (statut + client)
@@ -1795,7 +1852,7 @@ async function chargerFactures() {
           <tr style="background:var(--surface-alt); border-bottom:1px solid var(--border);">
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600; white-space:nowrap;">N° Facture</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Client</th>
-            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Téléphone</th>
+            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Contact</th>
             <th style="padding:10px 16px; text-align:right; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Montant</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600; white-space:nowrap;">Réglé</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Émission</th>
@@ -1870,7 +1927,10 @@ async function chargerFactures() {
               <tr style="border-bottom:1px solid var(--border-soft);" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''">
                 <td style="padding:10px 16px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-soft); white-space:nowrap;">${f.numero}</td>
                 <td style="padding:10px 16px; font-weight:600; color:var(--ink);">${f.client}</td>
-                <td style="padding:10px 16px; color:var(--ink-soft); font-size:12px;">${f.telephone || '—'}</td>
+                <td style="padding:8px 16px; min-width:150px; max-width:180px;">
+                  <div onclick="editerContactFacture('${f.id}','telephone','${(f.telephone||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}',this)" title="Cliquer pour modifier" style="cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:${f.telephone ? 'var(--ink)' : 'var(--muted)'};padding:2px 0;">${f.telephone ? '📞 ' + formatPhone(f.telephone) : '<span style="font-size:11px;">+ Tél.</span>'}</div>
+                  <div onclick="editerContactFacture('${f.id}','email_client','${(f.email_client||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}',this)" title="Cliquer pour modifier" style="cursor:pointer;font-size:11px;color:${f.email_client ? 'var(--ink-soft)' : 'var(--muted)'};padding:2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;">${f.email_client ? '✉ ' + f.email_client : '<span>+ Email</span>'}</div>
+                </td>
                 <td style="padding:10px 16px; text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:600; color:${enRetard ? 'var(--danger)' : 'var(--ink)'}; white-space:nowrap;">${parseFloat(f.montant).toLocaleString('fr-FR', {minimumFractionDigits:2})} €</td>
                 <td style="padding:10px 16px;">${regleHtml}</td>
                 <td style="padding:10px 16px; color:var(--ink-soft); font-size:12px; white-space:nowrap;">${f.date_emission ? formatDate(f.date_emission) : '—'}</td>
@@ -1885,8 +1945,8 @@ async function chargerFactures() {
                   </span>
                 </td>
                 <td style="padding:10px 16px;">${relanceHtml}</td>
-                <td style="padding:6px 16px; max-width:160px;">
-                  <button onclick="ouvrirNoteFacture('${f.id}', \`${(f.note || '').replace(/`/g,'\\`').replace(/\n/g,' ')}\`)" style="font-size:11px;padding:2px 8px;border-radius:5px;border:1px solid var(--border);background:var(--surface-alt);cursor:pointer;color:${f.note ? 'var(--ink-soft)' : 'var(--muted)'};font-family:inherit;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">${f.note ? '📝 ' + f.note.slice(0,30) + (f.note.length > 30 ? '…' : '') : '+ Note'}</button>
+                <td style="padding:6px 16px; width:130px; max-width:130px;">
+                  <button onclick="ouvrirNoteFacture('${f.id}', \`${(f.note || '').replace(/`/g,'\\`').replace(/\n/g,' ')}\`)" style="font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);background:var(--surface-alt);cursor:pointer;color:${f.note ? 'var(--ink-soft)' : 'var(--muted)'};font-family:inherit;width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;text-align:left;" title="${(f.note||'').replace(/"/g,'&quot;')}">${f.note ? '📝 ' + f.note.slice(0,22) + (f.note.length > 22 ? '…' : '') : '+ Note'}</button>
                 </td>
                 <td style="padding:10px 16px; text-align:center; white-space:nowrap;">${actionBtns}</td>
               </tr>`
@@ -2048,61 +2108,66 @@ async function chargerEncaissements() {
   const { data: factures }   = await db.from('factures').select('*').eq('solde', false).order('date_echeance', { ascending: true })
 
   const nomsExclus = new Set((exclusData || []).map(e => e.nom))
-  const nonSoldes  = (factures || []).filter(f => !nomsExclus.has(f.client) && f.date_echeance)
+  const nonSoldes  = (factures || []).filter(f => !nomsExclus.has(f.client) && f.date_echeance && !f.litige)
 
   const aujourd_hui = new Date(); aujourd_hui.setHours(0,0,0,0)
-  const dans7j = new Date(aujourd_hui); dans7j.setDate(dans7j.getDate() + 7)
+  const dans7j  = new Date(aujourd_hui); dans7j.setDate(dans7j.getDate() + 7)
   const finMois = new Date(aujourd_hui.getFullYear(), aujourd_hui.getMonth() + 1, 0)
 
-  const cette_semaine = nonSoldes.filter(f => {
-    const d = new Date(f.date_echeance)
-    return d >= aujourd_hui && d <= dans7j
-  })
-  const ce_mois = nonSoldes.filter(f => {
-    const d = new Date(f.date_echeance)
-    return d > dans7j && d <= finMois
-  })
+  const en_retard     = nonSoldes.filter(f => new Date(f.date_echeance) < aujourd_hui)
+  const cette_semaine = nonSoldes.filter(f => { const d = new Date(f.date_echeance); return d >= aujourd_hui && d <= dans7j })
+  const ce_mois       = nonSoldes.filter(f => { const d = new Date(f.date_echeance); return d > dans7j && d <= finMois })
+  const plus_tard     = nonSoldes.filter(f => new Date(f.date_echeance) > finMois)
 
   const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
-  const lignesFactures = arr => arr.length === 0
-    ? '<p style="color:var(--muted);font-size:12.5px;padding:10px 0;">Aucune facture.</p>'
+  const tot = arr => arr.reduce((s,f)=>s+(parseFloat(f.montant)||0),0)
+
+  const lignesFactures = (arr, colorRetard) => arr.length === 0
+    ? '<div style="color:var(--muted);font-size:12px;padding:8px 0;">Aucune facture.</div>'
     : arr.map(f => `
-      <div style="display:flex;align-items:center;gap:12px;padding:8px 12px;border-radius:7px;background:var(--surface-alt);margin-bottom:5px;">
-        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);flex-shrink:0;">${f.date_echeance ? formatDate(f.date_echeance) : '—'}</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;background:var(--surface);border:1px solid var(--border-soft);margin-bottom:4px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:${colorRetard ? 'var(--danger)' : 'var(--muted)'};flex-shrink:0;min-width:68px;">${formatDate(f.date_echeance)}</div>
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:600;font-size:12.5px;color:var(--ink);">${f.client}</div>
-          <div style="font-size:11px;color:var(--muted);">${f.numero}</div>
+          <div style="font-weight:600;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${f.client}</div>
+          <div style="font-size:10.5px;color:var(--muted);">${f.numero}</div>
         </div>
-        <div style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink);font-size:12.5px;">${fmt(f.montant)} €</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:${colorRetard ? 'var(--danger)' : 'var(--ink)'};font-size:12.5px;flex-shrink:0;">${fmt(f.montant)} €</div>
       </div>`).join('')
 
+  const section = (titre, couleur, arr, colorRetard=false) => {
+    const montant = tot(arr)
+    return arr.length === 0 ? '' : `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div>
+          <span style="font-size:13px;font-weight:700;color:${couleur};">${titre}</span>
+          <span style="font-size:11.5px;color:var(--muted);margin-left:8px;">${arr.length} facture${arr.length>1?'s':''}</span>
+        </div>
+        <span style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:13px;color:${couleur};">${fmt(montant)} €</span>
+      </div>
+      ${lignesFactures(arr, colorRetard)}
+    </div>`
+  }
+
   container.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
-        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:4px;">Cette semaine</div>
-        <div style="font-size:11.5px;color:var(--muted);margin-bottom:12px;">${cette_semaine.length} facture${cette_semaine.length > 1 ? 's' : ''} · ${fmt(cette_semaine.reduce((s,f)=>s+(parseFloat(f.montant)||0),0))} €</div>
-        ${lignesFactures(cette_semaine)}
-      </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
-        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:4px;">Ce mois</div>
-        <div style="font-size:11.5px;color:var(--muted);margin-bottom:12px;">${ce_mois.length} facture${ce_mois.length > 1 ? 's' : ''} · ${fmt(ce_mois.reduce((s,f)=>s+(parseFloat(f.montant)||0),0))} €</div>
-        ${lignesFactures(ce_mois)}
-      </div>
-    </div>
+    ${section('⚠ En retard', 'var(--danger)', en_retard, true)}
+    ${section('📅 Cette semaine', 'var(--brand)', cette_semaine)}
+    ${section('🗓 Ce mois', 'var(--ink)', ce_mois)}
+    ${section('⏳ Plus tard', 'var(--muted)', plus_tard)}
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-        <div style="font-size:13px;font-weight:700;color:var(--ink);">Calendrier des échéances</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="font-size:13px;font-weight:700;color:var(--ink);">📆 Calendrier des échéances</div>
         <div style="display:flex;gap:6px;align-items:center;">
           <button onclick="calEncNaviguer(-1)" class="btn btn-secondary" style="font-size:12px;padding:4px 12px;">←</button>
           <span id="cal-enc-titre" style="font-weight:600;font-size:13px;min-width:150px;text-align:center;"></span>
           <button onclick="calEncNaviguer(1)" class="btn btn-secondary" style="font-size:12px;padding:4px 12px;">→</button>
         </div>
       </div>
+      <p style="font-size:11.5px;color:var(--muted);margin:0 0 10px;">Cliquez sur une date pour voir les factures à échéance ce jour-là.</p>
+      <div id="cal-enc-detail" style="margin-bottom:12px;"></div>
       <div id="cal-enc-contenu"></div>
-      <div id="cal-enc-detail" style="margin-top:14px;"></div>
     </div>`
 
-  // stocker les factures pour le calendrier
   window._encaissementsData = nonSoldes
   afficherCalendrierEncaissements()
 }
@@ -2149,7 +2214,7 @@ function afficherCalendrierEncaissements() {
     const curStr = cur.toISOString().split('T')[0]
     const factsDuJour = parDate[curStr] || []
     const nbFacts = factsDuJour.length
-    html += `<div class="cal-jour ${isAujourdHui ? 'aujourd-hui' : ''} ${isAutreMois ? 'autre-mois' : ''}" style="cursor:${nbFacts > 0 ? 'pointer' : 'default'};" ${nbFacts > 0 ? `onclick="afficherDetailJourEncaissement('${curStr}')"` : ''}>`
+    html += `<div class="cal-jour ${isAujourdHui ? 'aujourd-hui' : ''} ${isAutreMois ? 'autre-mois' : ''}" data-date="${curStr}" style="cursor:${nbFacts > 0 ? 'pointer' : 'default'};" ${nbFacts > 0 ? `onclick="afficherDetailJourEncaissement('${curStr}')"` : ''}>`
     html += `<div class="cal-num">${cur.getDate()}</div>`
     if (nbFacts > 0) {
       const tot = factsDuJour.reduce((s,f)=>s+(parseFloat(f.montant)||0),0)
@@ -2165,18 +2230,28 @@ function afficherCalendrierEncaissements() {
 function afficherDetailJourEncaissement(dateStr) {
   const container = document.getElementById('cal-enc-detail')
   if (!container) return
+  // Mettre en surbrillance le jour sélectionné
+  document.querySelectorAll('.cal-jour').forEach(el => el.style.outline = '')
+  const jourEl = document.querySelector(`[data-date="${dateStr}"]`)
+  if (jourEl) jourEl.style.outline = '2px solid var(--brand)'
+
   const factures = (window._encaissementsData || []).filter(f => f.date_echeance === dateStr)
   if (!factures.length) { container.innerHTML = ''; return }
   const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
+  const tot = factures.reduce((s,f)=>s+(parseFloat(f.montant)||0),0)
   container.innerHTML = `
-    <div style="border-top:1px solid var(--border-soft);padding-top:12px;">
-      <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">Échéances du ${formatDate(dateStr)}</div>
+    <div style="background:var(--brand-soft);border:1px solid var(--brand);border-radius:10px;padding:12px 14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="font-size:13px;font-weight:700;color:var(--brand-deep);">Échéances du ${formatDate(dateStr)}</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:13px;color:var(--brand-deep);">${fmt(tot)} € · ${factures.length} facture${factures.length>1?'s':''}</div>
+      </div>
       ${factures.map(f => `
-        <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--surface-alt);border-radius:7px;margin-bottom:4px;">
-          <div style="flex:1;"><div style="font-weight:600;font-size:12.5px;">${f.client}</div><div style="font-size:11px;color:var(--muted);">${f.numero}</div></div>
-          <div style="font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:12.5px;">${fmt(f.montant)} €</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--surface);border-radius:7px;margin-bottom:4px;border:1px solid var(--border-soft);">
+          <div style="flex:1;"><div style="font-weight:600;font-size:12.5px;color:var(--ink);">${f.client}</div><div style="font-size:10.5px;color:var(--muted);">${f.numero}${f.telephone ? ' · 📞 ' + formatPhone(f.telephone) : ''}</div></div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12.5px;color:var(--ink);">${fmt(f.montant)} €</div>
         </div>`).join('')}
     </div>`
+  container.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
 }
 
 // ── Analytique ───────────────────────────────────────────
@@ -2219,59 +2294,95 @@ async function chargerAnalytique() {
       <div style="font-size:11px;color:${t.col};opacity:0.85;margin-top:2px;font-family:'IBM Plex Mono',monospace;">${t.total.toLocaleString('fr-FR',{minimumFractionDigits:2})} €</div>
     </div>`).join('')
 
-  // Graphique encours 12 mois (SVG)
+  // Graphique selon la période choisie
   const moisNoms = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
   const now = new Date()
-  const points12 = []
-  for (let i = 11; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const moisStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
-    // Factures en retard dont date_echeance est dans ce mois
-    const facturesMois = toutes.filter(f => {
-      if (!f.date_echeance) return false
-      return f.date_echeance.startsWith(moisStr) && !f.solde
-    })
-    const montant = facturesMois.reduce((s,f)=>s+(parseFloat(f.montant)||0),0)
-    points12.push({ label: moisNoms[d.getMonth()], montant })
+  let points = []
+
+  if (analytiquePeriode === 'hebdomadaire') {
+    // 13 dernières semaines
+    for (let i = 12; i >= 0; i--) {
+      const debut = new Date(now); debut.setDate(debut.getDate() - i * 7 - debut.getDay() + 1); debut.setHours(0,0,0,0)
+      const fin   = new Date(debut); fin.setDate(fin.getDate() + 6)
+      const debutStr = debut.toISOString().split('T')[0]
+      const finStr   = fin.toISOString().split('T')[0]
+      const arr = toutes.filter(f => f.date_echeance && f.date_echeance >= debutStr && f.date_echeance <= finStr && !f.solde)
+      const montant = arr.reduce((s,f)=>s+(parseFloat(f.montant)||0),0)
+      const num = `S${Math.ceil((debut.getDate()) / 7)}\n${debut.getDate()}/${debut.getMonth()+1}`
+      points.push({ label: `S${debut.getDate()}/${debut.getMonth()+1}`, montant })
+    }
+  } else if (analytiquePeriode === 'annuel') {
+    // 5 dernières années
+    for (let i = 4; i >= 0; i--) {
+      const annee = now.getFullYear() - i
+      const arr = toutes.filter(f => f.date_echeance && f.date_echeance.startsWith(`${annee}`) && !f.solde)
+      const montant = arr.reduce((s,f)=>s+(parseFloat(f.montant)||0),0)
+      points.push({ label: `${annee}`, montant })
+    }
+  } else {
+    // Mensuel : 12 derniers mois
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const moisStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+      const arr = toutes.filter(f => f.date_echeance && f.date_echeance.startsWith(moisStr) && !f.solde)
+      const montant = arr.reduce((s,f)=>s+(parseFloat(f.montant)||0),0)
+      points.push({ label: moisNoms[d.getMonth()], montant })
+    }
   }
 
-  const maxVal = Math.max(...points12.map(p => p.montant), 1)
+  const maxVal = Math.max(...points.map(p => p.montant), 1)
   const W = 700, H = 180, padL = 40, padR = 10, padT = 15, padB = 30
   const innerW = W - padL - padR
   const innerH = H - padT - padB
-  const step = innerW / (points12.length - 1)
+  const step = points.length > 1 ? innerW / (points.length - 1) : innerW
 
-  const ptsStr = points12.map((p, i) => {
+  const ptsStr = points.map((p, i) => {
     const x = padL + i * step
     const y = padT + innerH - (p.montant / maxVal) * innerH
     return `${x},${y}`
   }).join(' ')
 
-  const labels = points12.map((p, i) => {
+  const labels = points.map((p, i) => {
     const x = padL + i * step
     return `<text x="${x}" y="${H - 4}" text-anchor="middle" fill="var(--muted)" font-size="9" font-family="Inter,sans-serif">${p.label}</text>`
   }).join('')
 
-  const dots = points12.map((p, i) => {
+  const dots = points.map((p, i) => {
     const x = padL + i * step
     const y = padT + innerH - (p.montant / maxVal) * innerH
-    const fmt = p.montant.toLocaleString('fr-FR', {maximumFractionDigits:0})
-    return `<circle cx="${x}" cy="${y}" r="4" fill="var(--brand)" /><title>${p.label} : ${fmt} €</title>`
+    const fmtV = p.montant.toLocaleString('fr-FR', {maximumFractionDigits:0})
+    return `<circle cx="${x}" cy="${y}" r="4" fill="var(--brand)"><title>${p.label} : ${fmtV} €</title></circle>`
   }).join('')
 
   const svgHtml = `
     <svg viewBox="0 0 ${W} ${H}" width="100%" style="overflow:visible;">
       <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT+innerH}" stroke="var(--border)" stroke-width="1"/>
       <line x1="${padL}" y1="${padT+innerH}" x2="${W-padR}" y2="${padT+innerH}" stroke="var(--border)" stroke-width="1"/>
-      <polyline points="${ptsStr}" fill="none" stroke="var(--brand)" stroke-width="2.5" stroke-linejoin="round"/>
+      <polyline points="${ptsStr}" fill="none" stroke="var(--brand)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
       ${dots}
       ${labels}
     </svg>`
 
+  const periodes = [
+    { val: 'hebdomadaire', label: 'Hebdo' },
+    { val: 'mensuel',      label: 'Mensuel' },
+    { val: 'annuel',       label: 'Annuel' },
+  ]
+  const togglePeriode = periodes.map(p => `
+    <button onclick="setAnalytiquePeriode('${p.val}')" style="font-size:12px;padding:4px 14px;border-radius:6px;border:none;cursor:pointer;font-family:inherit;font-weight:${analytiquePeriode===p.val?'700':'400'};background:${analytiquePeriode===p.val?'var(--brand)':'var(--surface-alt)'};color:${analytiquePeriode===p.val?'#fff':'var(--muted)'};">
+      ${p.label}
+    </button>`).join('')
+
+  const titreGraphique = analytiquePeriode === 'hebdomadaire' ? '13 dernières semaines'
+    : analytiquePeriode === 'annuel' ? '5 dernières années' : '12 derniers mois'
+
   container.innerHTML = `
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">${cardsHtml}</div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
-      <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:12px;">Encours mensuel — 12 derniers mois</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+        <div style="font-size:13px;font-weight:700;color:var(--ink);">Encours — <span style="color:var(--muted);font-weight:500;">${titreGraphique}</span></div>
+        <div style="display:flex;gap:4px;background:var(--surface-alt);border-radius:8px;padding:3px;">${togglePeriode}</div>
+      </div>
       ${svgHtml}
     </div>`
 }
