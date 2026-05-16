@@ -109,17 +109,22 @@ function appliqueSidebarState() {
   const sidebar = document.getElementById('main-sidebar')
   const main    = document.querySelector('.main')
   const btn     = document.getElementById('sidebar-toggle-btn')
+  const icon    = document.getElementById('sidebar-toggle-icon')
   if (!sidebar || !main || !btn) return
   if (_sidebarCollapsed) {
     sidebar.classList.add('collapsed')
     main.classList.add('sidebar-collapsed')
     btn.classList.add('collapsed')
     btn.title = 'Agrandir le menu'
+    // Flèche vers la droite (›) quand réduit
+    if (icon) icon.innerHTML = '<path d="M3.5 2L6.5 5l-3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
   } else {
     sidebar.classList.remove('collapsed')
     main.classList.remove('sidebar-collapsed')
     btn.classList.remove('collapsed')
     btn.title = 'Réduire le menu'
+    // Flèche vers la gauche (‹) quand ouvert
+    if (icon) icon.innerHTML = '<path d="M6.5 2L3.5 5l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
   }
 }
 
@@ -1886,7 +1891,6 @@ async function chargerFactures() {
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Client</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Contact</th>
             <th style="padding:10px 16px; text-align:right; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Montant</th>
-            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600; white-space:nowrap;">Réglé</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Émission</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Échéance</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Statut</th>
@@ -1964,7 +1968,6 @@ async function chargerFactures() {
                   <div onclick="editerContactFacture('${f.id}','email_client','${(f.email_client||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}',this)" title="Cliquer pour modifier" style="cursor:pointer;font-size:11px;color:${f.email_client ? 'var(--ink-soft)' : 'var(--muted)'};padding:2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;">${f.email_client ? '✉ ' + f.email_client : '<span>+ Email</span>'}</div>
                 </td>
                 <td style="padding:10px 16px; text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:600; color:${enRetard ? 'var(--danger)' : 'var(--ink)'}; white-space:nowrap;">${parseFloat(f.montant).toLocaleString('fr-FR', {minimumFractionDigits:2})} €</td>
-                <td style="padding:10px 16px;">${regleHtml}</td>
                 <td style="padding:10px 16px; color:var(--ink-soft); font-size:12px; white-space:nowrap;">${f.date_emission ? formatDate(f.date_emission) : '—'}</td>
                 <td style="padding:10px 16px; color:${enRetard ? 'var(--danger)' : 'var(--ink-soft)'}; font-weight:${enRetard ? '600' : '400'}; font-size:12px; white-space:nowrap;">${f.date_echeance ? formatDate(f.date_echeance) : '—'}</td>
                 <td style="padding:10px 16px;">${statutHtml}</td>
@@ -2142,50 +2145,61 @@ async function chargerEncaissements() {
   const nomsExclus = new Set((exclusData || []).map(e => e.nom))
   const nonSoldes  = (factures || []).filter(f => !nomsExclus.has(f.client) && f.date_echeance && !f.litige)
 
-  const aujourd_hui = new Date(); aujourd_hui.setHours(0,0,0,0)
-  const dans7j  = new Date(aujourd_hui); dans7j.setDate(dans7j.getDate() + 7)
-  const finMois = new Date(aujourd_hui.getFullYear(), aujourd_hui.getMonth() + 1, 0)
+  const auj = new Date(); auj.setHours(0,0,0,0)
+  const dans7j  = new Date(auj); dans7j.setDate(dans7j.getDate() + 7)
+  const finMois = new Date(auj.getFullYear(), auj.getMonth() + 1, 0)
 
-  const en_retard     = nonSoldes.filter(f => new Date(f.date_echeance) < aujourd_hui)
-  const cette_semaine = nonSoldes.filter(f => { const d = new Date(f.date_echeance); return d >= aujourd_hui && d <= dans7j })
+  const en_retard     = nonSoldes.filter(f => new Date(f.date_echeance) < auj)
+  const cette_semaine = nonSoldes.filter(f => { const d = new Date(f.date_echeance); return d >= auj && d <= dans7j })
   const ce_mois       = nonSoldes.filter(f => { const d = new Date(f.date_echeance); return d > dans7j && d <= finMois })
   const plus_tard     = nonSoldes.filter(f => new Date(f.date_echeance) > finMois)
 
   const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
   const tot = arr => arr.reduce((s,f)=>s+(parseFloat(f.montant)||0),0)
+  const totalGlobal = tot(nonSoldes)
 
-  const lignesFactures = (arr, colorRetard) => arr.length === 0
-    ? '<div style="color:var(--muted);font-size:12px;padding:8px 0;">Aucune facture.</div>'
-    : arr.map(f => `
-      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;background:var(--surface);border:1px solid var(--border-soft);margin-bottom:4px;">
-        <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:${colorRetard ? 'var(--danger)' : 'var(--muted)'};flex-shrink:0;min-width:68px;">${formatDate(f.date_echeance)}</div>
-        <div style="flex:1;min-width:0;">
-          <div style="font-weight:600;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${f.client}</div>
-          <div style="font-size:10.5px;color:var(--muted);">${f.numero}</div>
-        </div>
-        <div style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:${colorRetard ? 'var(--danger)' : 'var(--ink)'};font-size:12.5px;flex-shrink:0;">${fmt(f.montant)} €</div>
-      </div>`).join('')
+  // Génère le HTML d'une liste compacte pour le détail d'une carte
+  const lignesCompact = (arr, dangerColor) => arr.map(f => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-soft);">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:${dangerColor ? 'var(--danger)' : 'var(--muted)'};flex-shrink:0;min-width:58px;">${formatDate(f.date_echeance)}</div>
+      <div style="flex:1;min-width:0;font-weight:600;font-size:12px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${f.client}</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:700;color:${dangerColor ? 'var(--danger)' : 'var(--ink)'};">${fmt(f.montant)} €</div>
+    </div>`).join('')
 
-  const section = (titre, couleur, arr, colorRetard=false) => {
+  // Carte KPI cliquable qui déplie sa liste
+  const kpiCard = (id, emoji, titre, arr, bg, border, col, dangerColor=false) => {
     const montant = tot(arr)
-    return arr.length === 0 ? '' : `
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-        <div>
-          <span style="font-size:13px;font-weight:700;color:${couleur};">${titre}</span>
-          <span style="font-size:11.5px;color:var(--muted);margin-left:8px;">${arr.length} facture${arr.length>1?'s':''}</span>
+    const pct = totalGlobal > 0 ? Math.round((montant / totalGlobal) * 100) : 0
+    if (arr.length === 0) return `
+      <div style="background:${bg};border:1px solid ${border};border-radius:12px;padding:14px 16px;flex:1;min-width:140px;opacity:0.5;">
+        <div style="font-size:10.5px;font-weight:600;color:${col};text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">${emoji} ${titre}</div>
+        <div style="font-size:24px;font-weight:700;color:${col};">0</div>
+        <div style="font-size:11px;color:${col};opacity:0.7;margin-top:2px;">—</div>
+      </div>`
+    return `
+      <div onclick="toggleEncSection('${id}')" style="background:${bg};border:1px solid ${border};border-radius:12px;padding:14px 16px;flex:1;min-width:140px;cursor:pointer;transition:opacity 0.15s;" onmouseover="this.style.opacity='0.88'" onmouseout="this.style.opacity='1'">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div style="font-size:10.5px;font-weight:600;color:${col};text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">${emoji} ${titre}</div>
+          <svg id="enc-chevron-${id}" width="12" height="12" viewBox="0 0 12 12" fill="none" style="color:${col};opacity:0.5;flex-shrink:0;transition:transform 0.2s;"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
-        <span style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:13px;color:${couleur};">${fmt(montant)} €</span>
+        <div style="font-size:26px;font-weight:700;color:${col};line-height:1;">${arr.length}</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:${col};margin-top:3px;">${fmt(montant)} €</div>
+        <div style="font-size:10px;color:${col};opacity:0.55;margin-top:2px;">${pct}% du total</div>
       </div>
-      ${lignesFactures(arr, colorRetard)}
-    </div>`
+      <div id="enc-section-${id}" style="display:none;"></div>`
   }
 
+  window._encSections = { retard: en_retard, semaine: cette_semaine, mois: ce_mois, plus: plus_tard }
+  window._encDangerMap = { retard: true, semaine: false, mois: false, plus: false }
+
   container.innerHTML = `
-    ${section('⚠ En retard', 'var(--danger)', en_retard, true)}
-    ${section('📅 Cette semaine', 'var(--brand)', cette_semaine)}
-    ${section('🗓 Ce mois', 'var(--ink)', ce_mois)}
-    ${section('⏳ Plus tard', 'var(--muted)', plus_tard)}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
+      ${kpiCard('retard', '⚠', 'En retard', en_retard, '#fef2f2', '#fecaca', '#991b1b', true)}
+      ${kpiCard('semaine', '📅', 'Cette semaine', cette_semaine, 'var(--brand-soft)', 'var(--brand)', 'var(--brand-deep)')}
+      ${kpiCard('mois', '🗓', 'Ce mois', ce_mois, 'var(--surface)', 'var(--border)', 'var(--ink)')}
+      ${kpiCard('plus', '⏳', 'Plus tard', plus_tard, 'var(--surface-alt)', 'var(--border)', 'var(--muted)')}
+    </div>
+
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <div style="font-size:13px;font-weight:700;color:var(--ink);">📆 Calendrier des échéances</div>
@@ -2195,13 +2209,45 @@ async function chargerEncaissements() {
           <button onclick="calEncNaviguer(1)" class="btn btn-secondary" style="font-size:12px;padding:4px 12px;">→</button>
         </div>
       </div>
-      <p style="font-size:11.5px;color:var(--muted);margin:0 0 10px;">Cliquez sur une date pour voir les factures à échéance ce jour-là.</p>
       <div id="cal-enc-detail" style="margin-bottom:12px;"></div>
       <div id="cal-enc-contenu"></div>
     </div>`
 
   window._encaissementsData = nonSoldes
   afficherCalendrierEncaissements()
+}
+
+function toggleEncSection(id) {
+  const el = document.getElementById(`enc-section-${id}`)
+  const chevron = document.getElementById(`enc-chevron-${id}`)
+  if (!el) return
+  const isOpen = el.style.display !== 'none'
+  if (isOpen) {
+    el.style.display = 'none'
+    if (chevron) chevron.style.transform = ''
+    return
+  }
+  const arr = (window._encSections || {})[id] || []
+  const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
+  const danger = (window._encDangerMap || {})[id] || false
+  const fmt2 = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
+  el.style.display = 'block'
+  el.style.background = 'var(--surface)'
+  el.style.border = '1px solid var(--border)'
+  el.style.borderRadius = '10px'
+  el.style.padding = '12px 14px'
+  el.style.marginTop = '-6px'
+  el.style.marginBottom = '4px'
+  el.innerHTML = arr.length === 0
+    ? '<div style="color:var(--muted);font-size:12px;">Aucune facture.</div>'
+    : arr.map(f => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-soft);">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:${danger ? 'var(--danger)' : 'var(--muted)'};flex-shrink:0;min-width:58px;">${formatDate(f.date_echeance)}</div>
+          <div style="flex:1;min-width:0;font-weight:600;font-size:12px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${f.client}</div>
+          <div style="font-size:10px;color:var(--muted);flex-shrink:0;">${f.numero}</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:700;color:${danger ? 'var(--danger)' : 'var(--ink)'};">${fmt2(f.montant)} €</div>
+        </div>`).join('')
+  if (chevron) chevron.style.transform = 'rotate(180deg)'
 }
 
 function calEncNaviguer(dir) {
@@ -2408,14 +2454,59 @@ async function chargerAnalytique() {
   const titreGraphique = analytiquePeriode === 'hebdomadaire' ? '13 dernières semaines'
     : analytiquePeriode === 'annuel' ? '5 dernières années' : '12 derniers mois'
 
+  // ── Graphique 2 : Top clients par encours ───────────────────
+  const encours = toutes.filter(f => !f.solde && !f.litige)
+  const parClient = {}
+  encours.forEach(f => {
+    const c = f.client || '—'
+    parClient[c] = (parClient[c] || 0) + (parseFloat(f.montant) || 0)
+  })
+  const topClients = Object.entries(parClient)
+    .sort((a,b) => b[1] - a[1])
+    .slice(0, 8)
+
+  const maxClient = topClients.length ? topClients[0][1] : 1
+  const barH = 28, barGap = 8, labelW = 140, barAreaW = 420, padV = 12
+  const svgH2 = topClients.length * (barH + barGap) + padV * 2
+  const svgW2 = labelW + barAreaW + 80
+
+  const barsSvg = topClients.map(([nom, val], i) => {
+    const y = padV + i * (barH + barGap)
+    const w = Math.max(4, (val / maxClient) * barAreaW)
+    const nomCourt = nom.length > 20 ? nom.slice(0, 19) + '…' : nom
+    const valFmt = val.toLocaleString('fr-FR', { maximumFractionDigits: 0 })
+    const isDanger = enRetard.some(f => f.client === nom)
+    const barCol = isDanger ? '#ef4444' : 'var(--brand)'
+    const barBg  = isDanger ? '#fee2e2' : 'var(--brand-soft)'
+    return `
+      <text x="${labelW - 8}" y="${y + barH/2 + 4}" text-anchor="end" fill="var(--ink-soft)" font-size="11" font-family="Inter,sans-serif">${nomCourt}</text>
+      <rect x="${labelW}" y="${y}" width="${barAreaW}" height="${barH}" rx="4" fill="${barBg}"/>
+      <rect x="${labelW}" y="${y}" width="${w}" height="${barH}" rx="4" fill="${barCol}" opacity="0.85"/>
+      <text x="${labelW + w + 6}" y="${y + barH/2 + 4}" fill="${isDanger ? '#991b1b' : 'var(--ink-soft)'}" font-size="10.5" font-family="'IBM Plex Mono',monospace" font-weight="600">${valFmt} €</text>`
+  }).join('')
+
+  const svgBars = topClients.length
+    ? `<svg viewBox="0 0 ${svgW2} ${svgH2}" width="100%" style="overflow:visible;">${barsSvg}</svg>`
+    : `<div style="color:var(--muted);font-size:13px;padding:20px 0;text-align:center;">Aucun encours.</div>`
+
   container.innerHTML = `
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">${cardsHtml}</div>
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-        <div style="font-size:13px;font-weight:700;color:var(--ink);">Encours — <span style="color:var(--muted);font-weight:500;">${titreGraphique}</span></div>
-        <div style="display:flex;gap:4px;background:var(--surface-alt);border-radius:8px;padding:3px;">${togglePeriode}</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">${cardsHtml}</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;flex-wrap:wrap;">
+
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+          <div style="font-size:13px;font-weight:700;color:var(--ink);">Encours — <span style="color:var(--muted);font-weight:500;">${titreGraphique}</span></div>
+          <div style="display:flex;gap:4px;background:var(--surface-alt);border-radius:8px;padding:3px;">${togglePeriode}</div>
+        </div>
+        ${svgHtml}
       </div>
-      ${svgHtml}
+
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
+        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:14px;">Top clients — encours non soldé <span style="font-size:10.5px;font-weight:400;color:var(--muted);margin-left:6px;">(rouge = en retard)</span></div>
+        ${svgBars}
+      </div>
+
     </div>`
 }
 
