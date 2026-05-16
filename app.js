@@ -1800,6 +1800,7 @@ async function chargerFactures() {
 
   // Exclure les clients masqués de TOUT l'affichage et des stats
   const toutes   = (factures || []).filter(f => !nomsExclus.has(f.client))
+  window._toutesFactures = toutes   // utilisé par ouvrirModalRelance
   const nonSolde = toutes.filter(f => !f.solde)
   // Ne pas compter les factures en litige dans les retards
   const enRetard = nonSolde.filter(f => !f.litige && f.date_echeance && f.date_echeance < aujourd_hui)
@@ -1937,8 +1938,8 @@ async function chargerFactures() {
             // Colonne Relance
             const relanceHtml = f.date_relance
               ? `<div style="font-size:11px;color:var(--muted);">${formatDate(f.date_relance)}</div>
-                 <button onclick="marquerRelance('${f.id}')" style="font-size:10px;padding:1px 6px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;margin-top:2px;">📤 Relancer</button>`
-              : `<button onclick="marquerRelance('${f.id}')" style="font-size:10.5px;padding:2px 7px;border-radius:4px;background:var(--surface-alt);color:var(--ink-soft);border:1px solid var(--border);cursor:pointer;font-family:inherit;">📤 Relancer</button>`
+                 <button onclick="ouvrirModalRelance('${f.id}')" style="font-size:10px;padding:1px 6px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;margin-top:2px;">📤 Relancer</button>`
+              : `<button onclick="ouvrirModalRelance('${f.id}')" style="font-size:10.5px;padding:2px 7px;border-radius:4px;background:var(--brand-soft);color:var(--brand-deep);border:1px solid var(--brand);cursor:pointer;font-family:inherit;font-weight:600;">📤 Relancer</button>`
 
             // Payé le éditable
             const payeLe = f.date_paiement
@@ -2128,10 +2129,146 @@ async function annulerLitige(id) {
 }
 
 // ── Relance ─────────────────────────────────────────────
-async function marquerRelance(id) {
-  const date_relance = new Date().toISOString().split('T')[0]
-  await db.from('factures').update({ date_relance }).eq('id', id)
-  chargerFactures()
+// ── Relance email ─────────────────────────────────────────
+function ouvrirModalRelance(id) {
+  const toutes = window._toutesFactures || []
+  const facture = toutes.find(f => f.id === id)
+  if (!facture) return
+
+  const client = facture.client
+  // Priorité à l'email du client cliqué, sinon cherche dans les autres factures du client
+  const email = toutes.find(f => f.client === client && f.email_client)?.email_client || null
+
+  const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
+  const auj = new Date().toISOString().split('T')[0]
+
+  // Toutes les factures impayées non litige du client, triées par échéance
+  const facImpayees = toutes
+    .filter(f => f.client === client && !f.solde && !f.litige)
+    .sort((a, b) => (a.date_echeance || '').localeCompare(b.date_echeance || ''))
+
+  const total = facImpayees.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
+  const ids   = facImpayees.map(f => f.id)
+
+  // Corps du mail selon singulier/pluriel
+  let sujet, corps
+  if (facImpayees.length === 1) {
+    const f = facImpayees[0]
+    sujet = `Relance facture N°${f.numero} — SEGEDIA SERVICES`
+    corps = `Bonjour,
+
+Sauf erreur de notre part, la facture N°${f.numero} d'un montant de ${fmt(f.montant)} €, dont l'échéance était fixée au ${formatDate(f.date_echeance)}, n'a pas encore été réglée à ce jour.
+
+Nous vous remercions de bien vouloir procéder au règlement dans les meilleurs délais, aux coordonnées bancaires figurant au bas de votre facture.
+
+Si le paiement de cette facture a déjà été effectué, merci de ne pas tenir compte de ce message.
+
+Cordialement,
+SEGEDIA SERVICES`
+  } else {
+    const lignes = facImpayees.map(f =>
+      `  • N°${f.numero} — ${fmt(f.montant)} € — échéance le ${formatDate(f.date_echeance)}`
+    ).join('\n')
+    sujet = `Relance factures impayées — SEGEDIA SERVICES`
+    corps = `Bonjour,
+
+Sauf erreur de notre part, les factures suivantes n'ont pas encore été réglées à ce jour :
+
+${lignes}
+
+Total dû : ${fmt(total)} €
+
+Nous vous remercions de bien vouloir procéder au règlement dans les meilleurs délais, aux coordonnées bancaires figurant au bas de vos factures.
+
+Si le paiement de ces factures a déjà été effectué, merci de ne pas tenir compte de ce message.
+
+Cordialement,
+SEGEDIA SERVICES`
+  }
+
+  // Remplir le modal
+  window._relanceData = { client, email, ids }
+  document.getElementById('modal-relance-client').textContent = client
+  document.getElementById('modal-relance-nb').textContent =
+    `${facImpayees.length} facture${facImpayees.length > 1 ? 's' : ''} impayée${facImpayees.length > 1 ? 's' : ''} · Total : ${fmt(total)} €`
+  document.getElementById('modal-relance-to').textContent = email || 'Aucun email renseigné'
+  document.getElementById('modal-relance-to').style.color = email ? 'var(--success)' : 'var(--danger)'
+  document.getElementById('modal-relance-sujet').value = sujet
+  document.getElementById('modal-relance-corps').value = corps
+
+  const warning = document.getElementById('modal-relance-warning')
+  const sendBtn = document.getElementById('btn-envoyer-relance')
+  if (!email) {
+    warning.style.display = 'flex'
+    sendBtn.disabled = true
+    sendBtn.style.opacity = '0.4'
+    sendBtn.style.cursor = 'not-allowed'
+  } else {
+    warning.style.display = 'none'
+    sendBtn.disabled = false
+    sendBtn.style.opacity = '1'
+    sendBtn.style.cursor = 'pointer'
+  }
+
+  document.getElementById('modal-relance-email').classList.remove('hidden')
+}
+
+async function envoyerRelanceEmail() {
+  const { client, email, ids } = window._relanceData || {}
+  if (!email) return
+
+  const sujet = document.getElementById('modal-relance-sujet').value.trim()
+  const corps = document.getElementById('modal-relance-corps').value.trim()
+
+  const btn = document.getElementById('btn-envoyer-relance')
+  btn.textContent = 'Envoi en cours…'
+  btn.disabled = true
+
+  // Convertir le texte brut en HTML propre pour l'email
+  const lignesHtml = corps
+    .split('\n\n')
+    .map(para => `<p style="margin:0 0 14px;">${para.replace(/\n/g, '<br>')}</p>`)
+    .join('')
+
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.75;color:#1a1815;max-width:580px;margin:0 auto;">
+      <div style="border-bottom:2px solid #EE7E24;padding-bottom:12px;margin-bottom:24px;">
+        <span style="font-weight:700;font-size:16px;color:#EE7E24;">SEGEDIA SERVICES</span>
+      </div>
+      ${lignesHtml}
+      <div style="margin-top:24px;padding-top:12px;border-top:1px solid #eee;font-size:12px;color:#888;">
+        Ce message est envoyé automatiquement. Merci de ne pas y répondre directement.
+      </div>
+    </div>`
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/envoyer-relance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+      },
+      body: JSON.stringify({ to: email, subject: sujet, html, ids }),
+    })
+    const data = await res.json()
+    if (!res.ok || data.error) throw new Error(data.error || 'Erreur serveur')
+
+    fermerModals()
+    afficherToast(`✅ Mail envoyé à ${email}`)
+    chargerFactures()
+  } catch (e) {
+    btn.textContent = '📤 Envoyer'
+    btn.disabled = false
+    afficherToast(`❌ Échec de l'envoi : ${e.message}`, true)
+  }
+}
+
+function afficherToast(msg, erreur = false) {
+  const t = document.createElement('div')
+  t.textContent = msg
+  t.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:600;font-family:inherit;box-shadow:0 4px 16px rgba(0,0,0,0.15);transition:opacity 0.4s;background:${erreur ? '#fee2e2' : '#d1fae5'};color:${erreur ? '#991b1b' : '#166534'};border:1px solid ${erreur ? '#fca5a5' : '#6ee7b7'};`
+  document.body.appendChild(t)
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 400) }, 3500)
 }
 
 // ── Encaissements ────────────────────────────────────────
