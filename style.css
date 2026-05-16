@@ -84,50 +84,16 @@ body {
 
 /* ─── SIDEBAR RÉDUITE ──────────────────────────────────────── */
 .sidebar.collapsed {
-  width: 56px;
+  width: 0px;
+  padding: 0;
+  border-right: none;
 }
 
-.sidebar.collapsed .sidebar-logo-text,
-.sidebar.collapsed .sidebar-section-label,
-.sidebar.collapsed .nav-item span:not(.nav-icon),
-.sidebar.collapsed .sidebar-user-name,
-.sidebar.collapsed .sidebar-user-role,
-.sidebar.collapsed #search-input,
-.sidebar.collapsed #search-results,
-.sidebar.collapsed .sidebar-user > svg {
+/* Masquer tout le contenu quand réduit */
+.sidebar.collapsed > * {
   display: none !important;
-}
-
-.sidebar.collapsed .sidebar-logo {
-  padding: 4px 4px 18px;
-  justify-content: center;
-}
-
-.sidebar.collapsed .sidebar-nav {
-  align-items: center;
-}
-
-.sidebar.collapsed .nav-item {
-  justify-content: center;
-  padding: 8px;
-  width: 36px;
-}
-
-.sidebar.collapsed .nav-item.active::before {
-  left: -10px;
-}
-
-.sidebar.collapsed .sidebar-footer {
-  padding-left: 0;
-}
-
-.sidebar.collapsed .sidebar-user {
-  justify-content: center;
-  padding: 4px 0;
-}
-
-.sidebar.collapsed .sidebar-user-avatar {
-  margin: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Bouton toggle sidebar — onglet flèche sur le bord droit de la sidebar */
@@ -159,31 +125,10 @@ body {
 }
 
 .sidebar-toggle-btn.collapsed {
-  left: 56px;
+  left: 0px;
+  border-radius: 0 8px 8px 0;
 }
 
-/* Tooltip pour nav items en mode réduit */
-.sidebar.collapsed .nav-item {
-  position: relative;
-}
-
-.sidebar.collapsed .nav-item:hover::after {
-  content: attr(data-label);
-  position: absolute;
-  left: calc(100% + 10px);
-  top: 50%;
-  transform: translateY(-50%);
-  background: var(--ink);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 500;
-  padding: 4px 9px;
-  border-radius: 6px;
-  white-space: nowrap;
-  pointer-events: none;
-  z-index: 200;
-  font-family: inherit;
-}
 
 .sidebar-logo {
   display: flex;
@@ -350,8 +295,8 @@ body {
 }
 
 .main.sidebar-collapsed {
-  margin-left: 56px;
-  max-width: calc(100vw - 56px);
+  margin-left: 16px;
+  max-width: calc(100vw - 16px);
 }
 
 .page { display: none; }
