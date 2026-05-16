@@ -542,6 +542,47 @@
   </div>
 </div>
 
+<!-- MODAL RELANCE EMAIL -->
+<div id="modal-relance-email" class="modal-overlay hidden">
+  <div class="modal-box" style="max-width:600px;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;">
+      <div>
+        <h2 style="font-size:16px;margin-bottom:4px;">📤 Relance — <span id="modal-relance-client"></span></h2>
+        <div id="modal-relance-nb" style="font-size:12px;color:var(--muted);"></div>
+      </div>
+      <button onclick="fermerModals()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:20px;line-height:1;padding:0;">×</button>
+    </div>
+
+    <!-- Destinataire -->
+    <div style="display:flex;align-items:center;gap:8px;background:var(--surface-alt);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:12px;">
+      <span style="font-size:12px;color:var(--muted);font-weight:600;min-width:28px;">À :</span>
+      <span id="modal-relance-to" style="font-size:13px;font-weight:600;"></span>
+    </div>
+
+    <!-- Warning no email -->
+    <div id="modal-relance-warning" style="display:none;align-items:center;gap:8px;background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12.5px;color:#991b1b;font-weight:600;">
+      ⚠ Aucun email renseigné pour ce client — ajoutez-le dans la colonne Contact de la liste des factures.
+    </div>
+
+    <!-- Sujet -->
+    <div class="form-group" style="margin-bottom:10px;">
+      <label style="font-size:11.5px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">Objet</label>
+      <input type="text" id="modal-relance-sujet" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--surface-alt);" />
+    </div>
+
+    <!-- Corps -->
+    <div class="form-group" style="margin-bottom:16px;">
+      <label style="font-size:11.5px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">Message</label>
+      <textarea id="modal-relance-corps" style="width:100%;min-height:220px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;line-height:1.7;resize:vertical;background:var(--surface-alt);"></textarea>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fermerModals()">Annuler</button>
+      <button id="btn-envoyer-relance" class="btn btn-primary" onclick="envoyerRelanceEmail()" style="background:var(--brand);border-color:var(--brand);">📤 Envoyer</button>
+    </div>
+  </div>
+</div>
+
 <script src="app.js"></script>
 </body>
 </html>
