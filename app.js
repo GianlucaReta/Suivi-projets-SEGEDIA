@@ -2167,7 +2167,7 @@ Cordialement,
 SEGEDIA SERVICES`
   } else {
     const lignes = facImpayees.map(f =>
-      `  • N°${f.numero} — ${fmt(f.montant)} € — échéance le ${formatDate(f.date_echeance)}`
+      `  - N°${f.numero} - ${fmt(f.montant)} € - échéance le ${formatDate(f.date_echeance)}`
     ).join('\n')
     sujet = `Relance factures impayées — SEGEDIA SERVICES`
     corps = `Bonjour,
