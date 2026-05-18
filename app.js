@@ -1935,9 +1935,17 @@ async function chargerFactures() {
                  <div style="font-size:10px;color:var(--muted);margin-top:1px;">${pct}%</div>`
               : `<span style="color:var(--muted);font-size:11px;">—</span>`
 
-            // Colonne Relance
+            // Colonne Relance — avec indicateur de lecture discret
+            const indicateurLu = f.relance_email_id
+              ? (f.relance_lue
+                  ? `<span title="✓ Email ouvert par le client" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--success);margin-left:5px;vertical-align:middle;flex-shrink:0;"></span>`
+                  : `<span title="📨 Email envoyé — non ouvert" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--warn);margin-left:5px;vertical-align:middle;flex-shrink:0;"></span>`)
+              : ''
             const relanceHtml = f.date_relance
-              ? `<div style="font-size:11px;color:var(--muted);">${formatDate(f.date_relance)}</div>
+              ? `<div style="display:flex;align-items:center;gap:0;">
+                   <span style="font-size:11px;color:var(--muted);">${formatDate(f.date_relance)}</span>
+                   ${indicateurLu}
+                 </div>
                  <button onclick="ouvrirModalRelance('${f.id}')" style="font-size:10px;padding:1px 6px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;margin-top:2px;">📤 Relancer</button>`
               : `<button onclick="ouvrirModalRelance('${f.id}')" style="font-size:10.5px;padding:2px 7px;border-radius:4px;background:var(--brand-soft);color:var(--brand-deep);border:1px solid var(--brand);cursor:pointer;font-family:inherit;font-weight:600;">📤 Relancer</button>`
 
@@ -2485,6 +2493,80 @@ async function chargerAnalytique() {
   })
 
   const auj = new Date().toISOString().split('T')[0]
+
+  // ── DSO : délai moyen émission → paiement (factures soldées) ──
+  const soldees = toutes.filter(f => f.solde && f.date_paiement && f.date_emission)
+  const dso = soldees.length
+    ? Math.round(soldees.reduce((s, f) => s + (new Date(f.date_paiement) - new Date(f.date_emission)) / 86400000, 0) / soldees.length)
+    : null
+
+  // ── Taux de recouvrement global : % soldées dans les délais ──
+  const soldeesDansDelai = soldees.filter(f => f.date_paiement <= f.date_echeance)
+  const tauxGlobal = soldees.length ? Math.round((soldeesDansDelai.length / soldees.length) * 100) : null
+
+  // ── Taux de recouvrement mensuel sur 12 mois (courbe) ────────
+  const moisNomsLong = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
+  const now = new Date()
+  const tauxPoints = []
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const moisStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+    const duMois = toutes.filter(f => f.date_echeance && f.date_echeance.startsWith(moisStr))
+    if (!duMois.length) { tauxPoints.push({ label: moisNomsLong[d.getMonth()], taux: null }); continue }
+    const payesDansDelai = duMois.filter(f => f.solde && f.date_paiement && f.date_paiement <= f.date_echeance)
+    tauxPoints.push({ label: moisNomsLong[d.getMonth()], taux: Math.round((payesDansDelai.length / duMois.length) * 100) })
+  }
+
+  // KPI cards DSO + Taux global
+  const kpiHtml = `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 20px;min-width:160px;flex:1;">
+        <div style="font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px;">DSO — Délai moyen</div>
+        <div style="font-size:30px;font-weight:700;color:${dso === null ? 'var(--muted)' : dso > 45 ? 'var(--danger)' : dso > 30 ? 'var(--warn)' : 'var(--success)'};">${dso !== null ? dso + 'j' : '—'}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">entre émission et paiement</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 20px;min-width:160px;flex:1;">
+        <div style="font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px;">Taux de recouvrement</div>
+        <div style="font-size:30px;font-weight:700;color:${tauxGlobal === null ? 'var(--muted)' : tauxGlobal >= 70 ? 'var(--success)' : tauxGlobal >= 50 ? 'var(--warn)' : 'var(--danger)'};">${tauxGlobal !== null ? tauxGlobal + '%' : '—'}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">payées dans les délais (global)</div>
+      </div>
+    </div>`
+
+  // Graphique taux de recouvrement mensuel
+  const tauxValides = tauxPoints.filter(p => p.taux !== null)
+  const WR = 700, HR = 160, padLR = 40, padRR = 10, padTR = 15, padBR = 28
+  const innerWR = WR - padLR - padRR, innerHR = HR - padTR - padBR
+  const stepR = tauxValides.length > 1 ? innerWR / (tauxPoints.length - 1) : innerWR
+  const ptsTauxStr = tauxPoints.map((p, i) => {
+    if (p.taux === null) return null
+    const x = padLR + i * stepR
+    const y = padTR + innerHR - (p.taux / 100) * innerHR
+    return `${x},${y}`
+  }).filter(Boolean).join(' ')
+  const dotsTaux = tauxPoints.map((p, i) => {
+    if (p.taux === null) return ''
+    const x = padLR + i * stepR
+    const y = padTR + innerHR - (p.taux / 100) * innerHR
+    const col = p.taux >= 70 ? '#3D6B3D' : p.taux >= 50 ? '#B58836' : '#991b1b'
+    return `<circle cx="${x}" cy="${y}" r="4" fill="${col}"><title>${p.label} : ${p.taux}%</title></circle>`
+  }).join('')
+  const labelsTaux = tauxPoints.map((p, i) => {
+    const x = padLR + i * stepR
+    return `<text x="${x}" y="${HR - 4}" text-anchor="middle" fill="var(--muted)" font-size="9" font-family="Inter,sans-serif">${p.label}</text>`
+  }).join('')
+  // Ligne de référence à 80%
+  const y80 = padTR + innerHR - 0.8 * innerHR
+  const svgTaux = `
+    <svg viewBox="0 0 ${WR} ${HR}" width="100%" style="overflow:visible;">
+      <line x1="${padLR}" y1="${padTR}" x2="${padLR}" y2="${padTR+innerHR}" stroke="var(--border)" stroke-width="1"/>
+      <line x1="${padLR}" y1="${padTR+innerHR}" x2="${WR-padRR}" y2="${padTR+innerHR}" stroke="var(--border)" stroke-width="1"/>
+      <line x1="${padLR}" y1="${y80}" x2="${WR-padRR}" y2="${y80}" stroke="#3D6B3D" stroke-width="1" stroke-dasharray="4,4" opacity="0.4"/>
+      <text x="${padLR - 4}" y="${y80 + 4}" text-anchor="end" fill="#3D6B3D" font-size="9" font-family="Inter,sans-serif" opacity="0.6">80%</text>
+      ${ptsTauxStr ? `<polyline points="${ptsTauxStr}" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+      ${dotsTaux}
+      ${labelsTaux}
+    </svg>`
+
   const tranches = [
     { label: '0–30j',  min: 0,  max: 30,  bg: '#fef9c3', col: '#854d0e' },
     { label: '31–60j', min: 31, max: 60,  bg: '#ffedd5', col: '#9a3412' },
@@ -2627,9 +2709,10 @@ async function chargerAnalytique() {
     : `<div style="color:var(--muted);font-size:13px;padding:20px 0;text-align:center;">Aucun encours.</div>`
 
   container.innerHTML = `
+    ${kpiHtml}
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">${cardsHtml}</div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;flex-wrap:wrap;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
 
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
@@ -2644,6 +2727,14 @@ async function chargerAnalytique() {
         ${svgBars}
       </div>
 
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <div style="font-size:13px;font-weight:700;color:var(--ink);">Taux de recouvrement mensuel <span style="color:var(--muted);font-weight:400;font-size:11px;margin-left:6px;">% factures payées dans les délais</span></div>
+        <span style="font-size:10.5px;color:var(--success);font-weight:600;background:var(--success-bg);padding:2px 8px;border-radius:10px;">Objectif 80%</span>
+      </div>
+      ${svgTaux}
     </div>`
 }
 
