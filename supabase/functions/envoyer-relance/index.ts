@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ── Envoi via Resend ─────────────────────────────────────
+    // ── Envoi via Resend (avec suivi d'ouverture activé) ────────
     const resendRes = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -37,6 +37,7 @@ Deno.serve(async (req) => {
         to: [to],
         subject,
         html,
+        tags: [{ name: "type", value: "relance" }],
       }),
     });
 
@@ -49,19 +50,26 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ── Mise à jour date_relance pour toutes les factures concernées ──
+    const resendData = await resendRes.json();
+    const emailId = resendData.id ?? null;
+
+    // ── Mise à jour factures : date_relance + email_id + reset lu ──
     if (ids && ids.length > 0) {
       const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
       const date_relance = new Date().toISOString().split("T")[0];
       const { error } = await db
         .from("factures")
-        .update({ date_relance })
+        .update({
+          date_relance,
+          relance_email_id: emailId,
+          relance_lue: false,
+        })
         .in("id", ids);
       if (error) console.error("Supabase update error:", error);
     }
 
     return new Response(
-      JSON.stringify({ success: true }),
+      JSON.stringify({ success: true, emailId }),
       { status: 200, headers: { ...CORS, "Content-Type": "application/json" } }
     );
 
