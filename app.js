@@ -2320,6 +2320,10 @@ function ouvrirModalRelanceR2(id) {
   const total = facImpayees.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
   const ids   = facImpayees.map(f => f.id)
 
+  const echeancier = total >= 1000
+    ? `\nToutefois, si vous rencontrez des difficultés de trésorerie, nous restons ouverts à la mise en place d'un échéancier de paiement. N'hésitez pas à nous contacter pour en discuter.\n`
+    : ''
+
   let sujet, corps
   if (facImpayees.length === 1) {
     const f = facImpayees[0]
@@ -2331,7 +2335,7 @@ Sauf erreur de notre part, et malgré notre premier rappel, la facture N°${f.nu
 Nous vous demandons de bien vouloir procéder au règlement dans les plus brefs délais, aux coordonnées bancaires figurant au bas de votre facture.
 
 Sans retour de votre part sous 5 jours ouvrés, nous serons contraints d'envisager d'autres mesures de recouvrement.
-
+${echeancier}
 Si le paiement a déjà été effectué, merci de ne pas tenir compte de ce message.
 
 Cordialement,
@@ -2352,7 +2356,7 @@ Total dû : ${fmt(total)} €
 Nous vous demandons de bien vouloir procéder au règlement dans les plus brefs délais, aux coordonnées bancaires figurant au bas de vos factures.
 
 Sans retour de votre part sous 5 jours ouvrés, nous serons contraints d'envisager d'autres mesures de recouvrement.
-
+${echeancier}
 Si le paiement a déjà été effectué, merci de ne pas tenir compte de ce message.
 
 Cordialement,
