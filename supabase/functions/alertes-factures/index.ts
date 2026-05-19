@@ -7,7 +7,6 @@ const DESTINATAIRE              = "gianluca.reta@essca.eu";
 
 // ── Jours fériés français (calcul algorithmique) ─────────
 function joursFeriesFrance(annee: number): Set<string> {
-  // Algorithme de Meeus/Jones/Butcher pour calculer la date de Pâques
   const a = annee % 19, b = Math.floor(annee / 100), c = annee % 100;
   const d = Math.floor(b / 4), e = b % 4;
   const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
@@ -38,10 +37,12 @@ function joursFeriesFrance(annee: number): Set<string> {
   ]);
 }
 
+const fmtMontant = (v: number) => v.toLocaleString("fr-FR", { minimumFractionDigits: 2 });
+
 Deno.serve(async () => {
   const maintenant   = new Date();
   const aujourd_hui  = maintenant.toISOString().split("T")[0];
-  const jourSemaine  = maintenant.getUTCDay(); // 0 = dim, 6 = sam
+  const jourSemaine  = maintenant.getUTCDay();
 
   // Pas d'envoi le week-end
   if (jourSemaine === 0 || jourSemaine === 6) {
@@ -56,7 +57,6 @@ Deno.serve(async () => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  // Exclure les clients de la liste d'exclusion
   const { data: exclus } = await supabase.from("clients_exclus").select("nom");
   const nomsExclus = new Set((exclus || []).map((e: any) => e.nom));
 
@@ -79,78 +79,112 @@ Deno.serve(async () => {
     return new Response(JSON.stringify({ message: "Aucune facture en retard." }), { status: 200 });
   }
 
-  const montantTotal = factures.reduce((s: number, f: any) => s + (parseFloat(f.montant) || 0), 0);
+  // ── J+3 : factures échues exactement il y a 3 jours ──────
+  const dateJ3 = new Date(maintenant);
+  dateJ3.setUTCDate(dateJ3.getUTCDate() - 3);
+  const strJ3 = dateJ3.toISOString().split("T")[0];
+  const facturesJ3 = factures.filter((f: any) => f.date_echeance === strJ3);
+  const montantJ3  = facturesJ3.reduce((s: number, f: any) => s + (parseFloat(f.montant) || 0), 0);
 
-  // ── Section J+1 : factures échues hier exactement ─────────
-  const hierDate = new Date(maintenant);
-  hierDate.setUTCDate(hierDate.getUTCDate() - 1);
-  const hier = hierDate.toISOString().split("T")[0];
-  const facturesJ1 = factures.filter((f: any) => f.date_echeance === hier);
+  // ── Reste : toutes les autres factures en retard ──────────
+  const facturesReste = factures.filter((f: any) => f.date_echeance !== strJ3);
+  const montantReste  = facturesReste.reduce((s: number, f: any) => s + (parseFloat(f.montant) || 0), 0);
+  const montantTotal  = factures.reduce((s: number, f: any) => s + (parseFloat(f.montant) || 0), 0);
 
-  let sectionJ1 = "";
-  if (facturesJ1.length > 0) {
-    const lignesJ1 = facturesJ1.map((f: any) => {
-      const montantFmtJ1 = parseFloat(f.montant).toLocaleString("fr-FR", { minimumFractionDigits: 2 });
-      return `
-        <tr>
-          <td style="padding:7px 12px;border-bottom:1px solid #fde68a;font-family:monospace;font-size:13px;color:#78350f;">${f.numero}</td>
-          <td style="padding:7px 12px;border-bottom:1px solid #fde68a;font-weight:600;color:#78350f;">${f.client}</td>
-          <td style="padding:7px 12px;border-bottom:1px solid #fde68a;text-align:right;font-family:monospace;font-weight:600;color:#78350f;">${montantFmtJ1} €</td>
-        </tr>`;
-    }).join("");
-    sectionJ1 = `
-      <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:16px;margin-bottom:24px;">
-        <h3 style="color:#78350f;font-size:15px;margin:0 0 8px;">🔔 Nouvelles échéances dépassées aujourd'hui (J+1)</h3>
-        <p style="color:#92400e;font-size:12px;margin:0 0 12px;">${facturesJ1.length} facture${facturesJ1.length > 1 ? "s" : ""} arrivée${facturesJ1.length > 1 ? "s" : ""} à échéance hier</p>
-        <table style="width:100%;border-collapse:collapse;font-size:13px;">
-          <thead>
-            <tr style="background:#fef3c7;">
-              <th style="padding:6px 12px;text-align:left;font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:0.06em;">N° Facture</th>
-              <th style="padding:6px 12px;text-align:left;font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:0.06em;">Client</th>
-              <th style="padding:6px 12px;text-align:right;font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:0.06em;">Montant</th>
-            </tr>
-          </thead>
-          <tbody>${lignesJ1}</tbody>
-        </table>
-      </div>`;
-  }
-
-  const lignes = factures.map((f: any) => {
+  // ── Helper : tableau de lignes ─────────────────────────────
+  const lignesTable = (arr: any[], showRetard: boolean) => arr.map((f: any) => {
     const joursRetard = Math.floor(
       (new Date(aujourd_hui).getTime() - new Date(f.date_echeance).getTime()) / 86400000
     );
-    const montantFmt = parseFloat(f.montant).toLocaleString("fr-FR", { minimumFractionDigits: 2 });
     return `
       <tr>
-        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-family:monospace;font-size:13px;color:#555;">${f.numero}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-weight:600;">${f.client}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;font-family:monospace;font-weight:600;">${montantFmt} €</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;color:#6b7280;">${f.date_echeance}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;color:#ef4444;font-weight:600;">+${joursRetard} jour${joursRetard > 1 ? "s" : ""}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-family:monospace;font-size:12.5px;color:#555;">${f.numero}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-weight:600;font-size:13px;">${f.client}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;font-family:monospace;font-weight:600;font-size:13px;">${fmtMontant(parseFloat(f.montant))} €</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;color:#6b7280;font-size:12.5px;">${f.date_echeance}</td>
+        ${showRetard ? `<td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;color:#ef4444;font-weight:600;font-size:12.5px;">+${joursRetard}j</td>` : ''}
       </tr>`;
   }).join("");
 
-  const montantFmt = montantTotal.toLocaleString("fr-FR", { minimumFractionDigits: 2 });
+  const enteteTable = (showRetard: boolean) => `
+    <thead>
+      <tr style="background:#f9f9f9;">
+        <th style="padding:8px 12px;text-align:left;font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;border-bottom:2px solid #e5e7eb;">N° Facture</th>
+        <th style="padding:8px 12px;text-align:left;font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;border-bottom:2px solid #e5e7eb;">Client</th>
+        <th style="padding:8px 12px;text-align:right;font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;border-bottom:2px solid #e5e7eb;">Montant</th>
+        <th style="padding:8px 12px;text-align:left;font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;border-bottom:2px solid #e5e7eb;">Échéance</th>
+        ${showRetard ? `<th style="padding:8px 12px;text-align:left;font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;border-bottom:2px solid #e5e7eb;">Retard</th>` : ''}
+      </tr>
+    </thead>`;
+
+  const totalRow = (montant: number, nb: number, showRetard: boolean) => `
+    <tr style="background:#f9fafb;">
+      <td colspan="${showRetard ? 2 : 2}" style="padding:10px 12px;font-size:12px;color:#6b7280;font-weight:600;">
+        Total — ${nb} facture${nb > 1 ? "s" : ""}
+      </td>
+      <td style="padding:10px 12px;text-align:right;font-family:monospace;font-weight:700;font-size:14px;color:#1a1a1a;">${fmtMontant(montant)} €</td>
+      <td colspan="${showRetard ? 2 : 1}"></td>
+    </tr>`;
+
+  // ── Section 1 : J+3 ──────────────────────────────────────
+  const sectionJ3 = facturesJ3.length > 0 ? `
+    <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:16px 20px;margin-bottom:28px;">
+      <h3 style="color:#78350f;font-size:15px;margin:0 0 4px;">🔔 Nouvelles factures en dépassement J+3</h3>
+      <p style="color:#92400e;font-size:12px;margin:0 0 14px;">Échues il y a 3 jours — ${facturesJ3.length} facture${facturesJ3.length > 1 ? "s" : ""}</p>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        ${enteteTable(false)}
+        <tbody>
+          ${lignesTable(facturesJ3, false)}
+          ${totalRow(montantJ3, facturesJ3.length, false)}
+        </tbody>
+      </table>
+    </div>` : `
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px 20px;margin-bottom:28px;">
+      <p style="color:#166534;font-size:13px;font-weight:600;margin:0;">✅ Aucune nouvelle facture en dépassement J+3 aujourd'hui</p>
+    </div>`;
+
+  // ── Section 2 : Reste des retards ────────────────────────
+  const sectionReste = facturesReste.length > 0 ? `
+    <h2 style="color:#1a1a1a;font-size:16px;margin:0 0 4px;">Factures en retard (hors J+3)</h2>
+    <p style="color:#6b7280;font-size:12.5px;margin:0 0 14px;">${facturesReste.length} facture${facturesReste.length > 1 ? "s" : ""}</p>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      ${enteteTable(true)}
+      <tbody>
+        ${lignesTable(facturesReste, true)}
+        ${totalRow(montantReste, facturesReste.length, true)}
+      </tbody>
+    </table>` : `
+    <p style="color:#6b7280;font-size:13px;">Aucune autre facture en retard.</p>`;
 
   const html = `
-    <div style="font-family:sans-serif;max-width:700px;margin:auto;color:#1a1a1a;">
-      ${sectionJ1}
-      <h2 style="color:#1a1a1a;font-size:18px;margin-bottom:4px;">Factures en retard de paiement</h2>
-      <p style="color:#6b7280;font-size:13px;margin-top:0;">${factures.length} facture${factures.length > 1 ? "s" : ""} non soldée${factures.length > 1 ? "s" : ""} · Total : <strong>${montantFmt} €</strong></p>
-      <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:13px;">
-        <thead>
-          <tr style="background:#f9f9f9;">
-            <th style="padding:8px 12px;text-align:left;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;border-bottom:2px solid #e5e7eb;">N° Facture</th>
-            <th style="padding:8px 12px;text-align:left;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;border-bottom:2px solid #e5e7eb;">Client</th>
-            <th style="padding:8px 12px;text-align:right;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;border-bottom:2px solid #e5e7eb;">Montant</th>
-            <th style="padding:8px 12px;text-align:left;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;border-bottom:2px solid #e5e7eb;">Échéance</th>
-            <th style="padding:8px 12px;text-align:left;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;border-bottom:2px solid #e5e7eb;">Retard</th>
-          </tr>
-        </thead>
-        <tbody>${lignes}</tbody>
-      </table>
-      <p style="margin-top:20px;font-size:13px;color:#6b7280;">Connectez-vous à SuiviPro pour mettre à jour les statuts.</p>
-      <p style="color:#d1d5db;font-size:11px;margin-top:24px;">— SuiviPro SEGEDIA</p>
+    <div style="font-family:Arial,sans-serif;max-width:700px;margin:auto;color:#1a1a1a;padding:20px 0;">
+      <div style="border-bottom:3px solid #EE7E24;padding-bottom:10px;margin-bottom:24px;">
+        <span style="font-weight:700;font-size:18px;color:#EE7E24;">SEGEDIA SERVICES</span>
+        <span style="color:#6b7280;font-size:13px;margin-left:12px;">Alerte factures — ${aujourd_hui}</span>
+      </div>
+
+      <div style="display:flex;gap:16px;margin-bottom:28px;">
+        <div style="flex:1;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px;">
+          <div style="font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Total en retard</div>
+          <div style="font-size:22px;font-weight:700;color:#991b1b;font-family:monospace;">${fmtMontant(montantTotal)} €</div>
+          <div style="font-size:11px;color:#b91c1c;margin-top:2px;">${factures.length} facture${factures.length > 1 ? "s" : ""}</div>
+        </div>
+        <div style="flex:1;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:14px;">
+          <div style="font-size:10px;font-weight:700;color:#78350f;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Nouvelles J+3</div>
+          <div style="font-size:22px;font-weight:700;color:#78350f;font-family:monospace;">${fmtMontant(montantJ3)} €</div>
+          <div style="font-size:11px;color:#92400e;margin-top:2px;">${facturesJ3.length} facture${facturesJ3.length > 1 ? "s" : ""}</div>
+        </div>
+        <div style="flex:1;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px;">
+          <div style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Retards antérieurs</div>
+          <div style="font-size:22px;font-weight:700;color:#374151;font-family:monospace;">${fmtMontant(montantReste)} €</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:2px;">${facturesReste.length} facture${facturesReste.length > 1 ? "s" : ""}</div>
+        </div>
+      </div>
+
+      ${sectionJ3}
+      ${sectionReste}
+
+      <p style="margin-top:24px;font-size:12px;color:#9ca3af;border-top:1px solid #f0f0f0;padding-top:16px;">Connectez-vous à SuiviPro pour mettre à jour les statuts. — SuiviPro SEGEDIA</p>
     </div>`;
 
   const res = await fetch("https://api.resend.com/emails", {
@@ -159,10 +193,13 @@ Deno.serve(async () => {
     body: JSON.stringify({
       from: "SuiviPro <alertes@segedia.fr>",
       to: [DESTINATAIRE],
-      subject: `${factures.length} facture${factures.length > 1 ? "s" : ""} en retard · ${montantFmt} € à encaisser`,
+      subject: `${facturesJ3.length > 0 ? `🔔 ${facturesJ3.length} nouvelle${facturesJ3.length > 1 ? "s" : ""} J+3 · ` : ""}${factures.length} retard${factures.length > 1 ? "s" : ""} · ${fmtMontant(montantTotal)} €`,
       html,
     }),
   });
 
-  return new Response(JSON.stringify({ envoi: { email: DESTINATAIRE, status: res.status }, nb: factures.length, montant: montantTotal }), { status: 200 });
+  return new Response(
+    JSON.stringify({ envoi: { email: DESTINATAIRE, status: res.status }, nb: factures.length, nbJ3: facturesJ3.length, montant: montantTotal }),
+    { status: 200 }
+  );
 });

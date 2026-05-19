@@ -136,7 +136,7 @@ function showPage(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
   document.getElementById('page-' + page).classList.add('active')
-  const navMap = { dashboard: 'dashboard', projets: 'projet', taches: 'tâche', employes: 'équipe', archives: 'archive' }
+  const navMap = { dashboard: 'dashboard', projets: 'projet', taches: 'tâche', employes: 'équipe', archives: 'archive', calendrier: 'calendrier', factures: 'factures', recouvrement: 'recouvrement' }
   document.querySelectorAll('.nav-item').forEach(n => {
     if (n.textContent.toLowerCase().includes(navMap[page])) n.classList.add('active')
   })
@@ -147,6 +147,7 @@ function showPage(page) {
   if (page === 'archives') chargerArchives()
   if (page === 'calendrier') afficherCalendrier()
   if (page === 'factures') chargerFactures()
+  if (page === 'recouvrement') { chargerRecouvrement(); mettreAJourBadgeRecouvrement() }
 }
 
 // --- UTILISATEUR ACTIF ---
@@ -1807,8 +1808,8 @@ async function chargerFactures() {
   const montantTotal  = nonSolde.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
   const montantRetard = enRetard.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
 
-  // Bandeau J+1 : factures dont l'échéance était hier (exactement 1 jour de retard) et non en litige
-  const hier = new Date(); hier.setDate(hier.getDate() - 1); const hierStr = hier.toISOString().split('T')[0]
+  // Bandeau J+3 : factures dont l'échéance était il y a exactement 3 jours et non en litige
+  const j3 = new Date(); j3.setDate(j3.getDate() - 3); const hierStr = j3.toISOString().split('T')[0]
   const facturesJ1 = nonSolde.filter(f => !f.litige && f.date_echeance === hierStr)
   const bandeauEl = document.getElementById('bandeau-j1')
   const bandeauListeEl = document.getElementById('bandeau-j1-liste')
@@ -1935,19 +1936,41 @@ async function chargerFactures() {
                  <div style="font-size:10px;color:var(--muted);margin-top:1px;">${pct}%</div>`
               : `<span style="color:var(--muted);font-size:11px;">—</span>`
 
-            // Colonne Relance — avec indicateur de lecture discret
-            const indicateurLu = f.relance_email_id
-              ? (f.relance_lue
-                  ? `<span title="✓ Email ouvert par le client" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--success);margin-left:5px;vertical-align:middle;flex-shrink:0;"></span>`
-                  : `<span title="📨 Email envoyé — non ouvert" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--warn);margin-left:5px;vertical-align:middle;flex-shrink:0;"></span>`)
+            // ── Colonne Relance — pipeline R1/R2/Appel ──────────────────
+            const dot = (emailId, lue) => emailId
+              ? (lue
+                  ? `<span title="✓ Email ouvert" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--success);margin-left:4px;vertical-align:middle;flex-shrink:0;"></span>`
+                  : `<span title="📨 Email envoyé — non ouvert" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--warn);margin-left:4px;vertical-align:middle;flex-shrink:0;"></span>`)
               : ''
-            const relanceHtml = f.date_relance
-              ? `<div style="display:flex;align-items:center;gap:0;">
-                   <span style="font-size:11px;color:var(--muted);">${formatDate(f.date_relance)}</span>
-                   ${indicateurLu}
-                 </div>
-                 <button onclick="ouvrirModalRelance('${f.id}')" style="font-size:10px;padding:1px 6px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;margin-top:2px;">📤 Relancer</button>`
-              : `<button onclick="ouvrirModalRelance('${f.id}')" style="font-size:10.5px;padding:2px 7px;border-radius:4px;background:var(--brand-soft);color:var(--brand-deep);border:1px solid var(--brand);cursor:pointer;font-family:inherit;font-weight:600;">📤 Relancer</button>`
+
+            const etapeF = !f.date_relance ? 'r0'
+              : f.date_appel ? 'appel'
+              : f.date_relance_r2 ? 'r2'
+              : 'r1'
+            const joursR1 = f.date_relance ? Math.floor((new Date(aujourd_hui) - new Date(f.date_relance)) / 86400000) : 0
+            const r2Urgent = etapeF === 'r1' && joursR1 >= 15
+
+            let relanceHtml
+            if (etapeF === 'r0') {
+              relanceHtml = f.solde ? '' : `<button onclick="ouvrirModalRelance('${f.id}')" style="font-size:10.5px;padding:2px 7px;border-radius:4px;background:var(--brand-soft);color:var(--brand-deep);border:1px solid var(--brand);cursor:pointer;font-family:inherit;font-weight:600;">📤 R1</button>`
+            } else if (etapeF === 'r1') {
+              relanceHtml = `
+                <div style="display:flex;align-items:center;gap:2px;margin-bottom:3px;">
+                  <span style="font-size:10.5px;color:var(--muted);">R1 · ${formatDate(f.date_relance)}</span>${dot(f.relance_email_id, f.relance_lue)}
+                </div>
+                <button onclick="ouvrirModalRelanceR2('${f.id}')" style="font-size:10px;padding:2px 7px;border-radius:4px;background:${r2Urgent ? '#fee2e2' : 'var(--surface-alt)'};color:${r2Urgent ? '#991b1b' : 'var(--muted)'};border:1px solid ${r2Urgent ? '#fca5a5' : 'var(--border)'};cursor:pointer;font-family:inherit;font-weight:${r2Urgent ? '700' : '400'};white-space:nowrap;">${r2Urgent ? '🔴 R2 urgente' : '📤 R2'}</button>`
+            } else if (etapeF === 'r2') {
+              relanceHtml = `
+                <div style="display:flex;align-items:center;gap:2px;margin-bottom:3px;">
+                  <span style="font-size:10.5px;color:var(--muted);">R2 · ${formatDate(f.date_relance_r2)}</span>${dot(f.relance_r2_email_id, f.relance_r2_lue)}
+                </div>
+                <button onclick="ouvrirModalAppel('${f.id}')" style="font-size:10px;padding:2px 7px;border-radius:4px;background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd;cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap;">📞 Appel</button>`
+            } else {
+              relanceHtml = `
+                <div style="font-size:10.5px;color:var(--success);font-weight:600;margin-bottom:2px;">📞 ${formatDate(f.date_appel)}</div>
+                ${f.note_appel ? `<div style="font-size:10px;color:var(--muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(f.note_appel||'').replace(/"/g,'&quot;')}">${f.note_appel}</div>` : ''}
+                <button onclick="ouvrirModalAppel('${f.id}')" style="font-size:10px;padding:1px 6px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;margin-top:2px;">✏️ Modifier</button>`
+            }
 
             // Payé le éditable
             const payeLe = f.date_paiement
@@ -2195,7 +2218,7 @@ SEGEDIA SERVICES`
   }
 
   // Remplir le modal
-  window._relanceData = { client, email, ids }
+  window._relanceData = { client, email, ids, type: 'r1' }
   document.getElementById('modal-relance-client').textContent = client
   document.getElementById('modal-relance-nb').textContent =
     `${facImpayees.length} facture${facImpayees.length > 1 ? 's' : ''} impayée${facImpayees.length > 1 ? 's' : ''} · Total : ${fmt(total)} €`
@@ -2256,7 +2279,7 @@ async function envoyerRelanceEmail() {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${SUPABASE_KEY}`,
       },
-      body: JSON.stringify({ to: email, subject: sujet, html, ids }),
+      body: JSON.stringify({ to: email, subject: sujet, html, ids, type: window._relanceData?.type || 'r1' }),
     })
     const data = await res.json()
     if (!res.ok || data.error) throw new Error(data.error || 'Erreur serveur')
@@ -2264,6 +2287,7 @@ async function envoyerRelanceEmail() {
     fermerModals()
     afficherToast(`✅ Mail envoyé à ${email}`)
     chargerFactures()
+    mettreAJourBadgeRecouvrement()
   } catch (e) {
     btn.textContent = '📤 Envoyer'
     btn.disabled = false
@@ -2277,6 +2301,323 @@ function afficherToast(msg, erreur = false) {
   t.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:600;font-family:inherit;box-shadow:0 4px 16px rgba(0,0,0,0.15);transition:opacity 0.4s;background:${erreur ? '#fee2e2' : '#d1fae5'};color:${erreur ? '#991b1b' : '#166534'};border:1px solid ${erreur ? '#fca5a5' : '#6ee7b7'};`
   document.body.appendChild(t)
   setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 400) }, 3500)
+}
+
+// ── Relance R2 ──────────────────────────────────────────
+function ouvrirModalRelanceR2(id) {
+  const toutes = window._toutesFactures || []
+  const facture = toutes.find(f => f.id === id)
+  if (!facture) return
+
+  const client = facture.client
+  const email = toutes.find(f => f.client === client && f.email_client)?.email_client || null
+  const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
+
+  const facImpayees = toutes
+    .filter(f => f.client === client && !f.solde && !f.litige)
+    .sort((a, b) => (a.date_echeance || '').localeCompare(b.date_echeance || ''))
+
+  const total = facImpayees.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
+  const ids   = facImpayees.map(f => f.id)
+
+  let sujet, corps
+  if (facImpayees.length === 1) {
+    const f = facImpayees[0]
+    sujet = `Relance 2ème avis — Facture N°${f.numero} — SEGEDIA SERVICES`
+    corps = `Bonjour,
+
+Sauf erreur de notre part, et malgré notre premier rappel, la facture N°${f.numero} d'un montant de ${fmt(f.montant)} €, dont l'échéance était fixée au ${formatDate(f.date_echeance)}, n'a toujours pas été réglée à ce jour.
+
+Nous vous demandons de bien vouloir procéder au règlement dans les plus brefs délais, aux coordonnées bancaires figurant au bas de votre facture.
+
+Sans retour de votre part sous 5 jours ouvrés, nous serons contraints d'envisager d'autres mesures de recouvrement.
+
+Si le paiement a déjà été effectué, merci de ne pas tenir compte de ce message.
+
+Cordialement,
+SEGEDIA SERVICES`
+  } else {
+    const lignes = facImpayees.map(f =>
+      `  • N°${f.numero} - ${fmt(f.montant)} € - échéance le ${formatDate(f.date_echeance)}`
+    ).join('\n')
+    sujet = `Relance 2ème avis — Factures impayées — SEGEDIA SERVICES`
+    corps = `Bonjour,
+
+Sauf erreur de notre part, et malgré notre premier rappel, les factures suivantes n'ont toujours pas été réglées à ce jour :
+
+${lignes}
+
+Total dû : ${fmt(total)} €
+
+Nous vous demandons de bien vouloir procéder au règlement dans les plus brefs délais, aux coordonnées bancaires figurant au bas de vos factures.
+
+Sans retour de votre part sous 5 jours ouvrés, nous serons contraints d'envisager d'autres mesures de recouvrement.
+
+Si le paiement a déjà été effectué, merci de ne pas tenir compte de ce message.
+
+Cordialement,
+SEGEDIA SERVICES`
+  }
+
+  window._relanceData = { client, email, ids, type: 'r2' }
+  document.getElementById('modal-relance-client').textContent = client
+  document.getElementById('modal-relance-nb').textContent =
+    `2ème relance · ${facImpayees.length} facture${facImpayees.length > 1 ? 's' : ''} · Total : ${fmt(total)} €`
+  document.getElementById('modal-relance-to').textContent = email || 'Aucun email renseigné'
+  document.getElementById('modal-relance-to').style.color = email ? 'var(--success)' : 'var(--danger)'
+  document.getElementById('modal-relance-sujet').value = sujet
+  document.getElementById('modal-relance-corps').value = corps
+
+  const warning = document.getElementById('modal-relance-warning')
+  const sendBtn = document.getElementById('btn-envoyer-relance')
+  const titleEl = document.querySelector('#modal-relance-email h2')
+  if (titleEl) titleEl.innerHTML = `📤 Relance R2 — <span id="modal-relance-client">${client}</span>`
+  if (!email) {
+    warning.style.display = 'flex'
+    sendBtn.disabled = true; sendBtn.style.opacity = '0.4'; sendBtn.style.cursor = 'not-allowed'
+  } else {
+    warning.style.display = 'none'
+    sendBtn.disabled = false; sendBtn.style.opacity = '1'; sendBtn.style.cursor = 'pointer'
+  }
+  document.getElementById('modal-relance-email').classList.remove('hidden')
+}
+
+// ── Modal Appel ─────────────────────────────────────────
+function ouvrirModalAppel(id) {
+  const toutes = window._toutesFactures || []
+  const facture = toutes.find(f => f.id === id)
+  if (!facture) return
+
+  const client = facture.client
+  const facImpayees = toutes.filter(f => f.client === client && !f.solde && !f.litige)
+  const ids = facImpayees.map(f => f.id)
+  const noteExistante = facImpayees.find(f => f.note_appel)?.note_appel || ''
+  const dateExistante = facImpayees.find(f => f.date_appel)?.date_appel || new Date().toISOString().split('T')[0]
+  const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
+  const total = facImpayees.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
+
+  window._appelData = { client, ids }
+  document.getElementById('modal-appel-client').textContent = client
+  document.getElementById('modal-appel-nb').textContent =
+    `${facImpayees.length} facture${facImpayees.length > 1 ? 's' : ''} impayée${facImpayees.length > 1 ? 's' : ''} · Total : ${fmt(total)} €`
+  document.getElementById('modal-appel-date').value = dateExistante
+  document.getElementById('modal-appel-note').value = noteExistante
+
+  document.getElementById('modal-appel').classList.remove('hidden')
+  setTimeout(() => document.getElementById('modal-appel-note').focus(), 50)
+}
+
+async function enregistrerAppel() {
+  const { client, ids } = window._appelData || {}
+  if (!ids || !ids.length) return
+
+  const date_appel = document.getElementById('modal-appel-date').value
+  const note_appel = document.getElementById('modal-appel-note').value.trim() || null
+
+  if (!date_appel) { alert('Veuillez saisir une date.'); return }
+
+  await db.from('factures').update({ date_appel, note_appel }).in('id', ids)
+  fermerModals()
+  afficherToast(`📞 Appel enregistré pour ${client}`)
+  chargerFactures()
+  mettreAJourBadgeRecouvrement()
+}
+
+// ── Badge nav Recouvrement ─────────────────────────────
+async function mettreAJourBadgeRecouvrement() {
+  if (!utilisateurAccesFactures) return
+  const badge = document.getElementById('nav-badge-recouvrement')
+  if (!badge) return
+  const auj = new Date().toISOString().split('T')[0]
+  const { data: exclusData } = await db.from('clients_exclus').select('nom')
+  const { data: factures }   = await db.from('factures').select('client,date_echeance,date_relance,date_relance_r2,date_appel,solde,litige').eq('solde', false).eq('litige', false)
+  const nomsExclus = new Set((exclusData || []).map(e => e.nom))
+  const enRetard = (factures || []).filter(f => !nomsExclus.has(f.client) && f.date_echeance && f.date_echeance < auj)
+  const parClient = {}
+  enRetard.forEach(f => { if (!parClient[f.client]) parClient[f.client] = f })
+  // Count urgent: r0 (no relance) + r1_urgent (R1 ≥ 15j, no R2)
+  let urgent = 0
+  Object.values(parClient).forEach(f => {
+    if (!f.date_relance) { urgent++; return }
+    if (!f.date_relance_r2 && !f.date_appel) {
+      const j = Math.floor((new Date(auj) - new Date(f.date_relance)) / 86400000)
+      if (j >= 15) urgent++
+    }
+  })
+  badge.textContent = urgent > 0 ? urgent : ''
+  badge.style.display = urgent > 0 ? 'inline-block' : 'none'
+}
+
+// ── Page Recouvrement ──────────────────────────────────
+async function chargerRecouvrement() {
+  if (!utilisateurAccesFactures) return
+  const liste = document.getElementById('recouvrement-liste')
+  const kpis  = document.getElementById('recouvrement-kpis')
+  const stats = document.getElementById('recouvrement-stats-bar')
+  if (!liste) return
+  liste.innerHTML = `<div style="color:var(--muted);text-align:center;padding:40px 0;font-size:13px;">Chargement…</div>`
+
+  const [{ data: exclusData }, { data: factures }] = await Promise.all([
+    db.from('clients_exclus').select('nom'),
+    db.from('factures').select('*').eq('solde', false).eq('litige', false).not('date_echeance', 'is', null).order('date_echeance', { ascending: true })
+  ])
+
+  const nomsExclus = new Set((exclusData || []).map(e => e.nom))
+  const auj = new Date().toISOString().split('T')[0]
+  const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
+
+  const enRetard = (factures || []).filter(f => !nomsExclus.has(f.client) && f.date_echeance < auj)
+
+  if (!enRetard.length) {
+    if (kpis) kpis.innerHTML = ''
+    if (stats) stats.innerHTML = ''
+    liste.innerHTML = `<div style="text-align:center;padding:60px 0;color:var(--success);font-size:15px;font-weight:600;">✅ Aucune facture en retard !</div>`
+    return
+  }
+
+  // Group by client
+  const parClient = {}
+  enRetard.forEach(f => {
+    if (!parClient[f.client]) parClient[f.client] = []
+    parClient[f.client].push(f)
+  })
+
+  function getEtapeClient(facts) {
+    if (facts.some(f => f.date_appel)) return 'appel'
+    if (facts.some(f => f.date_relance_r2)) return 'r2'
+    if (facts.some(f => f.date_relance)) return 'r1'
+    return 'r0'
+  }
+
+  const clientsList = Object.entries(parClient).map(([nom, facts]) => {
+    const etape = getEtapeClient(facts)
+    const r1Date = facts.find(f => f.date_relance)?.date_relance
+    const joursR1 = r1Date ? Math.floor((new Date(auj) - new Date(r1Date)) / 86400000) : 0
+    const r2Urgent = etape === 'r1' && joursR1 >= 15
+    const total = facts.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
+    const joursRetardMax = Math.max(...facts.map(f => Math.floor((new Date(auj) - new Date(f.date_echeance)) / 86400000)))
+    return { nom, facts, etape, r2Urgent, joursR1, total, joursRetardMax }
+  }).sort((a, b) => {
+    const order = { r0: 0, r1_urgent: 1, r1: 2, r2: 3, appel: 4 }
+    const ka = a.r2Urgent ? 'r1_urgent' : a.etape
+    const kb = b.r2Urgent ? 'r1_urgent' : b.etape
+    return (order[ka] ?? 9) - (order[kb] ?? 9)
+  })
+
+  // KPI counts
+  const nbR0     = clientsList.filter(c => c.etape === 'r0').length
+  const nbR1Urg  = clientsList.filter(c => c.r2Urgent).length
+  const nbR1     = clientsList.filter(c => c.etape === 'r1' && !c.r2Urgent).length
+  const nbR2     = clientsList.filter(c => c.etape === 'r2').length
+  const nbAppel  = clientsList.filter(c => c.etape === 'appel').length
+  const totalEnc = enRetard.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
+
+  if (stats) stats.innerHTML = `${clientsList.length} client${clientsList.length > 1 ? 's' : ''} · ${enRetard.length} facture${enRetard.length > 1 ? 's' : ''} · <b style="font-family:'IBM Plex Mono',monospace;">${fmt(totalEnc)} €</b> en retard`
+
+  const kpiData = [
+    { label: 'À relancer', count: nbR0,    bg: '#fef2f2', border: '#fecaca', col: '#991b1b', emoji: '⚠' },
+    { label: 'R2 urgente',  count: nbR1Urg, bg: '#fff7ed', border: '#fed7aa', col: '#9a3412', emoji: '🔴' },
+    { label: 'R1 envoyée',  count: nbR1,    bg: '#fffbeb', border: '#fde68a', col: '#78350f', emoji: '✉' },
+    { label: 'R2 envoyée',  count: nbR2,    bg: '#eff6ff', border: '#bfdbfe', col: '#1e40af', emoji: '📧' },
+    { label: 'Appel fait',  count: nbAppel, bg: '#f0fdf4', border: '#86efac', col: '#166534', emoji: '📞' },
+  ]
+  if (kpis) kpis.innerHTML = kpiData.map(k => `
+    <div style="background:${k.bg};border:1px solid ${k.border};border-radius:12px;padding:14px 18px;min-width:110px;flex:1;">
+      <div style="font-size:10px;font-weight:700;color:${k.col};text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;">${k.emoji} ${k.label}</div>
+      <div style="font-size:28px;font-weight:700;color:${k.col};line-height:1;">${k.count}</div>
+      <div style="font-size:10.5px;color:${k.col};opacity:0.6;margin-top:2px;">client${k.count !== 1 ? 's' : ''}</div>
+    </div>`).join('')
+
+  // Stage config
+  const stageCfg = {
+    r0:    { label: 'À relancer',       bg: '#fef2f2', border: '#fecaca', col: '#991b1b', dot: '#ef4444' },
+    r1:    { label: 'R1 envoyée',       bg: '#fffbeb', border: '#fde68a', col: '#78350f', dot: '#f59e0b' },
+    r1u:   { label: '⚠ R2 urgente',    bg: '#fff7ed', border: '#fed7aa', col: '#9a3412', dot: '#f97316' },
+    r2:    { label: 'R2 envoyée',       bg: '#eff6ff', border: '#bfdbfe', col: '#1e40af', dot: '#3b82f6' },
+    appel: { label: '📞 Appelé',        bg: '#f0fdf4', border: '#86efac', col: '#166534', dot: '#22c55e' },
+  }
+
+  const dotHtml = (emailId, lue) => emailId
+    ? (lue
+        ? `<span title="✓ Ouvert" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--success);vertical-align:middle;"></span>`
+        : `<span title="Non ouvert" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--warn);vertical-align:middle;"></span>`)
+    : ''
+
+  liste.innerHTML = clientsList.map(c => {
+    const cfgKey = c.etape === 'appel' ? 'appel' : c.etape === 'r2' ? 'r2' : c.r2Urgent ? 'r1u' : c.etape === 'r1' ? 'r1' : 'r0'
+    const cfg = stageCfg[cfgKey]
+
+    // Representative fact values for timeline
+    const r1Fact = c.facts.find(f => f.date_relance)
+    const r2Fact = c.facts.find(f => f.date_relance_r2)
+    const appelFact = c.facts.find(f => f.date_appel)
+    const firstId = c.facts[0]?.id
+
+    // Timeline steps
+    const steps = [
+      { label: `En retard`, sub: `depuis ${c.joursRetardMax}j`, done: true, active: c.etape === 'r0', col: '#ef4444' },
+      { label: `R1 envoyée`, sub: r1Fact ? formatDate(r1Fact.date_relance) : '—', done: !!r1Fact, extra: r1Fact ? dotHtml(r1Fact.relance_email_id, r1Fact.relance_lue) : '', col: '#f59e0b' },
+      { label: `R2 envoyée`, sub: r2Fact ? formatDate(r2Fact.date_relance_r2) : '—', done: !!r2Fact, extra: r2Fact ? dotHtml(r2Fact.relance_r2_email_id, r2Fact.relance_r2_lue) : '', col: '#3b82f6' },
+      { label: `Appel`, sub: appelFact ? formatDate(appelFact.date_appel) : '—', done: !!appelFact, col: '#22c55e' },
+    ]
+
+    const timelineHtml = `
+      <div style="display:flex;align-items:flex-start;gap:0;margin:14px 0 16px;position:relative;">
+        ${steps.map((s, i) => `
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;position:relative;">
+            ${i < steps.length - 1 ? `<div style="position:absolute;top:8px;left:50%;right:-50%;height:2px;background:${s.done ? s.col : 'var(--border)'};z-index:0;"></div>` : ''}
+            <div style="width:16px;height:16px;border-radius:50%;background:${s.done ? s.col : 'var(--border)'};border:2px solid ${s.done ? s.col : 'var(--border-soft)'};z-index:1;position:relative;"></div>
+            <div style="font-size:10px;font-weight:600;color:${s.done ? s.col : 'var(--muted)'};margin-top:5px;text-align:center;">${s.label} ${s.extra || ''}</div>
+            <div style="font-size:9.5px;color:var(--muted);margin-top:1px;text-align:center;">${s.sub}</div>
+          </div>`).join('')}
+      </div>`
+
+    // Action button
+    let actionBtn = ''
+    if (c.etape === 'r0') {
+      actionBtn = `<button onclick="ouvrirModalRelance('${firstId}')" style="font-size:12px;padding:6px 14px;border-radius:7px;background:var(--brand);color:#fff;border:none;cursor:pointer;font-family:inherit;font-weight:600;">📤 Envoyer R1</button>`
+    } else if (c.etape === 'r1') {
+      actionBtn = `<button onclick="ouvrirModalRelanceR2('${firstId}')" style="font-size:12px;padding:6px 14px;border-radius:7px;background:${c.r2Urgent ? '#ef4444' : 'var(--brand)'};color:#fff;border:none;cursor:pointer;font-family:inherit;font-weight:600;">${c.r2Urgent ? '🔴 Envoyer R2 (urgent!)' : '📤 Envoyer R2'}</button>`
+    } else if (c.etape === 'r2') {
+      actionBtn = `<button onclick="ouvrirModalAppel('${firstId}')" style="font-size:12px;padding:6px 14px;border-radius:7px;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-family:inherit;font-weight:600;">📞 Enregistrer appel</button>`
+    } else {
+      actionBtn = `<button onclick="ouvrirModalAppel('${firstId}')" style="font-size:12px;padding:6px 14px;border-radius:7px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;">✏️ Modifier appel</button>`
+    }
+
+    // Invoice list
+    const facLignes = c.facts.map(f => {
+      const j = Math.floor((new Date(auj) - new Date(f.date_echeance)) / 86400000)
+      return `
+        <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border-soft);">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);min-width:80px;">${f.numero}</div>
+          <div style="flex:1;font-size:12px;color:var(--ink);">${formatDate(f.date_echeance)}</div>
+          <div style="font-size:10.5px;color:var(--danger);font-weight:600;">+${j}j</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--danger);">${fmt(f.montant)} €</div>
+        </div>`
+    }).join('')
+
+    return `
+      <div style="background:var(--surface);border:1px solid ${cfg.border};border-left:4px solid ${cfg.dot};border-radius:12px;padding:16px 20px;margin-bottom:12px;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
+              <div style="font-size:14px;font-weight:700;color:var(--ink);">${c.nom}</div>
+              <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;padding:2px 8px;border-radius:10px;background:${cfg.bg};color:${cfg.col};border:1px solid ${cfg.border};">${cfg.label}</span>
+            </div>
+            <div style="font-size:12px;color:var(--muted);">${c.facts.length} facture${c.facts.length > 1 ? 's' : ''} · <b style="font-family:'IBM Plex Mono',monospace;color:var(--danger);">${fmt(c.total)} €</b></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            ${actionBtn}
+            <button onclick="this.parentElement.parentElement.querySelector('.rec-detail').style.display=this.parentElement.parentElement.querySelector('.rec-detail').style.display==='none'?'block':'none';this.textContent=this.textContent.includes('▼')?'▲ Masquer':'▼ Factures'" style="font-size:11.5px;padding:5px 12px;border-radius:7px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;">▼ Factures</button>
+          </div>
+        </div>
+        ${timelineHtml}
+        ${appelFact?.note_appel ? `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:8px 12px;font-size:12px;color:#166534;margin-bottom:12px;">📝 Note appel : ${appelFact.note_appel}</div>` : ''}
+        <div class="rec-detail" style="display:none;margin-top:4px;">${facLignes}</div>
+      </div>`
+  }).join('')
+
+  mettreAJourBadgeRecouvrement()
 }
 
 // ── Encaissements ────────────────────────────────────────
