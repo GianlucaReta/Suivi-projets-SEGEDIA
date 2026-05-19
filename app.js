@@ -2934,7 +2934,6 @@ async function chargerAnalytique() {
 
   // Graphique selon la période choisie
   const moisNoms = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
-  const now = new Date()
   let points = []
 
   if (analytiquePeriode === 'hebdomadaire') {
