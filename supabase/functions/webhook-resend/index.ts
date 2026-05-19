@@ -23,15 +23,25 @@ Deno.serve(async (req) => {
 
       const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-      // Marquer toutes les factures liées à cet email comme lues
-      const { error } = await db
+      // Marquer les factures R1 comme lues
+      const { error: err1 } = await db
         .from("factures")
         .update({ relance_lue: true })
         .eq("relance_email_id", emailId)
-        .eq("relance_lue", false); // seulement si pas déjà marqué
+        .eq("relance_lue", false);
 
-      if (error) console.error("Supabase update error:", error);
-      else console.log(`Email ${emailId} marqué comme lu`);
+      if (err1) console.error("Supabase update error (R1):", err1);
+      else console.log(`Email ${emailId} marqué comme lu (R1)`);
+
+      // Marquer les factures R2 comme lues
+      const { error: err2 } = await db
+        .from("factures")
+        .update({ relance_r2_lue: true })
+        .eq("relance_r2_email_id", emailId)
+        .eq("relance_r2_lue", false);
+
+      if (err2) console.error("Supabase update error (R2):", err2);
+      else console.log(`Email ${emailId} marqué comme lu (R2)`);
     }
 
     return new Response(JSON.stringify({ received: true }), {

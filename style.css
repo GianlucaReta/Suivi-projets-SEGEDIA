@@ -1068,3 +1068,10 @@ body {
 
 .dashboard-table tr:last-child td { border-bottom: none; }
 .dashboard-table tr:hover td { background: var(--surface-alt); }
+
+/* ─── RECOUVREMENT ──────────────────────────────────────── */
+#page-recouvrement .rec-detail {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 8px;
+  margin-top: 4px;
+}

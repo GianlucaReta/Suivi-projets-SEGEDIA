@@ -16,7 +16,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { to, subject, html, ids } = await req.json();
+    const { to, subject, html, ids, type } = await req.json();
 
     if (!to || !subject || !html) {
       return new Response(
@@ -53,17 +53,28 @@ Deno.serve(async (req) => {
     const resendData = await resendRes.json();
     const emailId = resendData.id ?? null;
 
-    // ── Mise à jour factures : date_relance + email_id + reset lu ──
+    // ── Mise à jour factures selon le type de relance ──────────
     if (ids && ids.length > 0) {
       const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-      const date_relance = new Date().toISOString().split("T")[0];
-      const { error } = await db
-        .from("factures")
-        .update({
-          date_relance,
+      const dateAujourdhui = new Date().toISOString().split("T")[0];
+      let updatePayload: Record<string, unknown>;
+      if (type === "r2") {
+        updatePayload = {
+          date_relance_r2: dateAujourdhui,
+          relance_r2_email_id: emailId,
+          relance_r2_lue: false,
+        };
+      } else {
+        // Par défaut (r1 ou compat. ascendante)
+        updatePayload = {
+          date_relance: dateAujourdhui,
           relance_email_id: emailId,
           relance_lue: false,
-        })
+        };
+      }
+      const { error } = await db
+        .from("factures")
+        .update(updatePayload)
         .in("id", ids);
       if (error) console.error("Supabase update error:", error);
     }
