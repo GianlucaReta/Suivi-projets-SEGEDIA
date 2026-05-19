@@ -2012,8 +2012,8 @@ async function chargerFactures() {
                   </span>
                 </td>
                 <td style="padding:10px 16px;">${relanceHtml}</td>
-                <td style="padding:6px 16px; width:130px; max-width:130px;">
-                  <button onclick="ouvrirNoteFacture('${f.id}', \`${(f.note || '').replace(/`/g,'\\`').replace(/\n/g,' ')}\`)" style="font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);background:var(--surface-alt);cursor:pointer;color:${f.note ? 'var(--ink-soft)' : 'var(--muted)'};font-family:inherit;width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;text-align:left;" title="${(f.note||'').replace(/"/g,'&quot;')}">${f.note ? '📝 ' + f.note.slice(0,22) + (f.note.length > 22 ? '…' : '') : '+ Note'}</button>
+                <td style="padding:6px 16px 6px 16px; width:150px; max-width:150px;">
+                  <button onclick="ouvrirNoteFacture('${f.id}', \`${(f.note || '').replace(/`/g,'\\`').replace(/\n/g,' ')}\`)" style="font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);background:var(--surface-alt);cursor:pointer;color:${f.note ? 'var(--ink-soft)' : 'var(--muted)'};font-family:inherit;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;text-align:left;" title="${(f.note||'').replace(/"/g,'&quot;')}">${f.note ? '📝 ' + f.note.slice(0,22) + (f.note.length > 22 ? '…' : '') : '+ Note'}</button>
                 </td>
                 <td style="padding:10px 16px; text-align:center; white-space:nowrap;">${actionBtns}</td>
               </tr>`
