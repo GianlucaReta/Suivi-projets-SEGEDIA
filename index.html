@@ -36,14 +36,14 @@
     const val = document.getElementById('login-code').value;
     const hash = await sha256(val);
     if (hash === HASH) {
-      sessionStorage.setItem('sp_auth', '1');
+      localStorage.setItem('sp_auth', '1');
       document.getElementById('login-screen').style.display = 'none';
     } else {
       document.getElementById('login-error').style.display = 'block';
       document.getElementById('login-code').value = '';
     }
   };
-  if (sessionStorage.getItem('sp_auth') !== '1') {
+  if (localStorage.getItem('sp_auth') !== '1') {
     document.getElementById('login-screen').style.display = 'flex';
   }
 })();
