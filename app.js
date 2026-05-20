@@ -2012,8 +2012,8 @@ async function chargerFactures() {
                   </span>
                 </td>
                 <td style="padding:10px 16px;">${relanceHtml}</td>
-                <td style="padding:6px 16px 6px 16px; width:150px; max-width:150px;">
-                  <button onclick="ouvrirNoteFacture('${f.id}', \`${(f.note || '').replace(/`/g,'\\`').replace(/\n/g,' ')}\`)" style="font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);background:var(--surface-alt);cursor:pointer;color:${f.note ? 'var(--ink-soft)' : 'var(--muted)'};font-family:inherit;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;text-align:left;" title="${(f.note||'').replace(/"/g,'&quot;')}">${f.note ? '📝 ' + f.note.slice(0,22) + (f.note.length > 22 ? '…' : '') : '+ Note'}</button>
+                <td style="padding:6px 20px 6px 16px; width:160px; max-width:160px;">
+                  <button onclick="ouvrirNoteFacture('${f.id}', \`${(f.note || '').replace(/`/g,'\\`').replace(/\n/g,' ')}\`)" style="font-size:11px;padding:3px 10px;border-radius:5px;border:1px solid var(--border);background:var(--surface-alt);cursor:pointer;color:${f.note ? 'var(--ink-soft)' : 'var(--muted)'};font-family:inherit;width:100%;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;text-align:left;" title="${(f.note||'').replace(/"/g,'&quot;')}">${f.note ? '📝 ' + f.note.slice(0,22) + (f.note.length > 22 ? '…' : '') : '+ Note'}</button>
                 </td>
                 <td style="padding:10px 16px; text-align:center; white-space:nowrap;">${actionBtns}</td>
               </tr>`
@@ -2334,7 +2334,7 @@ Sauf erreur de notre part, et malgré notre premier rappel, la facture N°${f.nu
 
 Nous vous demandons de bien vouloir procéder au règlement dans les plus brefs délais, aux coordonnées bancaires figurant au bas de votre facture.
 
-Sans retour de votre part sous 5 jours ouvrés, nous serons contraints d'envisager d'autres mesures de recouvrement.
+Sans règlement de votre part sous 5 jours ouvrés, votre retard de paiement est susceptible d'impacter la continuité de nos prestations et l'acheminement de vos commandes futures.
 ${echeancier}
 Si le paiement a déjà été effectué, merci de ne pas tenir compte de ce message.
 
@@ -2355,7 +2355,7 @@ Total dû : ${fmt(total)} €
 
 Nous vous demandons de bien vouloir procéder au règlement dans les plus brefs délais, aux coordonnées bancaires figurant au bas de vos factures.
 
-Sans retour de votre part sous 5 jours ouvrés, nous serons contraints d'envisager d'autres mesures de recouvrement.
+Sans règlement de votre part sous 5 jours ouvrés, votre retard de paiement est susceptible d'impacter la continuité de nos prestations et l'acheminement de vos commandes futures.
 ${echeancier}
 Si le paiement a déjà été effectué, merci de ne pas tenir compte de ce message.
 
