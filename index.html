@@ -13,7 +13,7 @@
 <body>
 
 <!-- ── Écran de connexion ─────────────────────────────── -->
-<div id="login-screen" style="display:none;position:fixed;inset:0;background:#f5f4f1;z-index:9999;display:flex;align-items:center;justify-content:center;">
+<div id="login-screen" style="display:none;position:fixed;inset:0;background:#f5f4f1;z-index:9999;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:16px;padding:40px 36px;box-shadow:0 4px 32px rgba(0,0,0,0.10);width:320px;text-align:center;">
     <img src="segedia-logo.jpeg" style="width:64px;height:64px;border-radius:12px;object-fit:cover;margin-bottom:20px;" />
     <div style="font-weight:700;font-size:20px;color:#1a1a1a;margin-bottom:4px;">SuiviPro</div>
@@ -22,27 +22,65 @@
       style="width:100%;box-sizing:border-box;text-align:center;font-size:22px;letter-spacing:0.3em;padding:12px;border:2px solid #e5e7eb;border-radius:10px;outline:none;font-family:monospace;"
       oninput="if(this.value.length===6) verifierCode()" />
     <div id="login-error" style="color:#ef4444;font-size:13px;margin-top:12px;display:none;">Code incorrect</div>
+    <div id="login-welcome" style="color:#22c55e;font-size:13px;margin-top:12px;display:none;font-weight:600;"></div>
   </div>
 </div>
 
 <script>
 (function() {
-  const HASH = 'a2a29b811cff839c6d3e337bb3ccd9e04b25d2561315154216b9b4cb5ae1603b';
+  // Code de secours admin (Gianluca, hash de 030621). Permet la connexion même si BDD pas migrée.
+  const FALLBACK_HASH = 'a2a29b811cff839c6d3e337bb3ccd9e04b25d2561315154216b9b4cb5ae1603b';
+  const SB_URL = 'https://guzbikygjwsvztlthmnr.supabase.co';
+  const SB_KEY = 'sb_publishable_BqknWAgxurkaidzDdyQ60g_GnlnIcYk';
+
   async function sha256(msg) {
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg));
     return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
   }
+
   window.verifierCode = async function() {
     const val = document.getElementById('login-code').value;
+    if (val.length !== 6) return;
+
+    const errEl = document.getElementById('login-error');
+    const welEl = document.getElementById('login-welcome');
+    errEl.style.display = 'none';
+
+    // 1. Chercher un employé avec ce code PIN dans la base
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/employes?code_pin=eq.${encodeURIComponent(val)}&select=id,nom,equipe,role,acces_factures`, {
+        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+      });
+      const users = await r.json();
+      if (Array.isArray(users) && users.length === 1) {
+        const u = users[0];
+        localStorage.setItem('sp_auth', '1');
+        localStorage.setItem('suivi_user_id', u.id);
+        localStorage.setItem('suivi_user_nom', u.nom);
+        localStorage.setItem('suivi_user_equipe', u.equipe || '');
+        localStorage.setItem('suivi_user_role', u.role || 'operationnel');
+        localStorage.setItem('suivi_acces_factures', u.acces_factures ? '1' : '0');
+        welEl.textContent = `Bonjour ${u.nom}`;
+        welEl.style.display = 'block';
+        setTimeout(() => { document.getElementById('login-screen').style.display = 'none'; window.location.reload(); }, 600);
+        return;
+      }
+    } catch (e) { console.warn('lookup error', e); }
+
+    // 2. Fallback : hash legacy (admin Gianluca pré-migration)
     const hash = await sha256(val);
-    if (hash === HASH) {
+    if (hash === FALLBACK_HASH) {
       localStorage.setItem('sp_auth', '1');
+      localStorage.setItem('suivi_user_role', 'admin');
+      localStorage.setItem('suivi_acces_factures', '1');
       document.getElementById('login-screen').style.display = 'none';
-    } else {
-      document.getElementById('login-error').style.display = 'block';
-      document.getElementById('login-code').value = '';
+      return;
     }
+
+    errEl.style.display = 'block';
+    document.getElementById('login-code').value = '';
   };
+
   if (localStorage.getItem('sp_auth') !== '1') {
     document.getElementById('login-screen').style.display = 'flex';
   }
@@ -123,14 +161,18 @@
       </button>
     </div>
 
-    <div class="sidebar-footer" onclick="ouvrirSelecteurUtilisateur()" style="cursor:pointer;" title="Changer de profil">
-      <div class="sidebar-user">
+    <div class="sidebar-footer" style="position:relative;">
+      <div class="sidebar-user" onclick="ouvrirMenuUtilisateur()" style="cursor:pointer;" title="Menu utilisateur">
         <div class="sidebar-user-avatar" id="sidebar-user-avatar">SG</div>
         <div style="flex:1; min-width:0;">
           <div class="sidebar-user-name" id="sidebar-user-nom">Segedia</div>
-          <div class="sidebar-user-role" id="sidebar-user-role">Cliquer pour choisir</div>
+          <div class="sidebar-user-role" id="sidebar-user-role">Cliquer pour menu</div>
         </div>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0; color:var(--muted-soft);"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div id="menu-utilisateur" style="display:none;position:absolute;bottom:calc(100% + 4px);left:12px;right:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.12);overflow:hidden;z-index:50;">
+        <button onclick="ouvrirSelecteurUtilisateur();fermerMenuUtilisateur()" style="width:100%;text-align:left;padding:10px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--ink);font-family:inherit;border-bottom:1px solid var(--border-soft);">Changer de profil</button>
+        <button onclick="if(confirm('Se déconnecter ?'))deconnexion()" style="width:100%;text-align:left;padding:10px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--danger);font-family:inherit;">Se déconnecter</button>
       </div>
     </div>
   </aside>
@@ -561,6 +603,24 @@
       <label>Téléphone</label>
       <input type="tel" id="input-employe-telephone" placeholder="06 00 00 00 00" />
     </div>
+
+    <!-- Section admin : rôle + code PIN -->
+    <div id="section-admin-employe" style="display:none;border-top:1px dashed var(--border);padding-top:14px;margin-top:14px;">
+      <div style="font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:600;letter-spacing:0.07em;margin-bottom:10px;">⚙ Réservé administrateur</div>
+      <div class="form-group">
+        <label>Rôle dans l'application</label>
+        <select id="input-employe-role">
+          <option value="operationnel">Opérationnel — projets & tâches uniquement</option>
+          <option value="commercial">Commercial — + factures & relances</option>
+          <option value="admin">Admin — tout accès + gestion utilisateurs</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Code PIN d'accès (6 chiffres) <span style="color:var(--muted);font-size:11px;font-weight:400;">— laisser vide pour ne pas donner accès</span></label>
+        <input type="text" id="input-employe-pin" inputmode="numeric" maxlength="6" placeholder="123456" style="font-family:monospace;letter-spacing:0.15em;" />
+      </div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="fermerModals()">Annuler</button>
       <button class="btn btn-danger" id="btn-supprimer-employe" onclick="supprimerEmploye()" style="display:none;">Supprimer</button>
