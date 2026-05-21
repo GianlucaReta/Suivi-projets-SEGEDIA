@@ -2612,7 +2612,7 @@ async function chargerRecouvrement() {
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             ${actionBtn}
-            <button onclick="this.parentElement.parentElement.querySelector('.rec-detail').style.display=this.parentElement.parentElement.querySelector('.rec-detail').style.display==='none'?'block':'none';this.textContent=this.textContent.includes('▼')?'▲ Masquer':'▼ Factures'" style="font-size:11.5px;padding:5px 12px;border-radius:7px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;">▼ Factures</button>
+            <button onclick="(function(btn){const d=btn.closest('[style*=border-radius]').querySelector('.rec-detail');d.style.display=d.style.display==='none'?'block':'none';btn.innerHTML=d.style.display==='none'?'▼ Factures':'▲ Masquer';})(this)" style="font-size:11.5px;padding:5px 12px;border-radius:7px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;">▼ Factures</button>
           </div>
         </div>
         ${timelineHtml}
@@ -2849,9 +2849,17 @@ async function chargerAnalytique() {
   const soldeesDansDelai = soldees.filter(f => f.date_paiement <= f.date_echeance)
   const tauxGlobal = soldees.length ? Math.round((soldeesDansDelai.length / soldees.length) * 100) : null
 
+  // ── Encaissé ce mois + Facturé ce mois ──────────────────────
+  const now = new Date()
+  const moisActuel = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
+  const encaissesMois = toutes.filter(f => f.date_paiement && f.date_paiement.startsWith(moisActuel))
+  const encaisseMoisTotal = encaissesMois.reduce((s,f) => s + (parseFloat(f.montant)||0), 0)
+  const facturesMois = toutes.filter(f => f.date_emission && f.date_emission.startsWith(moisActuel))
+  const factureMoisTotal = facturesMois.reduce((s,f) => s + (parseFloat(f.montant)||0), 0)
+  const tauxMois = factureMoisTotal > 0 ? Math.round((encaisseMoisTotal / factureMoisTotal) * 100) : null
+
   // ── Taux de recouvrement mensuel sur 12 mois (courbe) ────────
   const moisNomsLong = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
-  const now = new Date()
   const tauxPoints = []
   for (let i = 11; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
@@ -2862,18 +2870,38 @@ async function chargerAnalytique() {
     tauxPoints.push({ label: moisNomsLong[d.getMonth()], taux: Math.round((payesDansDelai.length / duMois.length) * 100) })
   }
 
-  // KPI cards DSO + Taux global
+  // ── Encaissements réels mensuels (12 mois, basé sur date_paiement) ─
+  const encaissPoints = []
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const moisStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+    const encaissesDuMois = toutes.filter(f => f.date_paiement && f.date_paiement.startsWith(moisStr))
+    const montant = encaissesDuMois.reduce((s,f) => s + (parseFloat(f.montant)||0), 0)
+    encaissPoints.push({ label: moisNomsLong[d.getMonth()], montant, mois: moisStr })
+  }
+
+  // KPI cards : DSO + Taux global + Encaissé ce mois + Facturé ce mois
   const kpiHtml = `
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 20px;min-width:160px;flex:1;">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 20px;min-width:140px;flex:1;">
         <div style="font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px;">DSO — Délai moyen</div>
-        <div style="font-size:30px;font-weight:700;color:${dso === null ? 'var(--muted)' : dso > 45 ? 'var(--danger)' : dso > 30 ? 'var(--warn)' : 'var(--success)'};">${dso !== null ? dso + 'j' : '—'}</div>
+        <div style="font-size:28px;font-weight:700;color:${dso === null ? 'var(--muted)' : dso > 45 ? 'var(--danger)' : dso > 30 ? 'var(--warn)' : 'var(--success)'};">${dso !== null ? dso + 'j' : '—'}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:4px;">entre émission et paiement</div>
       </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 20px;min-width:160px;flex:1;">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 20px;min-width:140px;flex:1;">
         <div style="font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px;">Taux de recouvrement</div>
-        <div style="font-size:30px;font-weight:700;color:${tauxGlobal === null ? 'var(--muted)' : tauxGlobal >= 70 ? 'var(--success)' : tauxGlobal >= 50 ? 'var(--warn)' : 'var(--danger)'};">${tauxGlobal !== null ? tauxGlobal + '%' : '—'}</div>
+        <div style="font-size:28px;font-weight:700;color:${tauxGlobal === null ? 'var(--muted)' : tauxGlobal >= 70 ? 'var(--success)' : tauxGlobal >= 50 ? 'var(--warn)' : 'var(--danger)'};">${tauxGlobal !== null ? tauxGlobal + '%' : '—'}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:4px;">payées dans les délais (global)</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 20px;min-width:140px;flex:1;">
+        <div style="font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px;">Encaissé ce mois</div>
+        <div style="font-size:28px;font-weight:700;color:var(--success);font-family:'IBM Plex Mono',monospace;">${encaisseMoisTotal.toLocaleString('fr-FR',{maximumFractionDigits:0})} €</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">${encaissesMois.length} facture${encaissesMois.length>1?'s':''} encaissée${encaissesMois.length>1?'s':''}</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 20px;min-width:140px;flex:1;">
+        <div style="font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px;">Facturé ce mois</div>
+        <div style="font-size:28px;font-weight:700;color:var(--brand);font-family:'IBM Plex Mono',monospace;">${factureMoisTotal.toLocaleString('fr-FR',{maximumFractionDigits:0})} €</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">${tauxMois !== null ? `Taux encaissement : <b style="color:${tauxMois>=70?'var(--success)':tauxMois>=40?'var(--warn)':'var(--danger)'}">${tauxMois}%</b>` : `${facturesMois.length} facture${facturesMois.length>1?'s':''}`}</div>
       </div>
     </div>`
 
@@ -3073,12 +3101,36 @@ async function chargerAnalytique() {
 
     </div>
 
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-        <div style="font-size:13px;font-weight:700;color:var(--ink);">Taux de recouvrement mensuel <span style="color:var(--muted);font-weight:400;font-size:11px;margin-left:6px;">% factures payées dans les délais</span></div>
-        <span style="font-size:10.5px;color:var(--success);font-weight:600;background:var(--success-bg);padding:2px 8px;border-radius:10px;">Objectif 80%</span>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div style="font-size:13px;font-weight:700;color:var(--ink);">Taux de recouvrement mensuel <span style="color:var(--muted);font-weight:400;font-size:11px;margin-left:6px;">% payées dans les délais</span></div>
+          <span style="font-size:10.5px;color:var(--success);font-weight:600;background:var(--success-bg);padding:2px 8px;border-radius:10px;">Objectif 80%</span>
+        </div>
+        ${svgTaux}
       </div>
-      ${svgTaux}
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
+        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:14px;">Encaissements mensuels réels <span style="color:var(--muted);font-weight:400;font-size:11px;margin-left:6px;">basé sur date d'encaissement</span></div>
+        ${(()=>{
+          const maxE = Math.max(...encaissPoints.map(p=>p.montant), 1)
+          const WE=700,HE=160,pLE=40,pRE=10,pTE=15,pBE=28
+          const iWE=WE-pLE-pRE, iHE=HE-pTE-pBE
+          const stepE = encaissPoints.length>1 ? iWE/(encaissPoints.length-1) : iWE
+          const ptsE = encaissPoints.map((p,i)=>`${pLE+i*stepE},${pTE+iHE-(p.montant/maxE)*iHE}`).join(' ')
+          const dotsE = encaissPoints.map((p,i)=>{
+            const x=pLE+i*stepE, y=pTE+iHE-(p.montant/maxE)*iHE
+            const isActuel = p.mois===moisActuel
+            return `<circle cx="${x}" cy="${y}" r="${isActuel?5:4}" fill="${isActuel?'var(--success)':'#22c55e'}" opacity="${isActuel?1:0.75}"><title>${p.label} : ${p.montant.toLocaleString('fr-FR',{maximumFractionDigits:0})} €</title></circle>`
+          }).join('')
+          const labsE = encaissPoints.map((p,i)=>`<text x="${pLE+i*stepE}" y="${HE-4}" text-anchor="middle" fill="var(--muted)" font-size="9" font-family="Inter,sans-serif">${p.label}</text>`).join('')
+          return `<svg viewBox="0 0 ${WE} ${HE}" width="100%" style="overflow:visible;">
+            <line x1="${pLE}" y1="${pTE}" x2="${pLE}" y2="${pTE+iHE}" stroke="var(--border)" stroke-width="1"/>
+            <line x1="${pLE}" y1="${pTE+iHE}" x2="${WE-pRE}" y2="${pTE+iHE}" stroke="var(--border)" stroke-width="1"/>
+            <polyline points="${ptsE}" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+            ${dotsE}${labsE}
+          </svg>`
+        })()}
+      </div>
     </div>`
 }
 
