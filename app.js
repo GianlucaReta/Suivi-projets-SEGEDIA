@@ -2470,6 +2470,9 @@ async function chargerRecouvrement() {
   const auj = new Date().toISOString().split('T')[0]
   const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
 
+  // Rendre les factures accessibles aux modals R1/R2/Appel
+  window._toutesFactures = factures || []
+
   const enRetard = (factures || []).filter(f => !nomsExclus.has(f.client) && f.date_echeance < auj)
 
   if (!enRetard.length) {
@@ -2579,13 +2582,13 @@ async function chargerRecouvrement() {
     // Action button
     let actionBtn = ''
     if (c.etape === 'r0') {
-      actionBtn = `<button onclick="ouvrirModalRelance('${firstId}')" style="font-size:12px;padding:6px 14px;border-radius:7px;background:var(--brand);color:#fff;border:none;cursor:pointer;font-family:inherit;font-weight:600;">📤 Envoyer R1</button>`
+      actionBtn = `<button onclick="ouvrirModalRelance('${firstId}')" style="font-size:12px;padding:6px 14px;border-radius:7px;background:var(--brand);color:#fff;border:none;cursor:pointer;font-family:inherit;font-weight:600;">Envoyer R1</button>`
     } else if (c.etape === 'r1') {
-      actionBtn = `<button onclick="ouvrirModalRelanceR2('${firstId}')" style="font-size:12px;padding:6px 14px;border-radius:7px;background:${c.r2Urgent ? '#ef4444' : 'var(--brand)'};color:#fff;border:none;cursor:pointer;font-family:inherit;font-weight:600;">${c.r2Urgent ? '🔴 Envoyer R2 (urgent!)' : '📤 Envoyer R2'}</button>`
+      actionBtn = `<button onclick="ouvrirModalRelanceR2('${firstId}')" style="font-size:12px;padding:6px 14px;border-radius:7px;background:${c.r2Urgent ? '#ef4444' : 'var(--brand)'};color:#fff;border:none;cursor:pointer;font-family:inherit;font-weight:600;">${c.r2Urgent ? 'Envoyer R2 (urgent!)' : 'Envoyer R2'}</button>`
     } else if (c.etape === 'r2') {
-      actionBtn = `<button onclick="ouvrirModalAppel('${firstId}')" style="font-size:12px;padding:6px 14px;border-radius:7px;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-family:inherit;font-weight:600;">📞 Enregistrer appel</button>`
+      actionBtn = `<button onclick="ouvrirModalAppel('${firstId}')" style="font-size:12px;padding:6px 14px;border-radius:7px;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-family:inherit;font-weight:600;">Enregistrer appel</button>`
     } else {
-      actionBtn = `<button onclick="ouvrirModalAppel('${firstId}')" style="font-size:12px;padding:6px 14px;border-radius:7px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;">✏️ Modifier appel</button>`
+      actionBtn = `<button onclick="ouvrirModalAppel('${firstId}')" style="font-size:12px;padding:6px 14px;border-radius:7px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;">Modifier appel</button>`
     }
 
     // Invoice list
