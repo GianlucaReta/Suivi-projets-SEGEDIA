@@ -95,6 +95,35 @@ let utilisateurActifId       = localStorage.getItem('suivi_user_id')          ||
 let utilisateurActifNom      = localStorage.getItem('suivi_user_nom')         || null
 let utilisateurActifEquipe   = localStorage.getItem('suivi_user_equipe')      || null
 let utilisateurAccesFactures = localStorage.getItem('suivi_acces_factures') === '1'
+let utilisateurRole          = localStorage.getItem('suivi_user_role')        || 'admin'  // 'admin' | 'commercial' | 'operationnel'
+
+function estAdmin()        { return utilisateurRole === 'admin' }
+function estCommercial()   { return utilisateurRole === 'commercial' || utilisateurRole === 'admin' }
+function estOperationnel() { return utilisateurRole === 'operationnel' || estCommercial() }
+
+function deconnexion() {
+  localStorage.removeItem('sp_auth')
+  localStorage.removeItem('suivi_user_id')
+  localStorage.removeItem('suivi_user_nom')
+  localStorage.removeItem('suivi_user_equipe')
+  localStorage.removeItem('suivi_user_role')
+  localStorage.removeItem('suivi_acces_factures')
+  window.location.reload()
+}
+
+function ouvrirMenuUtilisateur() {
+  const m = document.getElementById('menu-utilisateur')
+  if (!m) return
+  m.style.display = m.style.display === 'none' ? 'block' : 'none'
+}
+function fermerMenuUtilisateur() {
+  const m = document.getElementById('menu-utilisateur')
+  if (m) m.style.display = 'none'
+}
+// Fermer le menu si clic ailleurs
+document.addEventListener('click', e => {
+  if (!e.target.closest('#menu-utilisateur') && !e.target.closest('.sidebar-user')) fermerMenuUtilisateur()
+})
 
 // ── SIDEBAR TOGGLE ──────────────────────────────────────────
 let _sidebarCollapsed = localStorage.getItem('suivi_sidebar_collapsed') === '1'
@@ -1240,13 +1269,24 @@ async function chargerEmployes() {
     if (!data || !data.length) {
       container.innerHTML = '<p style="color:var(--text-muted);">Aucun membre pour le moment.</p>'
     } else {
+      const roleBadge = r => {
+        const map = {
+          admin: { lbl: 'Admin', col: '#7c3aed', bg: '#ede9fe' },
+          commercial: { lbl: 'Commercial', col: '#0369a1', bg: '#e0f2fe' },
+          operationnel: { lbl: 'Opérationnel', col: '#6b7280', bg: '#f3f4f6' },
+        }
+        const m = map[r] || map.operationnel
+        return `<span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;padding:2px 7px;border-radius:4px;background:${m.bg};color:${m.col};">${m.lbl}</span>`
+      }
       container.innerHTML = data.map(e => `
-        <div class="employe-card" onclick="ouvrirFicheEmploye('${e.id}')" style="cursor:pointer;">
+        <div class="employe-card" onclick="ouvrirFicheEmploye('${e.id}')" style="cursor:pointer;position:relative;">
+          ${estAdmin() ? `<div style="position:absolute;top:8px;right:8px;">${roleBadge(e.role)}</div>` : ''}
           <div class="employe-avatar avatar-${e.equipe}">${initiales(e.nom)}</div>
           <div class="employe-nom">${e.nom}</div>
           <div class="employe-equipe">${e.equipe}</div>
           ${e.email ? `<div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px;">${e.email}</div>` : ''}
           ${e.telephone ? `<div style="font-size:0.72rem; color:var(--text-muted);">${e.telephone}</div>` : ''}
+          ${estAdmin() && e.code_pin ? `<div style="font-size:0.7rem;color:var(--success);margin-top:4px;font-family:monospace;">🔑 PIN configuré</div>` : ''}
         </div>
       `).join('')
     }
@@ -1273,6 +1313,15 @@ function ouvrirFicheEmploye(id) {
   document.getElementById('input-employe-email').value = e.email || ''
   document.getElementById('input-employe-telephone').value = e.telephone || ''
   document.getElementById('btn-supprimer-employe').style.display = 'block'
+
+  // Section admin : rôle + PIN (visible uniquement pour les admins)
+  const sectionAdmin = document.getElementById('section-admin-employe')
+  if (sectionAdmin) sectionAdmin.style.display = estAdmin() ? 'block' : 'none'
+  const inputRole = document.getElementById('input-employe-role')
+  const inputPin  = document.getElementById('input-employe-pin')
+  if (inputRole) inputRole.value = e.role || 'operationnel'
+  if (inputPin)  inputPin.value  = e.code_pin || ''
+
   document.getElementById('modal-employe').classList.remove('hidden')
 }
 
@@ -1361,6 +1410,104 @@ document.querySelectorAll('.modal-overlay').forEach(m => {
   m.addEventListener('click', e => { if (e.target === m) fermerModals() })
 })
 
+// ── RACCOURCIS CLAVIER ──────────────────────────────────────
+function afficherAidRaccourcis() {
+  const aide = document.getElementById('aide-raccourcis')
+  if (aide) { aide.remove(); return }
+  const div = document.createElement('div')
+  div.id = 'aide-raccourcis'
+  div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9998;display:flex;align-items:center;justify-content:center;'
+  div.onclick = e => { if (e.target === div) div.remove() }
+  div.innerHTML = `
+    <div style="background:var(--surface);border-radius:14px;padding:28px 32px;max-width:480px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,0.2);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+        <div style="font-weight:700;font-size:17px;color:var(--ink);">Raccourcis clavier</div>
+        <button onclick="document.getElementById('aide-raccourcis').remove()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--muted);padding:0 6px;">×</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;font-size:12.5px;">
+        ${[
+          ['⌘ K  /  Ctrl K','Recherche globale'],
+          ['G puis D','Dashboard'],
+          ['G puis P','Projets'],
+          ['G puis T','Tâches'],
+          ['G puis F','Factures'],
+          ['G puis R','Recouvrement'],
+          ['G puis E','Équipe'],
+          ['G puis C','Calendrier'],
+          ['N','Nouvelle tâche'],
+          ['Échap','Fermer modal / recherche'],
+          ['?','Afficher cette aide'],
+        ].map(([k,v]) => `
+          <div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--border-soft);">
+            <span style="color:var(--muted);">${v}</span>
+            <kbd style="font-family:'IBM Plex Mono',monospace;background:var(--surface-alt);border:1px solid var(--border);border-radius:5px;padding:1px 8px;font-size:11px;color:var(--ink);white-space:nowrap;">${k}</kbd>
+          </div>`).join('')}
+      </div>
+    </div>`
+  document.body.appendChild(div)
+}
+
+let _seqNav = null
+let _seqNavTimer = null
+document.addEventListener('keydown', e => {
+  // Ne pas intercepter pendant la saisie
+  const tag = (e.target.tagName || '').toLowerCase()
+  const isInput = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable
+
+  // Échap : fermer modal / aide / recherche
+  if (e.key === 'Escape') {
+    const aide = document.getElementById('aide-raccourcis')
+    if (aide) { aide.remove(); return }
+    const modalsOuverts = document.querySelectorAll('.modal-overlay:not(.hidden)')
+    if (modalsOuverts.length) { fermerModals(); return }
+    fermerRecherche()
+    return
+  }
+
+  // ⌘K / Ctrl+K : recherche globale
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    const input = document.getElementById('search-input')
+    if (input) input.focus()
+    return
+  }
+
+  if (isInput) return
+
+  // ? : aide
+  if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+    e.preventDefault()
+    afficherAidRaccourcis()
+    return
+  }
+
+  // N : nouvelle tâche (si l'utilisateur est sur une page où c'est possible)
+  if (e.key === 'n' || e.key === 'N') {
+    const btnNouv = document.querySelector('[onclick*="ouvrirNouvelleTache"]:not([style*="display:none"])')
+    if (btnNouv) { e.preventDefault(); btnNouv.click() }
+    return
+  }
+
+  // Séquence G puis lettre : navigation
+  if (_seqNav === 'g') {
+    clearTimeout(_seqNavTimer)
+    _seqNav = null
+    const navMap = { d:'dashboard', p:'projets', t:'taches', f:'factures', r:'recouvrement', e:'employes', c:'calendrier' }
+    const cible = navMap[e.key.toLowerCase()]
+    if (cible) {
+      e.preventDefault()
+      // Cacher Factures / Recouvrement si pas accès
+      if ((cible === 'factures' || cible === 'recouvrement') && !utilisateurAccesFactures) return
+      showPage(cible)
+    }
+    return
+  }
+  if (e.key === 'g' || e.key === 'G') {
+    _seqNav = 'g'
+    _seqNavTimer = setTimeout(() => { _seqNav = null }, 1200)
+  }
+})
+
 // --- SAUVEGARDES ---
 async function sauvegarderProjet() {
   const nom = document.getElementById('input-projet-nom').value.trim()
@@ -1440,10 +1587,32 @@ async function sauvegarderEmploye() {
     email: document.getElementById('input-employe-email').value.trim() || null,
     telephone: document.getElementById('input-employe-telephone').value.trim() || null
   }
+
+  // Champs admin : rôle + PIN (uniquement si admin)
+  if (estAdmin()) {
+    const role = document.getElementById('input-employe-role')?.value
+    const pin  = document.getElementById('input-employe-pin')?.value.trim()
+    if (role) {
+      payload.role = role
+      // acces_factures s'ajuste automatiquement selon le rôle
+      payload.acces_factures = (role === 'admin' || role === 'commercial')
+    }
+    if (pin !== undefined) {
+      if (pin && !/^\d{6}$/.test(pin)) { alert('Le code PIN doit faire exactement 6 chiffres.'); return }
+      payload.code_pin = pin || null
+    }
+  }
+
+  let res
   if (id) {
-    await db.from('employes').update(payload).eq('id', id)
+    res = await db.from('employes').update(payload).eq('id', id)
   } else {
-    await db.from('employes').insert(payload)
+    res = await db.from('employes').insert(payload)
+  }
+  if (res.error) {
+    if (res.error.code === '23505') alert('Ce code PIN est déjà utilisé par un autre utilisateur.')
+    else alert('Erreur : ' + res.error.message)
+    return
   }
   fermerModals()
   chargerEmployes()
@@ -1885,10 +2054,18 @@ async function chargerFactures() {
   }
 
   listeEl.innerHTML = `
+    <div id="bulk-action-bar" style="display:none;background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;margin-bottom:10px;align-items:center;gap:12px;flex-wrap:wrap;">
+      <span style="font-size:13px;font-weight:600;"><span id="bulk-count">0</span> facture(s) sélectionnée(s)</span>
+      <div style="flex:1;"></div>
+      <button onclick="bulkSolderFactures()" style="font-size:12px;padding:5px 12px;border-radius:6px;background:var(--success);color:#fff;border:none;cursor:pointer;font-family:inherit;font-weight:600;">Marquer soldées</button>
+      <button onclick="bulkExporterFactures()" style="font-size:12px;padding:5px 12px;border-radius:6px;background:var(--surface);color:var(--ink);border:none;cursor:pointer;font-family:inherit;font-weight:600;">Exporter CSV</button>
+      <button onclick="bulkClearSelection()" style="font-size:12px;padding:5px 10px;border-radius:6px;background:transparent;color:#fff;border:1px solid #fff;cursor:pointer;font-family:inherit;">Annuler</button>
+    </div>
     <div style="background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; overflow-x:auto;">
       <table style="width:100%; border-collapse:collapse; font-size:12.5px; min-width:1100px;">
         <thead>
           <tr style="background:var(--surface-alt); border-bottom:1px solid var(--border);">
+            <th style="padding:10px 8px 10px 16px;width:32px;"><input type="checkbox" id="bulk-checkall" onchange="bulkToggleAll(this.checked)" style="cursor:pointer;" /></th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600; white-space:nowrap;">N° Facture</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Client</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Contact</th>
@@ -1992,9 +2169,10 @@ async function chargerFactures() {
               </div>`
 
             return `
-              <tr style="border-bottom:1px solid var(--border-soft);" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''">
+              <tr data-fid="${f.id}" style="border-bottom:1px solid var(--border-soft);" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background=''">
+                <td style="padding:10px 8px 10px 16px;width:32px;"><input type="checkbox" class="bulk-fac" value="${f.id}" data-solde="${f.solde}" onchange="bulkUpdateCounter()" style="cursor:pointer;" onclick="event.stopPropagation()" /></td>
                 <td style="padding:10px 16px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-soft); white-space:nowrap;">${f.numero}</td>
-                <td style="padding:10px 16px; font-weight:600; color:var(--ink);">${f.client}</td>
+                <td style="padding:10px 16px; font-weight:600; color:var(--ink);"><span onclick="ouvrirFicheClient('${f.client.replace(/'/g,"\\'")}')" style="cursor:pointer;border-bottom:1px dotted var(--muted);" title="Voir la fiche client 360°">${f.client}</span></td>
                 <td style="padding:8px 16px; min-width:150px; max-width:180px;">
                   <div onclick="editerContactFacture('${f.id}','telephone','${(f.telephone||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}',this)" title="Cliquer pour modifier" style="cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:${f.telephone ? 'var(--ink)' : 'var(--muted)'};padding:2px 0;">${f.telephone ? '📞 ' + formatPhone(f.telephone) : '<span style="font-size:11px;">+ Tél.</span>'}</div>
                   <div onclick="editerContactFacture('${f.id}','email_client','${(f.email_client||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}',this)" title="Cliquer pour modifier" style="cursor:pointer;font-size:11px;color:${f.email_client ? 'var(--ink-soft)' : 'var(--muted)'};padding:2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;">${f.email_client ? '✉ ' + f.email_client : '<span>+ Email</span>'}</div>
@@ -2072,6 +2250,189 @@ async function supprimerClientExclu(id, nom) {
   if (!confirm(`Retirer "${nom}" de la liste d'exclusion ?\nSes factures réapparaîtront dans le tableau.`)) return
   await db.from('clients_exclus').delete().eq('id', id)
   chargerFactures()
+}
+
+// ── FICHE CLIENT 360° ────────────────────────────────────
+async function ouvrirFicheClient(nomClient) {
+  let modal = document.getElementById('modal-fiche-client')
+  if (!modal) {
+    modal = document.createElement('div')
+    modal.id = 'modal-fiche-client'
+    modal.className = 'modal-overlay'
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9990;display:flex;align-items:center;justify-content:center;padding:20px;'
+    modal.onclick = e => { if (e.target === modal) modal.remove() }
+    document.body.appendChild(modal)
+  }
+  modal.innerHTML = `<div style="background:var(--surface);border-radius:14px;padding:28px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.2);"><div style="text-align:center;color:var(--muted);padding:40px;">Chargement…</div></div>`
+
+  const { data: factures } = await db.from('factures').select('*').eq('client', nomClient).order('date_emission', { ascending: false })
+  const facs = factures || []
+  if (!facs.length) {
+    modal.querySelector('div').innerHTML = `<div style="background:var(--surface);border-radius:14px;padding:28px;max-width:600px;width:100%;"><div style="font-weight:700;font-size:18px;margin-bottom:8px;">${nomClient}</div><div style="color:var(--muted);">Aucune facture pour ce client.</div></div>`
+    return
+  }
+
+  const auj = new Date().toISOString().split('T')[0]
+  const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
+
+  // KPIs
+  const soldees = facs.filter(f => f.solde && f.date_paiement && f.date_emission)
+  const impayees = facs.filter(f => !f.solde)
+  const enRetard = impayees.filter(f => !f.litige && f.date_echeance && f.date_echeance < auj)
+  const totalCA = facs.reduce((s,f) => s + (parseFloat(f.montant)||0), 0)
+  const totalImpaye = impayees.reduce((s,f) => s + (parseFloat(f.montant)||0), 0)
+  const totalRetard = enRetard.reduce((s,f) => s + (parseFloat(f.montant)||0), 0)
+  const delaiMoyen = soldees.length
+    ? Math.round(soldees.reduce((s,f) => s + (new Date(f.date_paiement) - new Date(f.date_emission)) / 86400000, 0) / soldees.length)
+    : null
+  // Délai vs échéance
+  const delaiEcheance = soldees.length
+    ? Math.round(soldees.reduce((s,f) => s + (new Date(f.date_paiement) - new Date(f.date_echeance)) / 86400000, 0) / soldees.length)
+    : null
+  // Score : <0 = très bon, 0-7 = bon, 8-30 = moyen, >30 = mauvais
+  const score = delaiEcheance === null ? null
+    : delaiEcheance < 0 ? { lbl: 'Excellent', col: '#059669', desc: 'Paye en avance' }
+    : delaiEcheance <= 7 ? { lbl: 'Bon', col: '#22c55e', desc: 'Paye à temps' }
+    : delaiEcheance <= 30 ? { lbl: 'Moyen', col: '#f59e0b', desc: `+${delaiEcheance}j de retard moyen` }
+    : { lbl: 'À risque', col: '#ef4444', desc: `+${delaiEcheance}j de retard moyen` }
+
+  const contact = facs.find(f => f.email_client || f.telephone)
+  const email = contact?.email_client || null
+  const tel = contact?.telephone || null
+
+  const factLignes = facs.slice(0, 30).map(f => {
+    const montant = parseFloat(f.montant)||0
+    let statut
+    if (f.solde) statut = `<span style="color:var(--success);font-size:11px;font-weight:600;">✓ Soldée${f.date_paiement?' '+formatDate(f.date_paiement):''}</span>`
+    else if (f.litige) statut = `<span style="color:#5b21b6;font-size:11px;font-weight:600;">⚠ Litige</span>`
+    else if (f.date_echeance && f.date_echeance < auj) {
+      const j = Math.floor((new Date(auj) - new Date(f.date_echeance))/86400000)
+      statut = `<span style="color:var(--danger);font-size:11px;font-weight:600;">+${j}j retard</span>`
+    }
+    else statut = `<span style="color:var(--warn);font-size:11px;">En attente</span>`
+    return `<tr style="border-bottom:1px solid var(--border-soft);">
+      <td style="padding:8px 12px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">${f.numero}</td>
+      <td style="padding:8px 12px;font-size:11.5px;color:var(--muted);">${f.date_emission ? formatDate(f.date_emission) : '—'}</td>
+      <td style="padding:8px 12px;font-size:11.5px;color:${f.date_echeance && f.date_echeance < auj && !f.solde ? 'var(--danger)' : 'var(--ink-soft)'};font-weight:${f.date_echeance && f.date_echeance < auj && !f.solde ? '600' : '400'};">${f.date_echeance ? formatDate(f.date_echeance) : '—'}</td>
+      <td style="padding:8px 12px;text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:12px;color:var(--ink);">${fmt(montant)} €</td>
+      <td style="padding:8px 12px;">${statut}</td>
+    </tr>`
+  }).join('')
+
+  modal.innerHTML = `<div style="background:var(--surface);border-radius:14px;padding:28px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.2);">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;">
+      <div>
+        <div style="font-weight:700;font-size:20px;color:var(--ink);">${nomClient}</div>
+        <div style="display:flex;gap:14px;margin-top:6px;font-size:12px;color:var(--muted);">
+          ${email ? `<span>✉ ${email}</span>` : `<span style="color:var(--danger);">Pas d'email</span>`}
+          ${tel ? `<span>📞 ${formatPhone(tel)}</span>` : ''}
+        </div>
+      </div>
+      <button onclick="document.getElementById('modal-fiche-client').remove()" style="background:none;border:none;cursor:pointer;font-size:22px;color:var(--muted);padding:0 6px;">×</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;">
+      <div style="background:var(--surface-alt);border-radius:10px;padding:12px;">
+        <div style="font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:600;letter-spacing:0.07em;margin-bottom:6px;">CA Total</div>
+        <div style="font-size:17px;font-weight:700;font-family:'IBM Plex Mono',monospace;">${fmt(totalCA)} €</div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:2px;">${facs.length} facture${facs.length>1?'s':''}</div>
+      </div>
+      <div style="background:var(--surface-alt);border-radius:10px;padding:12px;">
+        <div style="font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:600;letter-spacing:0.07em;margin-bottom:6px;">Impayé</div>
+        <div style="font-size:17px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:${totalImpaye>0?'var(--danger)':'var(--ink)'};">${fmt(totalImpaye)} €</div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:2px;">${impayees.length} en attente · ${enRetard.length} en retard</div>
+      </div>
+      <div style="background:var(--surface-alt);border-radius:10px;padding:12px;">
+        <div style="font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:600;letter-spacing:0.07em;margin-bottom:6px;">Délai moyen</div>
+        <div style="font-size:17px;font-weight:700;font-family:'IBM Plex Mono',monospace;">${delaiMoyen !== null ? delaiMoyen + 'j' : '—'}</div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:2px;">émission → paiement</div>
+      </div>
+      <div style="background:${score ? score.col+'15' : 'var(--surface-alt)'};border-radius:10px;padding:12px;border:1px solid ${score ? score.col+'40' : 'transparent'};">
+        <div style="font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:600;letter-spacing:0.07em;margin-bottom:6px;">Score paiement</div>
+        <div style="font-size:17px;font-weight:700;color:${score ? score.col : 'var(--muted)'};">${score ? score.lbl : '—'}</div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:2px;">${score ? score.desc : 'Pas assez de données'}</div>
+      </div>
+    </div>
+
+    ${enRetard.length > 0 ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+      <div><span style="font-weight:700;color:var(--danger);">${enRetard.length}</span> <span style="color:#991b1b;">facture${enRetard.length>1?'s':''} en retard — ${fmt(totalRetard)} €</span></div>
+      <button onclick="ouvrirModalRelance('${enRetard[0].id}');document.getElementById('modal-fiche-client').remove()" style="font-size:11.5px;padding:5px 12px;border-radius:6px;background:var(--brand);color:#fff;border:none;cursor:pointer;font-family:inherit;font-weight:600;">Envoyer R1</button>
+    </div>` : ''}
+
+    <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px;">Historique factures (${facs.length > 30 ? '30 dernières sur ' + facs.length : facs.length})</div>
+    <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="background:var(--surface-alt);">
+            <th style="padding:8px 12px;text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;">N°</th>
+            <th style="padding:8px 12px;text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;">Émission</th>
+            <th style="padding:8px 12px;text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;">Échéance</th>
+            <th style="padding:8px 12px;text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;">Montant</th>
+            <th style="padding:8px 12px;text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;">Statut</th>
+          </tr>
+        </thead>
+        <tbody>${factLignes}</tbody>
+      </table>
+    </div>
+  </div>`
+}
+
+// ── BULK ACTIONS sur factures ────────────────────────────
+function bulkUpdateCounter() {
+  const cocheees = document.querySelectorAll('.bulk-fac:checked')
+  const bar = document.getElementById('bulk-action-bar')
+  const count = document.getElementById('bulk-count')
+  if (count) count.textContent = cocheees.length
+  if (bar) bar.style.display = cocheees.length > 0 ? 'flex' : 'none'
+  const all = document.getElementById('bulk-checkall')
+  const allCb = document.querySelectorAll('.bulk-fac')
+  if (all && allCb.length) all.checked = cocheees.length === allCb.length
+}
+
+function bulkToggleAll(checked) {
+  document.querySelectorAll('.bulk-fac').forEach(cb => { cb.checked = checked })
+  bulkUpdateCounter()
+}
+
+function bulkClearSelection() {
+  document.querySelectorAll('.bulk-fac').forEach(cb => { cb.checked = false })
+  const all = document.getElementById('bulk-checkall')
+  if (all) all.checked = false
+  bulkUpdateCounter()
+}
+
+async function bulkSolderFactures() {
+  const ids = Array.from(document.querySelectorAll('.bulk-fac:checked'))
+    .filter(cb => cb.dataset.solde !== 'true')
+    .map(cb => cb.value)
+  if (!ids.length) { alert('Aucune facture non-soldée dans la sélection.'); return }
+  if (!confirm(`Marquer ${ids.length} facture${ids.length>1?'s':''} comme soldée${ids.length>1?'s':''} ?`)) return
+  const date_paiement = new Date().toISOString().split('T')[0]
+  await db.from('factures').update({ solde: true, date_paiement }).in('id', ids)
+  afficherToast(`${ids.length} facture${ids.length>1?'s':''} soldée${ids.length>1?'s':''}`)
+  chargerFactures()
+}
+
+function bulkExporterFactures() {
+  const ids = new Set(Array.from(document.querySelectorAll('.bulk-fac:checked')).map(cb => cb.value))
+  if (!ids.size) return
+  const toutes = window._toutesFactures || []
+  const sel = toutes.filter(f => ids.has(f.id))
+  const headers = ['Numero','Client','Montant','Date emission','Date echeance','Date paiement','Solde','Litige','Email','Telephone','Ville','Note']
+  const lignes = sel.map(f => [
+    f.numero, f.client, f.montant, f.date_emission||'', f.date_echeance||'',
+    f.date_paiement||'', f.solde?'Oui':'Non', f.litige?'Oui':'Non',
+    f.email_client||'', f.telephone||'', f.ville||'', (f.note||'').replace(/[\n;]/g,' ')
+  ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(';'))
+  const csv = '﻿' + headers.join(';') + '\n' + lignes.join('\n')
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'})
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  const today = new Date().toISOString().split('T')[0]
+  a.href = url; a.download = `factures_export_${today}.csv`
+  document.body.appendChild(a); a.click()
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url) }, 100)
+  afficherToast(`${sel.length} facture${sel.length>1?'s':''} exportée${sel.length>1?'s':''}`)
 }
 
 async function marquerFactureSoldee(id) {
@@ -2612,7 +2973,7 @@ async function chargerRecouvrement() {
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
           <div style="flex:1;min-width:0;">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
-              <div style="font-size:14px;font-weight:700;color:var(--ink);">${c.nom}</div>
+              <div onclick="ouvrirFicheClient('${c.nom.replace(/'/g,"\\'")}')" style="font-size:14px;font-weight:700;color:var(--ink);cursor:pointer;border-bottom:1px dotted var(--muted);" title="Voir la fiche client 360°">${c.nom}</div>
               <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;padding:2px 8px;border-radius:10px;background:${cfg.bg};color:${cfg.col};border:1px solid ${cfg.border};">${cfg.label}</span>
             </div>
             <div style="font-size:12px;color:var(--muted);">${c.facts.length} facture${c.facts.length > 1 ? 's' : ''} · <b style="font-family:'IBM Plex Mono',monospace;color:var(--danger);">${fmt(c.total)} €</b></div>
@@ -2887,6 +3248,38 @@ async function chargerAnalytique() {
     encaissPoints.push({ label: moisNomsLong[d.getMonth()], montant, mois: moisStr })
   }
 
+  // ── Cash-flow prévisionnel : encaissements attendus sur 90 jours ─
+  // Délai moyen de paiement par client (basé sur factures soldées)
+  const delaiParClient = {}
+  soldees.forEach(f => {
+    const j = Math.floor((new Date(f.date_paiement) - new Date(f.date_echeance)) / 86400000)
+    if (!delaiParClient[f.client]) delaiParClient[f.client] = []
+    delaiParClient[f.client].push(j)
+  })
+  const delaiMoyenClient = c => {
+    const arr = delaiParClient[c]
+    if (!arr || !arr.length) return null
+    return Math.round(arr.reduce((s,x)=>s+x,0) / arr.length)
+  }
+  const delaiGlobal = soldees.length
+    ? Math.round(soldees.reduce((s,f) => s + Math.floor((new Date(f.date_paiement) - new Date(f.date_echeance)) / 86400000), 0) / soldees.length)
+    : 0
+
+  const nonSoldees = toutes.filter(f => !f.solde && !f.litige && f.date_echeance)
+  const aujMs = new Date(auj).getTime()
+  const buckets = { '0-30': 0, '30-60': 0, '60-90': 0, '90+': 0 }
+  nonSoldees.forEach(f => {
+    const delaiMoy = delaiMoyenClient(f.client) ?? delaiGlobal
+    const datePrev = new Date(new Date(f.date_echeance).getTime() + delaiMoy * 86400000)
+    const joursDepuisAuj = Math.floor((datePrev.getTime() - aujMs) / 86400000)
+    const montant = parseFloat(f.montant) || 0
+    if (joursDepuisAuj <= 30) buckets['0-30'] += montant
+    else if (joursDepuisAuj <= 60) buckets['30-60'] += montant
+    else if (joursDepuisAuj <= 90) buckets['60-90'] += montant
+    else buckets['90+'] += montant
+  })
+  const cashflowTotal = Object.values(buckets).reduce((s,v)=>s+v,0)
+
   // KPI cards : DSO + Taux global + Encaissé ce mois + Facturé ce mois
   const kpiHtml = `
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
@@ -3116,6 +3509,36 @@ async function chargerAnalytique() {
         </div>
         ${svgTaux}
       </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
+        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:6px;">Cash-flow prévisionnel <span style="color:var(--muted);font-weight:400;font-size:11px;margin-left:6px;">basé sur le délai moyen par client</span></div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Total attendu : <b style="font-family:'IBM Plex Mono',monospace;color:var(--ink);">${cashflowTotal.toLocaleString('fr-FR',{maximumFractionDigits:0})} €</b></div>
+        ${(()=>{
+          const maxB = Math.max(...Object.values(buckets), 1)
+          const labels = [
+            { key:'0-30', label:'0–30j', sub:'Encaissement proche', col:'#22c55e', bg:'#dcfce7' },
+            { key:'30-60', label:'30–60j', sub:'Court terme', col:'#f59e0b', bg:'#fef3c7' },
+            { key:'60-90', label:'60–90j', sub:'Moyen terme', col:'#f97316', bg:'#ffedd5' },
+            { key:'90+', label:'90j+', sub:'Long terme / à risque', col:'#ef4444', bg:'#fee2e2' },
+          ]
+          return labels.map(b => {
+            const v = buckets[b.key]
+            const w = Math.round((v/maxB) * 100)
+            return `<div style="margin-bottom:12px;">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+                <span style="font-size:11.5px;color:var(--ink);font-weight:600;">${b.label}</span>
+                <span style="font-size:10.5px;color:var(--muted);">${b.sub}</span>
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:${b.col};margin-left:auto;">${v.toLocaleString('fr-FR',{maximumFractionDigits:0})} €</span>
+              </div>
+              <div style="height:10px;background:${b.bg};border-radius:5px;overflow:hidden;">
+                <div style="width:${w}%;height:100%;background:${b.col};border-radius:5px;transition:width 0.4s;"></div>
+              </div>
+            </div>`
+          }).join('')
+        })()}
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:14px;">
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
         <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:14px;">Encaissements mensuels réels <span style="color:var(--muted);font-weight:400;font-size:11px;margin-left:6px;">basé sur date d'encaissement</span></div>
         ${(()=>{
