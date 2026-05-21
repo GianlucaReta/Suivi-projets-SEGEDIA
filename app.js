@@ -351,7 +351,7 @@ async function chargerDashboard() {
     .order('date_fin_prevue', { ascending: true })
 
   const containerR = document.getElementById('dashboard-retard')
-  if (!retard || !retard.length) { containerR.innerHTML = ''; return }
+  if (!retard || !retard.length) { containerR.innerHTML = '' }
 
   containerR.innerHTML = `
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
@@ -2285,8 +2285,10 @@ async function envoyerRelanceEmail() {
     if (!res.ok || data.error) throw new Error(data.error || 'Erreur serveur')
 
     fermerModals()
-    afficherToast(`✅ Mail envoyé à ${email}`)
-    chargerFactures()
+    afficherToast(`Mail envoyé à ${email}`)
+    const pageRec = document.getElementById('page-recouvrement')
+    if (pageRec && pageRec.classList.contains('active')) chargerRecouvrement()
+    else chargerFactures()
     mettreAJourBadgeRecouvrement()
   } catch (e) {
     btn.textContent = '📤 Envoyer'
@@ -2422,8 +2424,10 @@ async function enregistrerAppel() {
 
   await db.from('factures').update({ date_appel, note_appel }).in('id', ids)
   fermerModals()
-  afficherToast(`📞 Appel enregistré pour ${client}`)
-  chargerFactures()
+  afficherToast(`Appel enregistré pour ${client}`)
+  const pageRecouv = document.getElementById('page-recouvrement')
+  if (pageRecouv && pageRecouv.classList.contains('active')) chargerRecouvrement()
+  else chargerFactures()
   mettreAJourBadgeRecouvrement()
 }
 
