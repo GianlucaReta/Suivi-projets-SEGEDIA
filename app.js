@@ -2601,7 +2601,7 @@ async function chargerRecouvrement() {
     }).join('')
 
     return `
-      <div style="background:var(--surface);border:1px solid ${cfg.border};border-left:4px solid ${cfg.dot};border-radius:12px;padding:16px 20px;margin-bottom:12px;">
+      <div class="rec-card" style="background:var(--surface);border:1px solid ${cfg.border};border-left:4px solid ${cfg.dot};border-radius:12px;padding:16px 20px;margin-bottom:12px;">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
           <div style="flex:1;min-width:0;">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
@@ -2612,7 +2612,7 @@ async function chargerRecouvrement() {
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             ${actionBtn}
-            <button onclick="(function(btn){const d=btn.closest('[style*=border-radius]').querySelector('.rec-detail');d.style.display=d.style.display==='none'?'block':'none';btn.innerHTML=d.style.display==='none'?'▼ Factures':'▲ Masquer';})(this)" style="font-size:11.5px;padding:5px 12px;border-radius:7px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;">▼ Factures</button>
+            <button onclick="(function(btn){const d=btn.closest('.rec-card').querySelector('.rec-detail');d.style.display=d.style.display==='none'?'block':'none';btn.innerHTML=d.style.display==='none'?'▼ Factures':'▲ Masquer';})(this)" style="font-size:11.5px;padding:5px 12px;border-radius:7px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;">▼ Factures</button>
           </div>
         </div>
         ${timelineHtml}
