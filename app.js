@@ -3375,14 +3375,19 @@ async function chargerAnalytique() {
     const x = padLR + i * stepR
     return `<text x="${x}" y="${HR - 4}" text-anchor="middle" fill="var(--muted)" font-size="9" font-family="Inter,sans-serif">${p.label}</text>`
   }).join('')
-  // Ligne de référence à 80%
+  // Graduations Y : 0%, 25%, 50%, 75%, 100%
   const y80 = padTR + innerHR - 0.8 * innerHR
+  const yTicksTaux = [0, 25, 50, 75, 100].map(v => {
+    const y = padTR + innerHR - (v / 100) * innerHR
+    return `<line x1="${padLR - 3}" y1="${y}" x2="${padLR}" y2="${y}" stroke="var(--border)" stroke-width="1"/>
+            <text x="${padLR - 6}" y="${y + 3.5}" text-anchor="end" fill="var(--muted)" font-size="8.5" font-family="Inter,sans-serif">${v}%</text>`
+  }).join('')
   const svgTaux = `
     <svg viewBox="0 0 ${WR} ${HR}" width="100%" style="overflow:visible;">
       <line x1="${padLR}" y1="${padTR}" x2="${padLR}" y2="${padTR+innerHR}" stroke="var(--border)" stroke-width="1"/>
       <line x1="${padLR}" y1="${padTR+innerHR}" x2="${WR-padRR}" y2="${padTR+innerHR}" stroke="var(--border)" stroke-width="1"/>
+      ${yTicksTaux}
       <line x1="${padLR}" y1="${y80}" x2="${WR-padRR}" y2="${y80}" stroke="#3D6B3D" stroke-width="1" stroke-dasharray="4,4" opacity="0.4"/>
-      <text x="${padLR - 4}" y="${y80 + 4}" text-anchor="end" fill="#3D6B3D" font-size="9" font-family="Inter,sans-serif" opacity="0.6">80%</text>
       ${ptsTauxStr ? `<polyline points="${ptsTauxStr}" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
       ${dotsTaux}
       ${labelsTaux}
@@ -3448,7 +3453,7 @@ async function chargerAnalytique() {
   }
 
   const maxVal = Math.max(...points.map(p => p.montant), 1)
-  const W = 700, H = 180, padL = 40, padR = 10, padT = 15, padB = 30
+  const W = 700, H = 180, padL = 55, padR = 10, padT = 15, padB = 30
   const innerW = W - padL - padR
   const innerH = H - padT - padB
   const step = points.length > 1 ? innerW / (points.length - 1) : innerW
@@ -3471,10 +3476,20 @@ async function chargerAnalytique() {
     return `<circle cx="${x}" cy="${y}" r="4" fill="var(--brand)"><title>${p.label} : ${fmtV} €</title></circle>`
   }).join('')
 
+  // Graduations Y : 4 niveaux en €
+  const yTicksEncours = [0, 0.25, 0.5, 0.75, 1].map(ratio => {
+    const val = Math.round(maxVal * ratio)
+    const y = padT + innerH - ratio * innerH
+    const lbl = val >= 1000 ? (val/1000).toLocaleString('fr-FR',{maximumFractionDigits:1})+'k' : val
+    return `<line x1="${padL-3}" y1="${y}" x2="${padL}" y2="${y}" stroke="var(--border)" stroke-width="1"/>
+            <text x="${padL-6}" y="${y+3.5}" text-anchor="end" fill="var(--muted)" font-size="8.5" font-family="Inter,sans-serif">${lbl}€</text>`
+  }).join('')
+
   const svgHtml = `
     <svg viewBox="0 0 ${W} ${H}" width="100%" style="overflow:visible;">
       <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT+innerH}" stroke="var(--border)" stroke-width="1"/>
       <line x1="${padL}" y1="${padT+innerH}" x2="${W-padR}" y2="${padT+innerH}" stroke="var(--border)" stroke-width="1"/>
+      ${yTicksEncours}
       <polyline points="${ptsStr}" fill="none" stroke="var(--brand)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
       ${dots}
       ${labels}
@@ -3591,7 +3606,7 @@ async function chargerAnalytique() {
         <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:14px;">Encaissements mensuels réels <span style="color:var(--muted);font-weight:400;font-size:11px;margin-left:6px;">basé sur date d'encaissement</span></div>
         ${(()=>{
           const maxE = Math.max(...encaissPoints.map(p=>p.montant), 1)
-          const WE=700,HE=160,pLE=40,pRE=10,pTE=15,pBE=28
+          const WE=700,HE=160,pLE=55,pRE=10,pTE=15,pBE=28
           const iWE=WE-pLE-pRE, iHE=HE-pTE-pBE
           const stepE = encaissPoints.length>1 ? iWE/(encaissPoints.length-1) : iWE
           const ptsE = encaissPoints.map((p,i)=>`${pLE+i*stepE},${pTE+iHE-(p.montant/maxE)*iHE}`).join(' ')
@@ -3601,9 +3616,15 @@ async function chargerAnalytique() {
             return `<circle cx="${x}" cy="${y}" r="${isActuel?5:4}" fill="${isActuel?'var(--success)':'#22c55e'}" opacity="${isActuel?1:0.75}"><title>${p.label} : ${p.montant.toLocaleString('fr-FR',{maximumFractionDigits:0})} €</title></circle>`
           }).join('')
           const labsE = encaissPoints.map((p,i)=>`<text x="${pLE+i*stepE}" y="${HE-4}" text-anchor="middle" fill="var(--muted)" font-size="9" font-family="Inter,sans-serif">${p.label}</text>`).join('')
+          const yTicksE = [0,0.25,0.5,0.75,1].map(r=>{
+            const val=Math.round(maxE*r), y=pTE+iHE-r*iHE
+            const lbl=val>=1000?(val/1000).toLocaleString('fr-FR',{maximumFractionDigits:1})+'k':val
+            return `<line x1="${pLE-3}" y1="${y}" x2="${pLE}" y2="${y}" stroke="var(--border)" stroke-width="1"/><text x="${pLE-6}" y="${y+3.5}" text-anchor="end" fill="var(--muted)" font-size="8.5" font-family="Inter,sans-serif">${lbl}€</text>`
+          }).join('')
           return `<svg viewBox="0 0 ${WE} ${HE}" width="100%" style="overflow:visible;">
             <line x1="${pLE}" y1="${pTE}" x2="${pLE}" y2="${pTE+iHE}" stroke="var(--border)" stroke-width="1"/>
             <line x1="${pLE}" y1="${pTE+iHE}" x2="${WE-pRE}" y2="${pTE+iHE}" stroke="var(--border)" stroke-width="1"/>
+            ${yTicksE}
             <polyline points="${ptsE}" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
             ${dotsE}${labsE}
           </svg>`
