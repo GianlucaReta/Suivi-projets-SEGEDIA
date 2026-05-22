@@ -1961,7 +1961,7 @@ async function chargerFactures() {
   // Charger la liste d'exclusion ET le panel en parallèle
   const [{ data: exclusData }, { data: factures }] = await Promise.all([
     db.from('clients_exclus').select('nom'),
-    db.from('factures').select('*').order('date_echeance', { ascending: true })
+    db.from('factures').select('*').order('date_echeance', { ascending: true }).limit(5000)
   ])
   chargerClientsExclus()
 
@@ -2818,7 +2818,7 @@ async function mettreAJourBadgeRecouvrement() {
   if (!badge) return
   const auj = new Date().toISOString().split('T')[0]
   const { data: exclusData } = await db.from('clients_exclus').select('nom')
-  const { data: factures }   = await db.from('factures').select('client,date_echeance,date_relance,date_relance_r2,date_appel,solde,litige').eq('solde', false).eq('litige', false)
+  const { data: factures }   = await db.from('factures').select('client,date_echeance,date_relance,date_relance_r2,date_appel,solde,litige').eq('solde', false).eq('litige', false).limit(5000)
   const nomsExclus = new Set((exclusData || []).map(e => e.nom))
   const enRetard = (factures || []).filter(f => !nomsExclus.has(f.client) && f.date_echeance && f.date_echeance < auj)
   const parClient = {}
@@ -2847,7 +2847,7 @@ async function chargerRecouvrement() {
 
   const [{ data: exclusData }, { data: factures }] = await Promise.all([
     db.from('clients_exclus').select('nom'),
-    db.from('factures').select('*').eq('solde', false).eq('litige', false).not('date_echeance', 'is', null).order('date_echeance', { ascending: true })
+    db.from('factures').select('*').eq('solde', false).eq('litige', false).not('date_echeance', 'is', null).order('date_echeance', { ascending: true }).limit(5000)
   ])
 
   const nomsExclus = new Set((exclusData || []).map(e => e.nom))
@@ -3017,7 +3017,7 @@ async function chargerEncaissements() {
   if (!container) return
 
   const { data: exclusData } = await db.from('clients_exclus').select('nom')
-  const { data: factures }   = await db.from('factures').select('*').eq('solde', false).order('date_echeance', { ascending: true })
+  const { data: factures }   = await db.from('factures').select('*').eq('solde', false).order('date_echeance', { ascending: true }).limit(5000)
 
   const nomsExclus = new Set((exclusData || []).map(e => e.nom))
   const nonSoldes  = (factures || []).filter(f => !nomsExclus.has(f.client) && f.date_echeance && !f.litige)
@@ -3215,7 +3215,7 @@ async function chargerAnalytique() {
   if (!container) return
 
   const { data: exclusData } = await db.from('clients_exclus').select('nom')
-  const { data: factures }   = await db.from('factures').select('*').order('date_echeance', { ascending: true })
+  const { data: factures }   = await db.from('factures').select('*').order('date_echeance', { ascending: true }).limit(5000)
 
   const nomsExclus = new Set((exclusData || []).map(e => e.nom))
   const toutes = (factures || []).filter(f => !nomsExclus.has(f.client))
