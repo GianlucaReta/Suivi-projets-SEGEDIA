@@ -2264,12 +2264,14 @@ async function ajouterClientExclu() {
   }
   input.value = ''
   chargerFactures()
+  chargerAnalytique()
 }
 
 async function supprimerClientExclu(id, nom) {
   if (!confirm(`Retirer "${nom}" de la liste d'exclusion ?\nSes factures réapparaîtront dans le tableau.`)) return
   await db.from('clients_exclus').delete().eq('id', id)
   chargerFactures()
+  chargerAnalytique()
 }
 
 // ── FICHE CLIENT 360° ────────────────────────────────────
