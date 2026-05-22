@@ -89,6 +89,8 @@ let filtreTacheEquipe = 'tous'
 let vueProjet = 'liste'
 let vueTachesGlobal = 'liste'
 let filtreFactures  = 'toutes'
+let facturesPage    = 1
+const FACTURES_PAR_PAGE = 50
 
 // Utilisateur actif (persisté en localStorage)
 let utilisateurActifId       = localStorage.getItem('suivi_user_id')          || null
@@ -1961,7 +1963,7 @@ async function chargerFactures() {
   // Charger la liste d'exclusion ET le panel en parallèle
   const [{ data: exclusData }, { data: factures }] = await Promise.all([
     db.from('clients_exclus').select('nom'),
-    db.from('factures').select('*').order('date_echeance', { ascending: true }).limit(5000)
+    db.from('factures').select('*').order('date_echeance', { ascending: false }).limit(5000)
   ])
   chargerClientsExclus()
 
@@ -2053,6 +2055,24 @@ async function chargerFactures() {
     return
   }
 
+  // Pagination
+  const nbPages  = Math.ceil(filtered.length / FACTURES_PAR_PAGE)
+  if (facturesPage > nbPages) facturesPage = nbPages
+  if (facturesPage < 1)       facturesPage = 1
+  const debut    = (facturesPage - 1) * FACTURES_PAR_PAGE
+  const paginees = filtered.slice(debut, debut + FACTURES_PAR_PAGE)
+
+  const paginationHtml = nbPages <= 1 ? '' : `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border);background:var(--surface-alt);flex-wrap:wrap;gap:8px;">
+      <span style="font-size:12px;color:var(--muted);">${filtered.length} factures — page <b>${facturesPage}</b>/${nbPages}</span>
+      <div style="display:flex;gap:6px;">
+        <button onclick="facturesPage=1;chargerFactures()" ${facturesPage===1?'disabled':''} style="font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-family:inherit;opacity:${facturesPage===1?'0.4':'1'};">«</button>
+        <button onclick="facturesPage--;chargerFactures()" ${facturesPage<=1?'disabled':''} style="font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-family:inherit;opacity:${facturesPage<=1?'0.4':'1'};">‹ Précédent</button>
+        <button onclick="facturesPage++;chargerFactures()" ${facturesPage>=nbPages?'disabled':''} style="font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-family:inherit;opacity:${facturesPage>=nbPages?'0.4':'1'};">Suivant ›</button>
+        <button onclick="facturesPage=${nbPages};chargerFactures()" ${facturesPage===nbPages?'disabled':''} style="font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-family:inherit;opacity:${facturesPage===nbPages?'0.4':'1'};">»</button>
+      </div>
+    </div>`
+
   listeEl.innerHTML = `
     <div id="bulk-action-bar" style="display:none;background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;margin-bottom:10px;align-items:center;gap:12px;flex-wrap:wrap;">
       <span style="font-size:13px;font-weight:600;"><span id="bulk-count">0</span> facture(s) sélectionnée(s)</span>
@@ -2080,7 +2100,7 @@ async function chargerFactures() {
           </tr>
         </thead>
         <tbody>
-          ${filtered.map(f => {
+          ${paginees.map(f => {
             const enRetard = !f.solde && !f.litige && f.date_echeance && f.date_echeance < aujourd_hui
             const joursRetard = enRetard ? Math.floor((new Date(aujourd_hui) - new Date(f.date_echeance)) / 86400000) : 0
 
@@ -2198,15 +2218,15 @@ async function chargerFactures() {
           }).join('')}
         </tbody>
       </table>
-      <div style="padding:10px 16px; font-size:11.5px; color:var(--muted); border-top:1px solid var(--border-soft);">
-        ${filtered.length} facture${filtered.length > 1 ? 's' : ''} affichée${filtered.length > 1 ? 's' : ''}
-      </div>
+      ${paginationHtml}
     </div>
   `
 }
 
-function setFiltreFactures(val) { filtreFactures = val; chargerFactures() }
-function setFiltreFacturesClient(val) { filtreFacturesClient = val; chargerFactures() }
+function setFiltreFacturesPagine(val) { facturesPage = 1; filtreFactures = val; chargerFactures() }
+
+function setFiltreFactures(val) { filtreFactures = val; facturesPage = 1; chargerFactures() }
+function setFiltreFacturesClient(val) { filtreFacturesClient = val; facturesPage = 1; chargerFactures() }
 
 // ── CLIENTS EXCLUS ───────────────────────────────────────
 function togglePanelExclus() {
