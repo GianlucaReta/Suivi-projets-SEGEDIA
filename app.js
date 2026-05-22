@@ -2299,6 +2299,7 @@ async function ouvrirFicheClient(nomClient) {
   const contact = facs.find(f => f.email_client || f.telephone)
   const email = contact?.email_client || null
   const tel = contact?.telephone || null
+  const moyenPaiement = facs.find(f => f.moyen_paiement)?.moyen_paiement || null
 
   const factLignes = facs.slice(0, 30).map(f => {
     const montant = parseFloat(f.montant)||0
@@ -2323,9 +2324,18 @@ async function ouvrirFicheClient(nomClient) {
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;">
       <div>
         <div style="font-weight:700;font-size:20px;color:var(--ink);">${nomClient}</div>
-        <div style="display:flex;gap:14px;margin-top:6px;font-size:12px;color:var(--muted);">
+        <div style="display:flex;gap:14px;margin-top:6px;font-size:12px;color:var(--muted);flex-wrap:wrap;align-items:center;">
           ${email ? `<span>✉ ${email}</span>` : `<span style="color:var(--danger);">Pas d'email</span>`}
           ${tel ? `<span>📞 ${formatPhone(tel)}</span>` : ''}
+          <span style="display:flex;align-items:center;gap:6px;">
+            <span style="color:var(--muted);">Paiement :</span>
+            <select id="select-moyen-paiement" onchange="sauvegarderMoyenPaiement('${nomClient.replace(/'/g, "\\'")}')" style="font-size:12px;padding:2px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--ink);cursor:pointer;font-family:inherit;">
+              <option value="">— non défini —</option>
+              <option value="virement" ${moyenPaiement==='virement'?'selected':''}>Virement</option>
+              <option value="prélèvement" ${moyenPaiement==='prélèvement'?'selected':''}>Prélèvement</option>
+              <option value="espèce" ${moyenPaiement==='espèce'?'selected':''}>Espèce</option>
+            </select>
+          </span>
         </div>
       </div>
       <button onclick="document.getElementById('modal-fiche-client').remove()" style="background:none;border:none;cursor:pointer;font-size:22px;color:var(--muted);padding:0 6px;">×</button>
@@ -2375,6 +2385,15 @@ async function ouvrirFicheClient(nomClient) {
       </table>
     </div>
   </div>`
+}
+
+async function sauvegarderMoyenPaiement(nomClient) {
+  const sel = document.getElementById('select-moyen-paiement')
+  if (!sel) return
+  const val = sel.value || null
+  const { error } = await db.from('factures').update({ moyen_paiement: val }).eq('client', nomClient)
+  if (error) { afficherToast('Erreur lors de la sauvegarde', 'danger'); return }
+  afficherToast(`Moyen de paiement mis à jour pour ${nomClient}`, 'success')
 }
 
 // ── BULK ACTIONS sur factures ────────────────────────────
