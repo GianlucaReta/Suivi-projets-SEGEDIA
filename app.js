@@ -3214,8 +3214,14 @@ async function chargerAnalytique() {
   const container = document.getElementById('contenu-analytique')
   if (!container) return
 
-  const { data: exclusData } = await db.from('clients_exclus').select('nom')
-  const { data: factures }   = await db.from('factures').select('*').order('date_echeance', { ascending: true }).limit(5000)
+  container.innerHTML = `<div style="text-align:center;color:var(--muted);padding:40px;">Chargement…</div>`
+
+  try {
+
+  const { data: exclusData, error: errExclus } = await db.from('clients_exclus').select('nom')
+  const { data: factures, error: errFact }     = await db.from('factures').select('*').order('date_echeance', { ascending: true }).limit(5000)
+
+  if (errFact) { container.innerHTML = `<div style="color:var(--danger);padding:20px;">Erreur chargement : ${errFact.message}</div>`; return }
 
   const nomsExclus = new Set((exclusData || []).map(e => e.nom))
   const toutes = (factures || []).filter(f => !nomsExclus.has(f.client))
@@ -3292,7 +3298,8 @@ async function chargerAnalytique() {
     const datePrev = new Date(new Date(f.date_echeance).getTime() + delaiMoy * 86400000)
     const joursDepuisAuj = Math.floor((datePrev.getTime() - aujMs) / 86400000)
     const montant = parseFloat(f.montant) || 0
-    if (joursDepuisAuj <= 30) buckets['0-30'] += montant
+    if (joursDepuisAuj < 0) buckets['90+'] += montant  // déjà en retard → long terme
+    else if (joursDepuisAuj <= 30) buckets['0-30'] += montant
     else if (joursDepuisAuj <= 60) buckets['30-60'] += montant
     else if (joursDepuisAuj <= 90) buckets['60-90'] += montant
     else buckets['90+'] += montant
@@ -3581,6 +3588,14 @@ async function chargerAnalytique() {
         })()}
       </div>
     </div>`
+
+  } catch(e) {
+    container.innerHTML = `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:20px;color:var(--danger);">
+      <b>Erreur dans l'analytique :</b> ${e.message}
+      <pre style="font-size:11px;margin-top:8px;white-space:pre-wrap;">${e.stack||''}</pre>
+    </div>`
+    console.error('chargerAnalytique error:', e)
+  }
 }
 
 // ── Parser CSV DISTRILOG ──────────────────────────────────
