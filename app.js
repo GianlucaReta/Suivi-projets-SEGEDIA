@@ -569,6 +569,7 @@ async function chargerProjets() {
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; font-weight:600;">Client</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; font-weight:600;">Équipe</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; font-weight:600; min-width:140px;">Avancement</th>
+            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; font-weight:600;">Date limite</th>
             <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; font-weight:600;">Statut</th>
           </tr>
         </thead>
@@ -576,6 +577,15 @@ async function chargerProjets() {
           ${projetsAvecPct.map(p => {
             const equipeLabel = { technique: 'Technique', operationnel: 'Opérationnel', commercial: 'Commercial' }[p.equipe] || p.equipe || '—'
             const equipeColor = { technique: 'var(--brand)', operationnel: 'var(--success)', commercial: 'var(--warn)' }[p.equipe] || 'var(--muted)'
+            let dateLimiteHtml = '<span style="color:var(--muted);">—</span>'
+            if (p.date_fin_prevue) {
+              const joursRestants = Math.ceil((new Date(p.date_fin_prevue) - new Date(aujourd_hui)) / 86400000)
+              const enRetardProjet = joursRestants < 0 && p.statut !== 'fait'
+              const bientot = joursRestants >= 0 && joursRestants <= 7 && p.statut !== 'fait'
+              const couleur = enRetardProjet ? 'var(--danger)' : bientot ? 'var(--warn)' : 'var(--ink-soft)'
+              const prefixe = enRetardProjet ? '⚑ ' : bientot ? '⚠ ' : ''
+              dateLimiteHtml = `<span style="font-size:11.5px; font-weight:${enRetardProjet || bientot ? '600' : '400'}; color:${couleur}; font-family:'IBM Plex Mono',monospace;">${prefixe}${formatDate(p.date_fin_prevue)}</span>`
+            }
             return `<tr onclick="ouvrirDetailProjetId('${p.id}')" style="border-bottom:1px solid var(--border-soft); cursor:pointer; transition:background 0.12s;" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background='transparent'">
               <td style="padding:12px 16px; vertical-align:middle;">
                 <div style="font-size:10px; color:var(--muted); font-family:'IBM Plex Mono',monospace; letter-spacing:0.04em; margin-bottom:2px;">${p.equipe?.toUpperCase() || 'PROJET'}</div>
@@ -594,6 +604,7 @@ async function chargerProjets() {
                 </div>
                 <div style="font-size:10.5px; color:var(--muted); margin-top:2px;">${p.faites}/${p.total} tâches</div>
               </td>
+              <td style="padding:12px 16px; vertical-align:middle;">${dateLimiteHtml}</td>
               <td style="padding:12px 16px; vertical-align:middle;">${statutBadge(p.statut)}</td>
             </tr>`
           }).join('')}
@@ -1389,6 +1400,7 @@ function ouvrirModalProjet() {
   document.getElementById('input-projet-description').value = ''
   document.getElementById('input-projet-equipe').value = 'technique'
   document.getElementById('input-projet-statut').value = 'en cours'
+  document.getElementById('input-projet-date-fin').value = ''
   document.getElementById('modal-projet').classList.remove('hidden')
 }
 
@@ -1402,6 +1414,7 @@ function ouvrirEditionProjet() {
   document.getElementById('input-projet-description').value = projetActif.description || ''
   document.getElementById('input-projet-equipe').value = projetActif.equipe || 'technique'
   document.getElementById('input-projet-statut').value = projetActif.statut
+  document.getElementById('input-projet-date-fin').value = projetActif.date_fin_prevue || ''
   document.getElementById('modal-projet').classList.remove('hidden')
 }
 
@@ -1544,12 +1557,14 @@ async function sauvegarderProjet() {
   const nom = document.getElementById('input-projet-nom').value.trim()
   if (!nom) { alert('Le nom est obligatoire.'); return }
   const id = document.getElementById('input-projet-id').value
+  const dateFin = document.getElementById('input-projet-date-fin').value
   const payload = {
     nom,
     client: document.getElementById('input-projet-client').value.trim(),
     description: document.getElementById('input-projet-description').value.trim(),
     equipe: document.getElementById('input-projet-equipe').value,
     statut: document.getElementById('input-projet-statut').value,
+    date_fin_prevue: dateFin || null,
   }
   if (id) {
     const { error } = await db.from('projets').update(payload).eq('id', id)
