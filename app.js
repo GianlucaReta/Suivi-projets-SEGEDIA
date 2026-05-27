@@ -82,8 +82,8 @@ let projetActif = null
 let tousLesEmployes = []
 let tacheEnEdition = null
 let projetEnEdition = null
-let filtreProjetEquipe = 'tous'
-let filtreProjetStatut = 'tous'
+let filtresProjEquipe = new Set()   // vide = "tous"
+let filtresProjStatut = new Set()   // vide = "tous"
 let filtresTacheStatut = new Set()   // vide = "tous"
 let filtresTacheEquipe = new Set()   // vide = "toutes"
 let vueProjet = 'liste'
@@ -466,36 +466,49 @@ function renderTabsProjet(counts) {
     { val: 'operationnel', label: '⚙️ Opérationnel' },
     { val: 'commercial',   label: '💼 Commercial' },
   ]
+  const actifS = v => v === 'tous' ? filtresProjStatut.size === 0 : filtresProjStatut.has(v)
+  const actifE = v => v === 'tous' ? filtresProjEquipe.size === 0 : filtresProjEquipe.has(v)
   return `
     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:12px; flex-wrap:wrap;">
       <div style="display:flex; gap:2px; background:var(--surface); padding:3px; border-radius:8px; border:1px solid var(--border);">
         ${tabs.map(t => `
-          <button onclick="setFiltreProjetStatut('${t.val}')" style="
-            background:${filtreProjetStatut === t.val ? 'var(--brand-soft)' : 'transparent'};
-            color:${filtreProjetStatut === t.val ? 'var(--brand-deep)' : 'var(--muted)'};
+          <button onclick="toggleFiltreProjetStatut('${t.val}')" style="
+            background:${actifS(t.val) ? 'var(--brand-soft)' : 'transparent'};
+            color:${actifS(t.val) ? 'var(--brand-deep)' : 'var(--muted)'};
             border:none; cursor:pointer; padding:6px 12px; border-radius:6px;
-            font-size:12.5px; font-weight:${filtreProjetStatut === t.val ? '600' : '500'};
+            font-size:12.5px; font-weight:${actifS(t.val) ? '600' : '500'};
             font-family:inherit; display:flex; align-items:center; gap:6px; white-space:nowrap;
-          ">${t.label}<span style="font-size:10.5px; font-family:'IBM Plex Mono',monospace; background:${filtreProjetStatut === t.val ? 'white' : 'var(--surface-alt)'}; color:${filtreProjetStatut === t.val ? 'var(--brand-deep)' : 'var(--muted)'}; padding:1px 5px; border-radius:3px;">${t.count}</span></button>
+          ">${t.label}<span style="font-size:10.5px; font-family:'IBM Plex Mono',monospace; background:${actifS(t.val) ? 'white' : 'var(--surface-alt)'}; color:${actifS(t.val) ? 'var(--brand-deep)' : 'var(--muted)'}; padding:1px 5px; border-radius:3px;">${t.count}</span></button>
         `).join('')}
       </div>
     </div>
     <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;">
       ${equipes.map(e => `
-        <button onclick="setFiltreProjetEquipe('${e.val}')" style="
-          background:${filtreProjetEquipe === e.val ? 'var(--ink)' : 'var(--surface)'};
-          color:${filtreProjetEquipe === e.val ? '#fff' : 'var(--muted)'};
-          border:1px solid ${filtreProjetEquipe === e.val ? 'var(--ink)' : 'var(--border)'};
+        <button onclick="toggleFiltreProjetEquipe('${e.val}')" style="
+          background:${actifE(e.val) ? 'var(--ink)' : 'var(--surface)'};
+          color:${actifE(e.val) ? '#fff' : 'var(--muted)'};
+          border:1px solid ${actifE(e.val) ? 'var(--ink)' : 'var(--border)'};
           cursor:pointer; padding:4px 12px; border-radius:20px;
-          font-size:12px; font-weight:${filtreProjetEquipe === e.val ? '600' : '400'};
+          font-size:12px; font-weight:${actifE(e.val) ? '600' : '400'};
           font-family:inherit; white-space:nowrap; transition:all 0.1s;
         ">${e.label}</button>
       `).join('')}
     </div>`
 }
 
-function setFiltreProjetEquipe(val) { filtreProjetEquipe = val; chargerProjets() }
-function setFiltreProjetStatut(val) { filtreProjetStatut = val; chargerProjets() }
+function toggleFiltreProjetStatut(val) {
+  if (val === 'tous') { filtresProjStatut.clear() }
+  else { filtresProjStatut.has(val) ? filtresProjStatut.delete(val) : filtresProjStatut.add(val) }
+  chargerProjets()
+}
+function toggleFiltreProjetEquipe(val) {
+  if (val === 'tous') { filtresProjEquipe.clear() }
+  else { filtresProjEquipe.has(val) ? filtresProjEquipe.delete(val) : filtresProjEquipe.add(val) }
+  chargerProjets()
+}
+// aliases legacy
+function setFiltreProjetEquipe(val) { filtresProjEquipe.clear(); if (val !== 'tous') filtresProjEquipe.add(val); chargerProjets() }
+function setFiltreProjetStatut(val) { filtresProjStatut.clear(); if (val !== 'tous') filtresProjStatut.add(val); chargerProjets() }
 
 function statutBadge(statut) {
   const map = {
@@ -526,8 +539,8 @@ async function chargerProjets() {
   if (filterEl) filterEl.innerHTML = renderTabsProjet(counts)
 
   const filtered = data.filter(p => {
-    const okStatut = filtreProjetStatut === 'tous' || p.statut === filtreProjetStatut
-    const okEquipe = filtreProjetEquipe === 'tous' || p.equipe === filtreProjetEquipe
+    const okStatut = filtresProjStatut.size === 0 || filtresProjStatut.has(p.statut)
+    const okEquipe = filtresProjEquipe.size === 0 || filtresProjEquipe.has(p.equipe)
     return okStatut && okEquipe
   })
 
