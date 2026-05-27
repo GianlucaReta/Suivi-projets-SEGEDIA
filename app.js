@@ -84,11 +84,11 @@ let tacheEnEdition = null
 let projetEnEdition = null
 let filtreProjetEquipe = 'tous'
 let filtreProjetStatut = 'tous'
-let filtreTacheStatut = 'tous'
-let filtreTacheEquipe = 'tous'
+let filtresTacheStatut = new Set()   // vide = "tous"
+let filtresTacheEquipe = new Set()   // vide = "toutes"
 let vueProjet = 'liste'
 let vueTachesGlobal = 'liste'
-let filtreFactures  = 'toutes'
+let filtresFact = new Set()          // vide = "toutes"
 let facturesPage    = 1
 const FACTURES_PAR_PAGE = 50
 
@@ -1101,30 +1101,43 @@ async function ajouterCommentaireTache() {
 // --- TACHES GLOBAL ---
 function renderFiltresTache() {
   const statuts = [
-    { val: 'tous', label: 'Tous' },
-    { val: 'en cours', label: 'En cours' },
+    { val: 'tous',       label: 'Tous' },
+    { val: 'en cours',   label: 'En cours' },
     { val: 'en attente', label: 'En attente' },
-    { val: 'fait', label: 'Fait' },
-    { val: 'urgent', label: '🔴 Urgent' },
-    { val: 'retard', label: '⚠ Retard' }
+    { val: 'fait',       label: 'Fait' },
+    { val: 'urgent',     label: '🔴 Urgent' },
+    { val: 'retard',     label: '⚠ Retard' }
   ]
   const equipes = [
-    { val: 'tous', label: 'Toutes' },
-    { val: 'technique', label: '🔧 Technique' },
-    { val: 'operationnel', label: '⚙️ Opérationnel' },
-    { val: 'commercial', label: '💼 Commercial' },
+    { val: 'tous',           label: 'Toutes' },
+    { val: 'technique',      label: '🔧 Technique' },
+    { val: 'operationnel',   label: '⚙️ Opérationnel' },
+    { val: 'commercial',     label: '💼 Commercial' },
   ]
+  const actifS = v => v === 'tous' ? filtresTacheStatut.size === 0 : filtresTacheStatut.has(v)
+  const actifE = v => v === 'tous' ? filtresTacheEquipe.size === 0 : filtresTacheEquipe.has(v)
   return `
     <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-bottom:0.5rem; align-items:center;">
-      ${statuts.map(s => `<button class="btn ${filtreTacheStatut === s.val ? 'btn-primary' : 'btn-secondary'}" style="padding:3px 12px; font-size:0.78rem;" onclick="setFiltreTacheStatut('${s.val}')">${s.label}</button>`).join('')}
+      ${statuts.map(s => `<button class="btn ${actifS(s.val) ? 'btn-primary' : 'btn-secondary'}" style="padding:3px 12px; font-size:0.78rem;" onclick="toggleFiltreTacheStatut('${s.val}')">${s.label}</button>`).join('')}
     </div>
     <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:1rem; align-items:center;">
-      ${equipes.map(e => `<button style="background:${filtreTacheEquipe===e.val?'var(--ink)':'var(--surface)'};color:${filtreTacheEquipe===e.val?'#fff':'var(--muted)'};border:1px solid ${filtreTacheEquipe===e.val?'var(--ink)':'var(--border)'};cursor:pointer;padding:3px 11px;border-radius:20px;font-size:11.5px;font-weight:${filtreTacheEquipe===e.val?'600':'400'};font-family:inherit;white-space:nowrap;" onclick="setFiltreTacheEquipe('${e.val}')">${e.label}</button>`).join('')}
+      ${equipes.map(e => `<button style="background:${actifE(e.val)?'var(--ink)':'var(--surface)'};color:${actifE(e.val)?'#fff':'var(--muted)'};border:1px solid ${actifE(e.val)?'var(--ink)':'var(--border)'};cursor:pointer;padding:3px 11px;border-radius:20px;font-size:11.5px;font-weight:${actifE(e.val)?'600':'400'};font-family:inherit;white-space:nowrap;" onclick="toggleFiltreTacheEquipe('${e.val}')">${e.label}</button>`).join('')}
     </div>`
 }
 
-function setFiltreTacheStatut(val) { filtreTacheStatut = val; chargerTachesGlobal() }
-function setFiltreTacheEquipe(val) { filtreTacheEquipe = val; chargerTachesGlobal() }
+function toggleFiltreTacheStatut(val) {
+  if (val === 'tous') { filtresTacheStatut.clear() }
+  else { filtresTacheStatut.has(val) ? filtresTacheStatut.delete(val) : filtresTacheStatut.add(val) }
+  chargerTachesGlobal()
+}
+function toggleFiltreTacheEquipe(val) {
+  if (val === 'tous') { filtresTacheEquipe.clear() }
+  else { filtresTacheEquipe.has(val) ? filtresTacheEquipe.delete(val) : filtresTacheEquipe.add(val) }
+  chargerTachesGlobal()
+}
+// aliases legacy
+function setFiltreTacheStatut(val) { filtresTacheStatut.clear(); if (val !== 'tous') filtresTacheStatut.add(val); chargerTachesGlobal() }
+function setFiltreTacheEquipe(val) { filtresTacheEquipe.clear(); if (val !== 'tous') filtresTacheEquipe.add(val); chargerTachesGlobal() }
 
 function setVueTachesGlobal(vue) {
   vueTachesGlobal = vue
@@ -1177,11 +1190,14 @@ async function chargerTachesGlobal() {
   // ── VUE LISTE ──────────────────────────────────────────────
   const filtered = tachesAvecAssignations.filter(t => {
     const enRetard = t.date_fin_prevue && t.date_fin_prevue < aujourd_hui && t.statut !== 'fait'
-    const okStatut = filtreTacheStatut === 'retard' ? enRetard
-      : filtreTacheStatut === 'urgent' ? (t.priorite === 'urgent' && t.statut !== 'fait')
-      : filtreTacheStatut !== 'tous'   ? t.statut === filtreTacheStatut
-      : true
-    const okEquipe = filtreTacheEquipe === 'tous' || (t.projets?.equipe === filtreTacheEquipe)
+    // Multi-select statut : OR entre tous les filtres actifs
+    const okStatut = filtresTacheStatut.size === 0 || [...filtresTacheStatut].some(v =>
+      v === 'retard' ? enRetard :
+      v === 'urgent' ? (t.priorite === 'urgent' && t.statut !== 'fait') :
+      t.statut === v
+    )
+    // Multi-select équipe : OR entre toutes les équipes actives
+    const okEquipe = filtresTacheEquipe.size === 0 || filtresTacheEquipe.has(t.projets?.equipe)
     return okStatut && okEquipe
   })
   if (!filtered.length) {
@@ -2014,16 +2030,17 @@ async function chargerFactures() {
     { val:'soldees',  label:'Soldées' },
     { val:'acompte',  label:'💰 Avec acompte' }
   ]
+  const actifF = v => v === 'toutes' ? filtresFact.size === 0 : filtresFact.has(v)
   const filtresEl = document.getElementById('filtres-factures')
   if (filtresEl) filtresEl.innerHTML = `
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;width:100%;">
       ${filtres.map(f => `
-        <button onclick="setFiltreFactures('${f.val}')" style="
-          background:${filtreFactures===f.val ? 'var(--ink)' : 'var(--surface)'};
-          color:${filtreFactures===f.val ? '#fff' : 'var(--muted)'};
-          border:1px solid ${filtreFactures===f.val ? 'var(--ink)' : 'var(--border)'};
+        <button onclick="toggleFiltreFactures('${f.val}')" style="
+          background:${actifF(f.val) ? 'var(--ink)' : 'var(--surface)'};
+          color:${actifF(f.val) ? '#fff' : 'var(--muted)'};
+          border:1px solid ${actifF(f.val) ? 'var(--ink)' : 'var(--border)'};
           cursor:pointer;padding:4px 14px;border-radius:20px;font-size:12px;
-          font-weight:${filtreFactures===f.val ? '600' : '400'};font-family:inherit;white-space:nowrap;
+          font-weight:${actifF(f.val) ? '600' : '400'};font-family:inherit;white-space:nowrap;
         ">${f.label}</button>`).join('')}
       <div id="client-search-wrapper" style="position:relative;margin-left:auto;">
         <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none;" width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="5" cy="5" r="3.5" stroke="#9ca3af" stroke-width="1.3"/><path d="M8 8l2.5 2.5" stroke="#9ca3af" stroke-width="1.3" stroke-linecap="round"/></svg>
@@ -2037,14 +2054,16 @@ async function chargerFactures() {
       </div>
     </div>`
 
-  // Filtrer (statut + client)
+  // Filtrer (statut multi-select + client)
   const filtered = toutes.filter(f => {
     const retard = !f.solde && f.date_echeance && f.date_echeance < aujourd_hui
-    const okStatut = filtreFactures === 'attente'  ? (!f.solde && !retard)
-      : filtreFactures === 'retard'   ? retard
-      : filtreFactures === 'soldees'  ? f.solde
-      : filtreFactures === 'acompte'  ? (parseFloat(f.montant_paye) > 0 && !f.solde)
-      : true
+    const okStatut = filtresFact.size === 0 || [...filtresFact].some(v =>
+      v === 'attente' ? (!f.solde && !retard) :
+      v === 'retard'  ? retard :
+      v === 'soldees' ? f.solde :
+      v === 'acompte' ? (parseFloat(f.montant_paye) > 0 && !f.solde) :
+      true
+    )
     const okClient = !filtreFacturesClient || f.client === filtreFacturesClient
     return okStatut && okClient
   })
@@ -2223,9 +2242,13 @@ async function chargerFactures() {
   `
 }
 
-function setFiltreFacturesPagine(val) { facturesPage = 1; filtreFactures = val; chargerFactures() }
-
-function setFiltreFactures(val) { filtreFactures = val; facturesPage = 1; chargerFactures() }
+function toggleFiltreFactures(val) {
+  if (val === 'toutes') { filtresFact.clear() }
+  else { filtresFact.has(val) ? filtresFact.delete(val) : filtresFact.add(val) }
+  facturesPage = 1; chargerFactures()
+}
+// alias legacy
+function setFiltreFactures(val) { filtresFact.clear(); if (val !== 'toutes') filtresFact.add(val); facturesPage = 1; chargerFactures() }
 function setFiltreFacturesClient(val) { filtreFacturesClient = val; facturesPage = 1; chargerFactures() }
 
 // ── CLIENTS EXCLUS ───────────────────────────────────────
