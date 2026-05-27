@@ -46,13 +46,13 @@ Deno.serve(async () => {
 
   // Pas d'envoi le week-end
   if (jourSemaine === 0 || jourSemaine === 6) {
-    return new Response(JSON.stringify({ message: "Week-end — pas d'envoi." }), { status: 200 });
+    return new Response(JSON.stringify({ message: "Week-end - pas d'envoi." }), { status: 200 });
   }
 
   // Pas d'envoi les jours fériés
   const feries = joursFeriesFrance(maintenant.getUTCFullYear());
   if (feries.has(aujourd_hui)) {
-    return new Response(JSON.stringify({ message: `Jour férié (${aujourd_hui}) — pas d'envoi.` }), { status: 200 });
+    return new Response(JSON.stringify({ message: `Jour férié (${aujourd_hui}) - pas d'envoi.` }), { status: 200 });
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -120,7 +120,7 @@ Deno.serve(async () => {
   const totalRow = (montant: number, nb: number, showRetard: boolean) => `
     <tr style="background:#f9fafb;">
       <td colspan="${showRetard ? 2 : 2}" style="padding:10px 12px;font-size:12px;color:#6b7280;font-weight:600;">
-        Total — ${nb} facture${nb > 1 ? "s" : ""}
+        Total - ${nb} facture${nb > 1 ? "s" : ""}
       </td>
       <td style="padding:10px 12px;text-align:right;font-family:monospace;font-weight:700;font-size:14px;color:#1a1a1a;">${fmtMontant(montant)} €</td>
       <td colspan="${showRetard ? 2 : 1}"></td>
@@ -130,7 +130,7 @@ Deno.serve(async () => {
   const sectionJ3 = facturesJ3.length > 0 ? `
     <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:16px 20px;margin-bottom:28px;">
       <h3 style="color:#78350f;font-size:15px;margin:0 0 4px;">🔔 Nouvelles factures en dépassement J+3</h3>
-      <p style="color:#92400e;font-size:12px;margin:0 0 14px;">Échues il y a 3 jours — ${facturesJ3.length} facture${facturesJ3.length > 1 ? "s" : ""}</p>
+      <p style="color:#92400e;font-size:12px;margin:0 0 14px;">Échues il y a 3 jours - ${facturesJ3.length} facture${facturesJ3.length > 1 ? "s" : ""}</p>
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
         ${enteteTable(false)}
         <tbody>
@@ -160,7 +160,7 @@ Deno.serve(async () => {
     <div style="font-family:Arial,sans-serif;max-width:700px;margin:auto;color:#1a1a1a;padding:20px 0;">
       <div style="border-bottom:3px solid #EE7E24;padding-bottom:10px;margin-bottom:24px;">
         <span style="font-weight:700;font-size:18px;color:#EE7E24;">SEGEDIA SERVICES</span>
-        <span style="color:#6b7280;font-size:13px;margin-left:12px;">Alerte factures — ${aujourd_hui}</span>
+        <span style="color:#6b7280;font-size:13px;margin-left:12px;">Alerte factures - ${aujourd_hui}</span>
       </div>
 
       <div style="display:flex;gap:16px;margin-bottom:28px;">
@@ -184,7 +184,7 @@ Deno.serve(async () => {
       ${sectionJ3}
       ${sectionReste}
 
-      <p style="margin-top:24px;font-size:12px;color:#9ca3af;border-top:1px solid #f0f0f0;padding-top:16px;">Connectez-vous à SuiviPro pour mettre à jour les statuts. — SuiviPro SEGEDIA</p>
+      <p style="margin-top:24px;font-size:12px;color:#9ca3af;border-top:1px solid #f0f0f0;padding-top:16px;">Connectez-vous à SuiviPro pour mettre à jour les statuts. - SuiviPro SEGEDIA</p>
     </div>`;
 
   const res = await fetch("https://api.resend.com/emails", {

@@ -11,7 +11,7 @@ Deno.serve(async () => {
 
   // Pas d'envoi le week-end
   if (jourSemaine === 0 || jourSemaine === 6) {
-    return new Response(JSON.stringify({ message: "Week-end — pas d'envoi." }), { status: 200 });
+    return new Response(JSON.stringify({ message: "Week-end - pas d'envoi." }), { status: 200 });
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -82,7 +82,7 @@ Deno.serve(async () => {
       const factLignes = facs
         .map(
           (f: any) =>
-            `<li style="margin-bottom:4px;"><b>${f.numero}</b> — ${fmtEur(parseFloat(f.montant))} € — échéance ${fmtDate(f.date_echeance)}</li>`
+            `<li style="margin-bottom:4px;"><b>${f.numero}</b> - ${fmtEur(parseFloat(f.montant))} € - échéance ${fmtDate(f.date_echeance)}</li>`
         )
         .join("");
       return `
@@ -100,11 +100,11 @@ Deno.serve(async () => {
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#1a1815;max-width:640px;margin:0 auto;">
       <div style="border-bottom:2px solid #EE7E24;padding-bottom:12px;margin-bottom:20px;">
-        <span style="font-weight:700;font-size:16px;color:#EE7E24;">SEGEDIA SERVICES — SuiviPro</span>
+        <span style="font-weight:700;font-size:16px;color:#EE7E24;">SEGEDIA SERVICES - SuiviPro</span>
       </div>
       <h2 style="color:#1a1815;font-size:18px;margin:0 0 6px;">Relances R2 à envoyer</h2>
       <p style="color:#7a766f;margin:0 0 20px;">
-        <b>${aRelancer.length}</b> facture${aRelancer.length > 1 ? "s" : ""} chez <b>${nbClients}</b> client${nbClients > 1 ? "s" : ""} — Total : <b style="font-family:monospace;color:#991b1b;">${fmtEur(totalGlobal)} €</b>
+        <b>${aRelancer.length}</b> facture${aRelancer.length > 1 ? "s" : ""} chez <b>${nbClients}</b> client${nbClients > 1 ? "s" : ""} - Total : <b style="font-family:monospace;color:#991b1b;">${fmtEur(totalGlobal)} €</b>
       </p>
       ${lignesClients}
       <div style="background:#fef3c7;border-radius:8px;padding:12px 16px;margin-top:20px;font-size:13px;color:#854d0e;">
@@ -127,7 +127,7 @@ Deno.serve(async () => {
         body: JSON.stringify({
           from: "SuiviPro <suivipro@segedia.fr>",
           to: email,
-          subject: `[SuiviPro] ${aRelancer.length} R2 à envoyer — ${fmtEur(totalGlobal)} €`,
+          subject: `[SuiviPro] ${aRelancer.length} R2 à envoyer - ${fmtEur(totalGlobal)} €`,
           html,
         }),
       })
