@@ -32,11 +32,11 @@ Deno.serve(async () => {
   const jourSemaine = maintenant.getUTCDay();
 
   if (jourSemaine === 0 || jourSemaine === 6) {
-    return new Response(JSON.stringify({ message: "Week-end — pas d'envoi." }), { status: 200 });
+    return new Response(JSON.stringify({ message: "Week-end - pas d'envoi." }), { status: 200 });
   }
   const feries = joursFeriesFrance(maintenant.getUTCFullYear());
   if (feries.has(aujourd_hui)) {
-    return new Response(JSON.stringify({ message: `Jour férié (${aujourd_hui}) — pas d'envoi.` }), { status: 200 });
+    return new Response(JSON.stringify({ message: `Jour férié (${aujourd_hui}) - pas d'envoi.` }), { status: 200 });
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -56,6 +56,7 @@ Deno.serve(async () => {
     `)
     .lt("date_fin_prevue", aujourd_hui)
     .neq("statut", "fait")
+    .neq("statut", "en attente")
     .not("date_fin_prevue", "is", null);
 
   if (error) {
@@ -89,19 +90,19 @@ Deno.serve(async () => {
       const retard = Math.floor(
         (new Date(aujourd_hui).getTime() - new Date(t.date_fin_prevue!).getTime()) / (1000 * 60 * 60 * 24)
       );
-      return `<li><b>${t.description}</b> — ${projet}${client ? ` (${client})` : ""} — <span style="color:#ef4444;">En retard de ${retard} jour${retard > 1 ? "s" : ""}</span></li>`;
+      return `<li><b>${t.description}</b> - ${projet}${client ? ` (${client})` : ""} - <span style="color:#ef4444;">En retard de ${retard} jour${retard > 1 ? "s" : ""}</span></li>`;
     });
 
     const html = `
       <div style="font-family:sans-serif; max-width:600px; margin:auto;">
-        <h2 style="color:#6366f1;">Rappel SuiviPro — Tâches en retard</h2>
+        <h2 style="color:#6366f1;">Rappel SuiviPro - Tâches en retard</h2>
         <p>Bonjour <b>${nom}</b>,</p>
         <p>Les tâches suivantes sont en retard et nécessitent votre attention :</p>
         <ul style="line-height:2;">
           ${lignes.join("")}
         </ul>
         <p>Connectez-vous à SuiviPro pour mettre à jour leur statut.</p>
-        <p style="color:#94a3b8; font-size:0.85rem;">— SuiviPro SEGEDIA</p>
+        <p style="color:#94a3b8; font-size:0.85rem;">- SuiviPro SEGEDIA</p>
       </div>
     `;
 
@@ -114,7 +115,7 @@ Deno.serve(async () => {
       body: JSON.stringify({
         from: "SuiviPro <alertes@segedia.fr>",
         to: [email],
-        subject: `${tachesEmploye.length} tâche${tachesEmploye.length > 1 ? "s" : ""} en retard — SuiviPro`,
+        subject: `${tachesEmploye.length} tâche${tachesEmploye.length > 1 ? "s" : ""} en retard - SuiviPro`,
         html,
       }),
     });

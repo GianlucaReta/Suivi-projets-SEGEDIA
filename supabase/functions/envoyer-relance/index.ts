@@ -37,6 +37,7 @@ Deno.serve(async (req) => {
         to: [to],
         subject,
         html,
+        open_tracking: true,
         tags: [{ name: "type", value: "relance" }],
       }),
     });
