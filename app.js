@@ -2638,7 +2638,7 @@ function ouvrirModalRelance(id) {
   let sujet, corps
   if (facImpayees.length === 1) {
     const f = facImpayees[0]
-    sujet = `Relance facture N°${f.numero} — SEGEDIA SERVICES`
+    sujet = `Relance facture N°${f.numero} - SEGEDIA SERVICES`
     corps = `Bonjour,
 
 Sauf erreur de notre part, la facture N°${f.numero} d'un montant de ${fmt(f.montant)} €, dont l'échéance était fixée au ${formatDate(f.date_echeance)}, n'a pas encore été réglée à ce jour.
@@ -2653,7 +2653,7 @@ SEGEDIA SERVICES`
     const lignes = facImpayees.map(f =>
       `  • N°${f.numero} - ${fmt(f.montant)} € - échéance le ${formatDate(f.date_echeance)}`
     ).join('\n')
-    sujet = `Relance factures impayées — SEGEDIA SERVICES`
+    sujet = `Relance factures impayées - SEGEDIA SERVICES`
     corps = `Bonjour,
 
 Sauf erreur de notre part, les factures suivantes n'ont pas encore été réglées à ce jour :
@@ -2782,7 +2782,7 @@ function ouvrirModalRelanceR2(id) {
   let sujet, corps
   if (facImpayees.length === 1) {
     const f = facImpayees[0]
-    sujet = `Relance 2ème avis — Facture N°${f.numero} — SEGEDIA SERVICES`
+    sujet = `Relance 2ème avis - Facture N°${f.numero} - SEGEDIA SERVICES`
     corps = `Bonjour,
 
 Sauf erreur de notre part, et malgré notre premier rappel, la facture N°${f.numero} d'un montant de ${fmt(f.montant)} €, dont l'échéance était fixée au ${formatDate(f.date_echeance)}, n'a toujours pas été réglée à ce jour.
@@ -2799,7 +2799,7 @@ SEGEDIA SERVICES`
     const lignes = facImpayees.map(f =>
       `  • N°${f.numero} - ${fmt(f.montant)} € - échéance le ${formatDate(f.date_echeance)}`
     ).join('\n')
-    sujet = `Relance 2ème avis — Factures impayées — SEGEDIA SERVICES`
+    sujet = `Relance 2ème avis - Factures impayées - SEGEDIA SERVICES`
     corps = `Bonjour,
 
 Sauf erreur de notre part, et malgré notre premier rappel, les factures suivantes n'ont toujours pas été réglées à ce jour :
