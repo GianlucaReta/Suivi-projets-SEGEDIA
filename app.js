@@ -1,5 +1,6 @@
 const SUPABASE_URL = 'https://guzbikygjwsvztlthmnr.supabase.co'
 const SUPABASE_KEY = 'sb_publishable_BqknWAgxurkaidzDdyQ60g_GnlnIcYk'
+const SUPABASE_ANON_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd1emJpa3lnandzdnp0bHRobW5yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA3MzUsImV4cCI6MjA5Mjk2NjczNX0.U7y7458ZAoDBbuVjSbYuDg7zmt77mbLvc1gxEtq9MK8'
 
 const { createClient } = supabase
 const db = createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -2730,7 +2731,7 @@ async function envoyerRelanceEmail() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Authorization': `Bearer ${SUPABASE_ANON_JWT}`,
       },
       body: JSON.stringify({ to: email, subject: sujet, html, ids, type: window._relanceData?.type || 'r1' }),
     })
