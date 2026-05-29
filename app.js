@@ -3768,7 +3768,7 @@ async function importerCSVFactures(file) {
   // Charger clients exclus + factures existantes en parallèle
   const [{ data: exclus }, { data: existantes }] = await Promise.all([
     db.from('clients_exclus').select('nom'),
-    db.from('factures').select('numero, solde, note')
+    db.from('factures').select('numero, solde, note, date_paiement')
   ])
   const nomsExclus  = new Set((exclus     || []).map(e => e.nom))
   // Map numero → { solde, note } pour préserver les données manuelles
@@ -3793,6 +3793,7 @@ async function importerCSVFactures(file) {
     const soldeCSV      = (cols[6] || '').trim() === 'Oui'
     const ville         = cols[7]?.trim() || null
     const commentaire   = cols[3]?.trim().slice(0, 500) || null
+    const date_paiement_csv = parseDateEcheanceDL(cols[12]?.trim() || null)
 
     const existant = existantesMap.get(numero)
     if (existant) {
@@ -3803,10 +3804,12 @@ async function importerCSVFactures(file) {
       const solde = existant.solde || soldeCSV
       // La note manuelle n'est jamais écrasée par le CSV
       const note = existant.note ?? null
-      return { numero, client, montant, date_emission, date_echeance, solde, ville, commentaire, note }
+      // date_paiement : priorité à la valeur existante, sinon celle du CSV
+      const date_paiement = existant.date_paiement ?? date_paiement_csv
+      return { numero, client, montant, date_emission, date_echeance, solde, ville, commentaire, note, date_paiement }
     } else {
       nbNouveaux++
-      return { numero, client, montant, date_emission, date_echeance, solde: soldeCSV, ville, commentaire }
+      return { numero, client, montant, date_emission, date_echeance, solde: soldeCSV, ville, commentaire, date_paiement: date_paiement_csv }
     }
   }).filter(Boolean)
 
