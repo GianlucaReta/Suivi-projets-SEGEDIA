@@ -4102,6 +4102,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
 // ── Modal Nouveau/Édition contrat ─────────────────────────
 
 async function ouvrirModalContratRecurrent(id = null) {
+  fermerModals()
   window._contratEditionId = id || null
   const modal = document.getElementById('modal-contrat-recurrent')
   const titre = document.getElementById('modal-contrat-recurrent-titre')
@@ -4218,6 +4219,7 @@ async function sauvegarderContratRecurrent() {
 // ── Modal Relevé ──────────────────────────────────────────
 
 async function ouvrirModalReleve(contratId, periode) {
+  fermerModals()
   const { data: contrat } = await db.from('contrats_recurrents').select('*').eq('id', contratId).single()
   if (!contrat) return
 
