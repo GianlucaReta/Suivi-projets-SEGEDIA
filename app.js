@@ -181,6 +181,8 @@ function showPage(page) {
   if (page === 'factures') chargerFactures()
   if (page === 'recouvrement') { chargerRecouvrement(); mettreAJourBadgeRecouvrement() }
   if (page === 'recurrents') chargerRecurrents()
+  // Mémoriser l'onglet courant pour le restaurer au rechargement
+  localStorage.setItem('suivi_current_page', page)
 }
 
 // --- UTILISATEUR ACTIF ---
@@ -1686,7 +1688,12 @@ function initiales(nom) {
 
 // --- INIT ---
 mettreAJourSidebarUser()
-chargerDashboard()
+const _pageSauvegardee = localStorage.getItem('suivi_current_page')
+if (_pageSauvegardee && document.getElementById('page-' + _pageSauvegardee)) {
+  showPage(_pageSauvegardee)
+} else {
+  chargerDashboard()
+}
 chargerEmployes()
 // --- CALENDRIER ---
 let calDate = new Date()
@@ -4155,6 +4162,7 @@ async function ouvrirModalContratRecurrent(id = null) {
   }
 
   modal.classList.remove('hidden')
+  modal.querySelector('.modal-box').scrollTop = 0
 }
 
 function ajouterLigneCompteur(nom = '', prix = '') {
