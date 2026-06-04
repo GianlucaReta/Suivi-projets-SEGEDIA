@@ -168,7 +168,7 @@ function showPage(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
   document.getElementById('page-' + page).classList.add('active')
-  const navMap = { dashboard: 'dashboard', projets: 'projet', taches: 'tâche', employes: 'équipe', archives: 'archive', calendrier: 'calendrier', factures: 'factures', recouvrement: 'recouvrement' }
+  const navMap = { dashboard: 'dashboard', projets: 'projet', taches: 'tâche', employes: 'équipe', archives: 'archive', calendrier: 'calendrier', factures: 'factures', recouvrement: 'recouvrement', recurrents: 'récurrents' }
   document.querySelectorAll('.nav-item').forEach(n => {
     if (n.textContent.toLowerCase().includes(navMap[page])) n.classList.add('active')
   })
@@ -180,6 +180,7 @@ function showPage(page) {
   if (page === 'calendrier') afficherCalendrier()
   if (page === 'factures') chargerFactures()
   if (page === 'recouvrement') { chargerRecouvrement(); mettreAJourBadgeRecouvrement() }
+  if (page === 'recurrents') chargerRecurrents()
 }
 
 // --- UTILISATEUR ACTIF ---
@@ -3831,4 +3832,507 @@ async function importerCSVFactures(file) {
   ].filter(Boolean)
   alert('✓ Import terminé\n' + lignes.join(' · '))
   chargerFactures()
+}
+
+// ═══════════════════════════════════════════════════════════
+//  FACTURATION RÉCURRENTE (fontaines, compteurs, badges)
+// ═══════════════════════════════════════════════════════════
+
+window._anneeRecurrents = new Date().getFullYear()
+window._contratEditionId = null
+window._releveEnCours    = null  // { contratId, periode, contrat }
+window._historiqueContratId = null
+
+// ── Helpers ──────────────────────────────────────────────
+
+function periodeLabel(periode) {
+  if (!periode) return ''
+  if (periode.includes('-Q')) {
+    const [annee, q] = periode.split('-Q')
+    return `T${q} ${annee}`
+  }
+  const [annee, mois] = periode.split('-')
+  const moisNoms = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
+  return `${moisNoms[parseInt(mois) - 1]} ${annee}`
+}
+
+function periodeTrimestrielle(annee, trimestre) {
+  return `${annee}-Q${trimestre}`
+}
+
+function periodeMensuelle(annee, mois) {
+  return `${annee}-${String(mois).padStart(2,'0')}`
+}
+
+function statutPeriode(periode, anneeAff) {
+  // Retourne: 'passe', 'courant', 'futur'
+  const now = new Date()
+  const moisCourant  = now.getFullYear() === anneeAff ? now.getMonth() + 1 : (now.getFullYear() > anneeAff ? 13 : 0)
+  const trimCourant  = now.getFullYear() === anneeAff ? Math.ceil((now.getMonth() + 1) / 3) : (now.getFullYear() > anneeAff ? 5 : 0)
+
+  if (periode.includes('-Q')) {
+    const trim = parseInt(periode.split('-Q')[1])
+    if (trim < trimCourant) return 'passe'
+    if (trim === trimCourant) return 'courant'
+    return 'futur'
+  } else {
+    const mois = parseInt(periode.split('-')[1])
+    if (mois < moisCourant) return 'passe'
+    if (mois === moisCourant) return 'courant'
+    return 'futur'
+  }
+}
+
+function typeLabel(type) {
+  return { location_fontaine: '📦 Fontaine', compteur: '🔢 Compteur', badge: '🏷️ Badge', mixte: '📦+🔢 Mixte' }[type] || type
+}
+
+// ── Chargement principal ──────────────────────────────────
+
+async function chargerRecurrents() {
+  const annee = window._anneeRecurrents
+  document.getElementById('recurrents-annee-label').textContent = annee
+
+  const [{ data: contrats }, { data: employes }] = await Promise.all([
+    db.from('contrats_recurrents').select('*').eq('actif', true).order('client'),
+    db.from('employes').select('id,nom,email').order('nom')
+  ])
+
+  if (!contrats) return
+
+  // Charger les relevés de l'année
+  const ids = contrats.map(c => c.id)
+  const { data: releves } = ids.length
+    ? await db.from('releves_recurrents').select('*').in('contrat_id', ids).like('periode', `${annee}%`)
+    : { data: [] }
+
+  // Map contrat_id → periode → releve
+  const relevesMap = {}
+  for (const r of releves || []) {
+    if (!relevesMap[r.contrat_id]) relevesMap[r.contrat_id] = {}
+    relevesMap[r.contrat_id][r.periode] = r
+  }
+
+  afficherRecurrents(contrats, relevesMap, annee, employes || [])
+  mettreAJourBadgeRecurrents(contrats, relevesMap, annee)
+}
+
+function changerAnneeRecurrents(delta) {
+  window._anneeRecurrents = (window._anneeRecurrents || new Date().getFullYear()) + delta
+  chargerRecurrents()
+}
+
+// ── Mise à jour badge nav ─────────────────────────────────
+
+function mettreAJourBadgeRecurrents(contrats, relevesMap, annee) {
+  const now = new Date()
+  if (now.getFullYear() !== annee) {
+    const badge = document.getElementById('nav-badge-recurrents')
+    if (badge) badge.style.display = 'none'
+    return
+  }
+  let nbRetard = 0
+  for (const c of contrats) {
+    const periodes = c.frequence === 'mensuelle'
+      ? Array.from({length: now.getMonth() + 1}, (_, i) => periodeMensuelle(annee, i + 1))
+      : Array.from({length: Math.ceil((now.getMonth() + 1) / 3)}, (_, i) => periodeTrimestrielle(annee, i + 1))
+    for (const p of periodes) {
+      const releve = relevesMap[c.id]?.[p]
+      if (!releve || !releve.fait) nbRetard++
+    }
+  }
+  const badge = document.getElementById('nav-badge-recurrents')
+  if (badge) {
+    badge.style.display = nbRetard > 0 ? '' : 'none'
+    badge.textContent = nbRetard > 9 ? '9+' : nbRetard
+  }
+  const statsBar = document.getElementById('recurrents-stats-bar')
+  if (statsBar) statsBar.textContent = nbRetard > 0 ? `${nbRetard} période${nbRetard>1?'s':''} en attente de traitement` : ''
+}
+
+// ── Affichage principal ───────────────────────────────────
+
+function afficherRecurrents(contrats, relevesMap, annee, employes) {
+  const el = document.getElementById('recurrents-liste')
+  if (!el) return
+
+  const mensuel = contrats.filter(c => c.frequence === 'mensuelle')
+  const trimest = contrats.filter(c => c.frequence === 'trimestrielle')
+
+  const moisNomsCourt = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
+
+  // Cellule d'une période
+  function cellule(contrat, periode) {
+    const releve = relevesMap[contrat.id]?.[periode]
+    const statut = statutPeriode(periode, annee)
+    const fait = releve?.fait
+
+    if (statut === 'futur') {
+      return `<td style="padding:6px;text-align:center;border:1px solid var(--border-soft);background:var(--surface-alt);"></td>`
+    }
+    if (fait) {
+      const dateStr = releve.date_traitement ? `\nTraité le ${formatDate(releve.date_traitement)}` : ''
+      const commentaire = releve.commentaire ? `\n${releve.commentaire}` : ''
+      const valeurs = releve.valeurs && Object.keys(releve.valeurs).length
+        ? '\n' + Object.entries(releve.valeurs).map(([k,v]) => `${k}: ${v}`).join(', ')
+        : ''
+      return `<td style="padding:6px;text-align:center;border:1px solid var(--border-soft);background:#f0fdf4;cursor:pointer;" onclick="ouvrirModalReleve('${contrat.id}','${periode}')" title="Fait${dateStr}${valeurs}${commentaire}">
+        <span style="color:var(--success);font-size:16px;font-weight:700;">✓</span>
+      </td>`
+    }
+    // Pas fait, période passée ou courante
+    const isCourant = statut === 'courant'
+    const bg = isCourant ? '#fffbeb' : '#fef2f2'
+    const icon = isCourant ? '⚠' : '●'
+    const color = isCourant ? '#f59e0b' : '#ef4444'
+    return `<td style="padding:6px;text-align:center;border:1px solid var(--border-soft);background:${bg};cursor:pointer;" onclick="ouvrirModalReleve('${contrat.id}','${periode}')" title="À traiter">
+      <span style="color:${color};font-size:14px;">${icon}</span>
+    </td>`
+  }
+
+  // Section mensuel
+  let htmlMensuel = ''
+  if (mensuel.length > 0) {
+    const entetes = moisNomsCourt.map(m => `<th style="padding:6px 4px;font-size:11px;font-weight:600;color:var(--muted);text-align:center;min-width:36px;border:1px solid var(--border-soft);background:var(--surface-alt);">${m}</th>`).join('')
+    const lignes = mensuel.map(c => {
+      const cells = Array.from({length:12}, (_,i) => cellule(c, periodeMensuelle(annee, i+1))).join('')
+      const assigneEl = c.assigne_a ? `<span style="font-size:10px;color:var(--muted);display:block;">${c.assigne_a}</span>` : ''
+      return `<tr>
+        <td style="padding:8px 12px;border:1px solid var(--border-soft);white-space:nowrap;cursor:pointer;" onclick="ouvrirHistoriqueContrat('${c.id}')">
+          <span style="font-weight:600;font-size:13px;color:var(--brand);">${c.client}</span>
+          ${c.numero_machine ? `<span style="font-size:10px;color:var(--muted);margin-left:6px;">#${c.numero_machine}</span>` : ''}
+          <span style="font-size:10px;color:var(--muted);display:block;">${typeLabel(c.type_prestation)}</span>
+          ${assigneEl}
+        </td>
+        ${cells}
+      </tr>`
+    }).join('')
+    htmlMensuel = `
+      <div style="margin-bottom:24px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <span style="font-size:13px;font-weight:700;color:var(--ink);">Mensuel</span>
+          <span style="font-size:11px;color:var(--muted);background:var(--surface-alt);padding:2px 8px;border-radius:10px;">${mensuel.length} contrat${mensuel.length>1?'s':''}</span>
+        </div>
+        <div style="overflow-x:auto;">
+          <table style="border-collapse:collapse;min-width:600px;">
+            <thead><tr>
+              <th style="padding:8px 12px;font-size:11px;font-weight:600;color:var(--muted);text-align:left;border:1px solid var(--border-soft);background:var(--surface-alt);min-width:180px;">Client</th>
+              ${entetes}
+            </tr></thead>
+            <tbody>${lignes}</tbody>
+          </table>
+        </div>
+      </div>`
+  }
+
+  // Section trimestriel
+  let htmlTrimest = ''
+  if (trimest.length > 0) {
+    const entetesTrim = ['T1','T2','T3','T4'].map(t => `<th style="padding:6px 4px;font-size:11px;font-weight:600;color:var(--muted);text-align:center;min-width:70px;border:1px solid var(--border-soft);background:var(--surface-alt);">${t}</th>`).join('')
+    const lignes = trimest.map(c => {
+      const cells = [1,2,3,4].map(t => cellule(c, periodeTrimestrielle(annee, t))).join('')
+      const assigneEl = c.assigne_a ? `<span style="font-size:10px;color:var(--muted);display:block;">${c.assigne_a}</span>` : ''
+      return `<tr>
+        <td style="padding:8px 12px;border:1px solid var(--border-soft);white-space:nowrap;cursor:pointer;" onclick="ouvrirHistoriqueContrat('${c.id}')">
+          <span style="font-weight:600;font-size:13px;color:var(--brand);">${c.client}</span>
+          ${c.numero_machine ? `<span style="font-size:10px;color:var(--muted);margin-left:6px;">#${c.numero_machine}</span>` : ''}
+          <span style="font-size:10px;color:var(--muted);display:block;">${typeLabel(c.type_prestation)}</span>
+          ${assigneEl}
+        </td>
+        ${cells}
+      </tr>`
+    }).join('')
+    htmlTrimest = `
+      <div style="margin-bottom:24px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <span style="font-size:13px;font-weight:700;color:var(--ink);">Trimestriel</span>
+          <span style="font-size:11px;color:var(--muted);background:var(--surface-alt);padding:2px 8px;border-radius:10px;">${trimest.length} contrat${trimest.length>1?'s':''}</span>
+        </div>
+        <div style="overflow-x:auto;">
+          <table style="border-collapse:collapse;min-width:400px;">
+            <thead><tr>
+              <th style="padding:8px 12px;font-size:11px;font-weight:600;color:var(--muted);text-align:left;border:1px solid var(--border-soft);background:var(--surface-alt);min-width:180px;">Client</th>
+              ${entetesTrim}
+            </tr></thead>
+            <tbody>${lignes}</tbody>
+          </table>
+        </div>
+      </div>`
+  }
+
+  // Légende
+  const legende = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;font-size:11.5px;color:var(--muted);">
+    <span style="display:flex;align-items:center;gap:5px;"><span style="color:var(--success);font-size:14px;font-weight:700;">✓</span> Traité</span>
+    <span style="display:flex;align-items:center;gap:5px;"><span style="color:#ef4444;font-size:12px;">●</span> À faire (en retard)</span>
+    <span style="display:flex;align-items:center;gap:5px;"><span style="color:#f59e0b;font-size:12px;">⚠</span> À faire (ce mois/trimestre)</span>
+    <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:var(--surface-alt);border:1px solid var(--border-soft);border-radius:2px;"></span> Futur</span>
+  </div>`
+
+  el.innerHTML = contrats.length === 0
+    ? `<div style="text-align:center;padding:60px 20px;color:var(--muted);">
+        <div style="font-size:40px;margin-bottom:12px;">📋</div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:8px;">Aucun contrat récurrent</div>
+        <div style="font-size:13px;">Cliquez sur <b>+ Nouveau contrat</b> pour commencer.</div>
+      </div>`
+    : legende + htmlMensuel + htmlTrimest
+}
+
+// ── Modal Nouveau/Édition contrat ─────────────────────────
+
+async function ouvrirModalContratRecurrent(id = null) {
+  window._contratEditionId = id || null
+  const modal = document.getElementById('modal-contrat-recurrent')
+  const titre = document.getElementById('modal-contrat-recurrent-titre')
+  titre.textContent = id ? 'Modifier le contrat' : 'Nouveau contrat'
+
+  // Remplir la liste des employés
+  const sel = document.getElementById('cr-assigne')
+  sel.innerHTML = '<option value="">— Non assigné —</option>'
+  const { data: employes } = await db.from('employes').select('id,nom,email').order('nom')
+  ;(employes || []).forEach(e => {
+    const opt = document.createElement('option')
+    opt.value = e.nom
+    opt.textContent = e.nom
+    sel.appendChild(opt)
+  })
+
+  // Vider le formulaire
+  document.getElementById('cr-client').value    = ''
+  document.getElementById('cr-machine').value   = ''
+  document.getElementById('cr-type').value      = 'location_fontaine'
+  document.getElementById('cr-prix-fixe').value = ''
+  document.getElementById('cr-prix-unite').value= ''
+  document.getElementById('cr-notes').value     = ''
+  document.querySelector('input[name="cr-frequence"][value="mensuelle"]').checked = true
+  document.getElementById('cr-compteurs-list').innerHTML = ''
+
+  if (id) {
+    // Charger les données existantes
+    const { data: contrat } = await db.from('contrats_recurrents').select('*').eq('id', id).single()
+    if (contrat) {
+      document.getElementById('cr-client').value    = contrat.client || ''
+      document.getElementById('cr-machine').value   = contrat.numero_machine || ''
+      document.getElementById('cr-type').value      = contrat.type_prestation || 'location_fontaine'
+      document.getElementById('cr-prix-fixe').value = contrat.prix_fixe ?? ''
+      document.getElementById('cr-prix-unite').value= contrat.prix_unite ?? ''
+      document.getElementById('cr-notes').value     = contrat.notes || ''
+      document.getElementById('cr-assigne').value   = contrat.assigne_a || ''
+      const radioFreq = document.querySelector(`input[name="cr-frequence"][value="${contrat.frequence}"]`)
+      if (radioFreq) radioFreq.checked = true
+      ;(contrat.compteurs || []).forEach(cpt => ajouterLigneCompteur(cpt.nom, cpt.prix))
+    }
+  }
+
+  modal.classList.remove('hidden')
+}
+
+function ajouterLigneCompteur(nom = '', prix = '') {
+  const list = document.getElementById('cr-compteurs-list')
+  const div = document.createElement('div')
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;'
+  div.innerHTML = `
+    <input type="text" placeholder="Nom du compteur (ex: Boisson longue)" value="${nom}"
+      style="flex:2;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;background:var(--surface);">
+    <input type="number" placeholder="€/unité" value="${prix}" step="0.001" min="0"
+      style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;background:var(--surface);">
+    <button type="button" onclick="this.parentElement.remove()"
+      style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px;padding:0;line-height:1;">✕</button>
+  `
+  list.appendChild(div)
+}
+
+async function sauvegarderContratRecurrent() {
+  const client = document.getElementById('cr-client').value.trim()
+  if (!client) { alert('Le nom du client est obligatoire.'); return }
+
+  const frequence = document.querySelector('input[name="cr-frequence"]:checked')?.value || 'mensuelle'
+
+  // Récupérer les compteurs
+  const lignesCompteurs = document.querySelectorAll('#cr-compteurs-list > div')
+  const compteurs = []
+  lignesCompteurs.forEach(div => {
+    const inputs = div.querySelectorAll('input')
+    const nom  = inputs[0].value.trim()
+    const prix = parseFloat(inputs[1].value) || 0
+    if (nom) compteurs.push({ nom, prix })
+  })
+
+  const payload = {
+    client,
+    numero_machine:   document.getElementById('cr-machine').value.trim() || null,
+    type_prestation:  document.getElementById('cr-type').value,
+    frequence,
+    prix_fixe:        parseFloat(document.getElementById('cr-prix-fixe').value) || null,
+    prix_unite:       parseFloat(document.getElementById('cr-prix-unite').value) || null,
+    compteurs,
+    assigne_a:        document.getElementById('cr-assigne').value || null,
+    notes:            document.getElementById('cr-notes').value.trim() || null,
+  }
+
+  let error
+  if (window._contratEditionId) {
+    ;({ error } = await db.from('contrats_recurrents').update(payload).eq('id', window._contratEditionId))
+  } else {
+    ;({ error } = await db.from('contrats_recurrents').insert(payload))
+  }
+
+  if (error) { alert('Erreur : ' + error.message); return }
+  fermerModals()
+  chargerRecurrents()
+}
+
+// ── Modal Relevé ──────────────────────────────────────────
+
+async function ouvrirModalReleve(contratId, periode) {
+  const { data: contrat } = await db.from('contrats_recurrents').select('*').eq('id', contratId).single()
+  if (!contrat) return
+
+  window._releveEnCours = { contratId, periode, contrat }
+
+  // Charger le relevé existant si présent
+  const { data: releve } = await db.from('releves_recurrents').select('*')
+    .eq('contrat_id', contratId).eq('periode', periode).maybeSingle()
+
+  const modal = document.getElementById('modal-releve-recurrent')
+  document.getElementById('releve-modal-titre').textContent = `${contrat.client} - ${periodeLabel(periode)}`
+
+  // Infos contrat
+  const infoEl = document.getElementById('releve-info-contrat')
+  const prixInfo = contrat.prix_fixe ? `${contrat.prix_fixe} €/période` : ''
+  const unitInfo = contrat.prix_unite ? `${contrat.prix_unite} €/unité` : ''
+  infoEl.innerHTML = `
+    <span style="font-weight:600;">${typeLabel(contrat.type_prestation)}</span>
+    ${contrat.numero_machine ? `· N° <b>${contrat.numero_machine}</b>` : ''}
+    ${prixInfo ? `· ${prixInfo}` : ''}
+    ${unitInfo ? `· ${unitInfo}` : ''}
+    ${contrat.assigne_a ? `<span style="margin-left:6px;color:var(--muted);">👤 ${contrat.assigne_a}</span>` : ''}
+  `
+
+  // Champs compteurs
+  const champsEl = document.getElementById('releve-compteurs-fields')
+  champsEl.innerHTML = ''
+  const valeursExist = releve?.valeurs || {}
+
+  if (contrat.compteurs && contrat.compteurs.length > 0) {
+    contrat.compteurs.forEach(cpt => {
+      const val = valeursExist[cpt.nom] ?? ''
+      const div = document.createElement('div')
+      div.className = 'form-group'
+      div.innerHTML = `
+        <label style="display:flex;justify-content:space-between;align-items:center;">
+          <span>${cpt.nom}</span>
+          ${cpt.prix ? `<span style="font-size:11px;color:var(--muted);">${cpt.prix} €/unité</span>` : ''}
+        </label>
+        <input type="number" data-compteur="${cpt.nom}" value="${val}" placeholder="Valeur relevée"
+          step="1" min="0" style="width:100%;box-sizing:border-box;">
+      `
+      champsEl.appendChild(div)
+    })
+  }
+
+  // Date et commentaire
+  document.getElementById('releve-date').value = releve?.date_traitement || new Date().toISOString().split('T')[0]
+  document.getElementById('releve-commentaire').value = releve?.commentaire || ''
+  document.getElementById('releve-fait').checked = releve?.fait || false
+
+  modal.classList.remove('hidden')
+}
+
+async function sauvegarderReleve() {
+  if (!window._releveEnCours) return
+  const { contratId, periode, contrat } = window._releveEnCours
+
+  // Récupérer les valeurs des compteurs
+  const valeurs = {}
+  document.querySelectorAll('#releve-compteurs-fields input[data-compteur]').forEach(input => {
+    const nom = input.getAttribute('data-compteur')
+    const val = parseFloat(input.value)
+    if (!isNaN(val)) valeurs[nom] = val
+  })
+
+  const payload = {
+    contrat_id:      contratId,
+    periode,
+    fait:            document.getElementById('releve-fait').checked,
+    date_traitement: document.getElementById('releve-date').value || null,
+    valeurs,
+    commentaire:     document.getElementById('releve-commentaire').value.trim() || null,
+  }
+
+  const { error } = await db.from('releves_recurrents').upsert(payload, { onConflict: 'contrat_id,periode' })
+  if (error) { alert('Erreur : ' + error.message); return }
+
+  fermerModals()
+  chargerRecurrents()
+}
+
+// ── Modal Historique contrat ──────────────────────────────
+
+async function ouvrirHistoriqueContrat(id) {
+  window._historiqueContratId = id
+
+  const [{ data: contrat }, { data: releves }] = await Promise.all([
+    db.from('contrats_recurrents').select('*').eq('id', id).single(),
+    db.from('releves_recurrents').select('*').eq('contrat_id', id).order('periode', { ascending: false })
+  ])
+
+  if (!contrat) return
+
+  const modal = document.getElementById('modal-historique-contrat')
+  document.getElementById('historique-contrat-titre').textContent = contrat.client
+
+  // Infos contrat
+  const infoEl = document.getElementById('historique-contrat-infos')
+  const compteursList = (contrat.compteurs || []).map(c => `${c.nom}${c.prix ? ` (${c.prix}€)` : ''}`).join(', ')
+  infoEl.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:12px;">
+      <div><span style="color:var(--muted);">Type :</span> <b>${typeLabel(contrat.type_prestation)}</b></div>
+      <div><span style="color:var(--muted);">Fréquence :</span> <b>${contrat.frequence === 'mensuelle' ? 'Mensuelle' : 'Trimestrielle'}</b></div>
+      ${contrat.numero_machine ? `<div><span style="color:var(--muted);">Machine :</span> <b>#${contrat.numero_machine}</b></div>` : ''}
+      ${contrat.prix_fixe ? `<div><span style="color:var(--muted);">Prix fixe :</span> <b>${contrat.prix_fixe} €</b></div>` : ''}
+      ${contrat.prix_unite ? `<div><span style="color:var(--muted);">Prix unité :</span> <b>${contrat.prix_unite} €</b></div>` : ''}
+      ${contrat.assigne_a ? `<div><span style="color:var(--muted);">Assigné :</span> <b>${contrat.assigne_a}</b></div>` : ''}
+    </div>
+    ${compteursList ? `<div style="margin-top:8px;font-size:12px;color:var(--muted);">Compteurs : ${compteursList}</div>` : ''}
+    ${contrat.notes ? `<div style="margin-top:8px;font-size:12px;color:var(--ink-soft);">${contrat.notes}</div>` : ''}
+  `
+
+  // Liste des relevés
+  const listeEl = document.getElementById('historique-contrat-liste')
+  if (!releves || releves.length === 0) {
+    listeEl.innerHTML = `<div style="text-align:center;padding:30px;color:var(--muted);font-size:13px;">Aucun relevé enregistré pour ce contrat.</div>`
+  } else {
+    listeEl.innerHTML = releves.map(r => {
+      const statutStr = r.fait
+        ? `<span style="color:var(--success);font-weight:700;">✓ Traité</span>${r.date_traitement ? ` <span style="font-size:11px;color:var(--muted);">le ${formatDate(r.date_traitement)}</span>` : ''}`
+        : `<span style="color:var(--danger);">✗ Non traité</span>`
+      const valeursStr = r.valeurs && Object.keys(r.valeurs).length
+        ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">${Object.entries(r.valeurs).map(([k,v]) => `${k}: <b>${v}</b>`).join(' · ')}</div>`
+        : ''
+      const commentStr = r.commentaire
+        ? `<div style="font-size:11.5px;color:var(--muted);margin-top:2px;font-style:italic;">${r.commentaire}</div>`
+        : ''
+      return `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 12px;border-bottom:1px solid var(--border-soft);">
+        <div>
+          <span style="font-size:13px;font-weight:600;color:var(--ink);">${periodeLabel(r.periode)}</span>
+          ${valeursStr}${commentStr}
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+          ${statutStr}
+          <button onclick="ouvrirModalReleve('${contrat.id}','${r.periode}')" style="font-size:11px;padding:2px 8px;background:var(--surface-alt);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-family:inherit;color:var(--ink);">Modifier</button>
+        </div>
+      </div>`
+    }).join('')
+  }
+
+  modal.classList.remove('hidden')
+}
+
+// ── Archiver un contrat ───────────────────────────────────
+
+async function archiverContrat(id) {
+  if (!confirm('Archiver ce contrat ? Il n\'apparaîtra plus dans la grille.')) return
+  await db.from('contrats_recurrents').update({ actif: false }).eq('id', id)
+  fermerModals()
+  chargerRecurrents()
 }
