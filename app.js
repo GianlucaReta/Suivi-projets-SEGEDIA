@@ -182,7 +182,8 @@ function showPage(page) {
   if (page === 'recouvrement') { chargerRecouvrement(); mettreAJourBadgeRecouvrement() }
   if (page === 'recurrents') chargerRecurrents()
   // Mémoriser l'onglet courant pour le restaurer au rechargement
-  localStorage.setItem('suivi_current_page', page)
+  // On exclut les sous-pages sans état propre (detail = vue d'un projet spécifique)
+  if (page !== 'detail') localStorage.setItem('suivi_current_page', page)
 }
 
 // --- UTILISATEUR ACTIF ---
@@ -3948,8 +3949,9 @@ function mettreAJourBadgeRecurrents(contrats, relevesMap, annee) {
     if (badge) badge.style.display = 'none'
     return
   }
-  const moisActionnable = now.getMonth()  // = moisCourant - 1 (0-indexed donne directement le nb de mois passés)
-  const trimActionnable = Math.ceil(now.getMonth() / 3)  // nb de trimestres complétés
+  const moisCourantBadge = now.getMonth() + 1  // 1-12
+  const moisActionnable = now.getMonth()  // = moisCourant - 1 (0-indexed = nb de mois à vérifier)
+  const trimActionnable = Math.max(0, Math.ceil(moisCourantBadge / 3) - 1)  // trimestres complétés
   let nbRetard = 0
   for (const c of contrats) {
     const periodes = c.frequence === 'mensuelle'
