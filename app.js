@@ -3847,6 +3847,7 @@ async function importerCSVFactures(file) {
 // ═══════════════════════════════════════════════════════════
 
 window._anneeRecurrents = new Date().getFullYear()
+window._recurrentsShowAll = false  // filtre : false = seulement les contrats avec actions en cours
 window._contratEditionId = null
 window._releveEnCours    = null  // { contratId, periode, contrat }
 window._historiqueContratId = null
@@ -3973,6 +3974,11 @@ function mettreAJourBadgeRecurrents(contrats, relevesMap, annee) {
 
 // ── Affichage principal ───────────────────────────────────
 
+function toggleFiltreRecurrents() {
+  window._recurrentsShowAll = !window._recurrentsShowAll
+  chargerRecurrents()
+}
+
 function afficherRecurrents(contrats, relevesMap, annee, employes) {
   const el = document.getElementById('recurrents-liste')
   if (!el) return
@@ -3981,16 +3987,23 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
   const trimest = contrats.filter(c => c.frequence === 'trimestrielle')
 
   const moisNomsCourt = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
+  const now = new Date()
+  const anneeEnCours = now.getFullYear()
+  const moisCourant = now.getMonth() + 1  // 1-12
+  const moisActionnable = moisCourant - 1  // période mensuelle courante à traiter
+  const trimActionnable = Math.max(0, Math.ceil(moisCourant / 3) - 1)  // trimestre courant à traiter
+  const showAll = !!window._recurrentsShowAll
 
   // Cellule d'une période
-  function cellule(contrat, periode) {
+  function cellule(contrat, periode, isCourantCol) {
     const releve = relevesMap[contrat.id]?.[periode]
     const statut = statutPeriode(periode, annee)
     const fait = releve?.fait
     const enAttente = releve?.en_attente && !fait
+    const colBorder = isCourantCol ? 'border:2px solid #f59e0b;' : 'border:1px solid var(--border-soft);'
 
     if (statut === 'futur') {
-      return `<td style="padding:6px;text-align:center;border:1px solid var(--border-soft);background:var(--surface-alt);"></td>`
+      return `<td style="padding:8px 4px;text-align:center;${colBorder}background:var(--surface-alt);min-width:44px;"></td>`
     }
     if (fait) {
       const dateStr = releve.date_traitement ? `\nTraité le ${formatDate(releve.date_traitement)}` : ''
@@ -3998,57 +4011,257 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
       const valeurs = releve.valeurs && Object.keys(releve.valeurs).length
         ? '\n' + Object.entries(releve.valeurs).map(([k,v]) => `${k}: ${v}`).join(', ')
         : ''
-      return `<td style="padding:6px;text-align:center;border:1px solid var(--border-soft);background:#f0fdf4;cursor:pointer;" onclick="ouvrirModalReleve('${contrat.id}','${periode}')" title="Fait${dateStr}${valeurs}${commentaire}">
-        <span style="color:var(--success);font-size:16px;font-weight:700;">✓</span>
+      return `<td style="padding:8px 4px;text-align:center;${colBorder}background:#f0fdf4;cursor:pointer;min-width:44px;" onclick="ouvrirModalReleve('${contrat.id}','${periode}')" title="Fait${dateStr}${valeurs}${commentaire}">
+        <span style="color:var(--success);font-size:17px;font-weight:700;">✓</span>
       </td>`
     }
     if (enAttente) {
       const commentaire = releve.commentaire ? `\n${releve.commentaire}` : ''
-      return `<td style="padding:6px;text-align:center;border:1px solid var(--border-soft);background:#fff7ed;cursor:pointer;" onclick="ouvrirModalReleve('${contrat.id}','${periode}')" title="En attente${commentaire}">
-        <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#f97316;"></span>
+      return `<td style="padding:8px 4px;text-align:center;${colBorder}background:#fff7ed;cursor:pointer;min-width:44px;" onclick="ouvrirModalReleve('${contrat.id}','${periode}')" title="En attente${commentaire}">
+        <span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#f97316;"></span>
       </td>`
     }
     // À traiter, période passée ou courante
-    const isCourant = statut === 'courant'
-    const bg = isCourant ? '#fffbeb' : '#fef2f2'
-    const icon = isCourant ? '⚠' : '●'
-    const color = isCourant ? '#f59e0b' : '#ef4444'
-    return `<td style="padding:6px;text-align:center;border:1px solid var(--border-soft);background:${bg};cursor:pointer;" onclick="ouvrirModalReleve('${contrat.id}','${periode}')" title="À traiter">
-      <span style="color:${color};font-size:14px;">${icon}</span>
+    const isCourantStatut = statut === 'courant'
+    const bg = isCourantStatut ? '#fffbeb' : '#fef2f2'
+    const icon = isCourantStatut ? '⚠' : '●'
+    const color = isCourantStatut ? '#f59e0b' : '#ef4444'
+    return `<td style="padding:8px 4px;text-align:center;${colBorder}background:${bg};cursor:pointer;min-width:44px;" onclick="ouvrirModalReleve('${contrat.id}','${periode}')" title="À traiter">
+      <span style="color:${color};font-size:15px;">${icon}</span>
     </td>`
+  }
+
+  // Helpers pour savoir si un contrat a des actions en cours
+  function contratAActionnable(c) {
+    if (annee !== anneeEnCours) return true  // pour les années passées, tout afficher
+    const periodes = c.frequence === 'mensuelle'
+      ? Array.from({length: moisActionnable}, (_, i) => periodeMensuelle(annee, i + 1))
+      : Array.from({length: trimActionnable}, (_, i) => periodeTrimestrielle(annee, i + 1))
+    return periodes.some(p => {
+      const r = relevesMap[c.id]?.[p]
+      return !r?.fait
+    })
+  }
+
+  // ── Section "À traiter maintenant" ────────────────────────
+  let htmlPriorite = ''
+  if (annee === anneeEnCours) {
+    // Contrats mensuels non traités pour le mois actionnable
+    const urgentMensuel = moisActionnable > 0
+      ? mensuel.filter(c => {
+          const p = periodeMensuelle(annee, moisActionnable)
+          const r = relevesMap[c.id]?.[p]
+          return !r?.fait && !r?.en_attente
+        })
+      : []
+
+    // Contrats trimestriels non traités pour le trimestre actionnable
+    const urgentTrimest = trimActionnable > 0
+      ? trimest.filter(c => {
+          const p = periodeTrimestrielle(annee, trimActionnable)
+          const r = relevesMap[c.id]?.[p]
+          return !r?.fait && !r?.en_attente
+        })
+      : []
+
+    // Contrats en attente (tous)
+    const enAttenteItems = []
+    for (const c of contrats) {
+      const periodes = c.frequence === 'mensuelle'
+        ? Array.from({length: moisActionnable}, (_, i) => periodeMensuelle(annee, i + 1))
+        : Array.from({length: trimActionnable}, (_, i) => periodeTrimestrielle(annee, i + 1))
+      for (const p of periodes) {
+        const r = relevesMap[c.id]?.[p]
+        if (r?.en_attente && !r?.fait) {
+          enAttenteItems.push({ contrat: c, periode: p, releve: r })
+        }
+      }
+    }
+
+    // Contrats en retard (passés mais pas faits)
+    const retardItems = []
+    for (const c of mensuel) {
+      for (let m = 1; m < moisActionnable; m++) {
+        const p = periodeMensuelle(annee, m)
+        const r = relevesMap[c.id]?.[p]
+        if (!r?.fait && !r?.en_attente) retardItems.push({ contrat: c, periode: p })
+      }
+    }
+    for (const c of trimest) {
+      for (let t = 1; t < trimActionnable; t++) {
+        const p = periodeTrimestrielle(annee, t)
+        const r = relevesMap[c.id]?.[p]
+        if (!r?.fait && !r?.en_attente) retardItems.push({ contrat: c, periode: p })
+      }
+    }
+
+    const moisLabel = moisActionnable > 0 ? moisNomsCourt[moisActionnable - 1] : ''
+    const trimLabel = trimActionnable > 0 ? `T${trimActionnable}` : ''
+
+    const totalUrgent = urgentMensuel.length + urgentTrimest.length
+    const totalRetard = retardItems.length
+    const totalAttente = enAttenteItems.length
+
+    // Bloc priorité principal
+    let blocksHtml = ''
+
+    // Bloc "Ce mois / ce trimestre"
+    if (totalUrgent > 0) {
+      const cardsM = urgentMensuel.map(c => {
+        const assignes = Array.isArray(c.assignes) && c.assignes.length ? c.assignes : (c.assigne_a ? [c.assigne_a] : [])
+        return `<div onclick="ouvrirModalReleve('${c.id}','${periodeMensuelle(annee, moisActionnable)}')"
+          style="background:white;border:1.5px solid #fbbf24;border-radius:8px;padding:10px 12px;cursor:pointer;min-width:150px;max-width:220px;flex-shrink:0;transition:box-shadow 0.15s;"
+          onmouseover="this.style.boxShadow='0 2px 8px rgba(251,191,36,0.35)'" onmouseout="this.style.boxShadow=''">
+          <div style="font-weight:600;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.client}</div>
+          ${c.numero_machine ? `<div style="font-size:10px;color:var(--muted);">#${c.numero_machine}</div>` : ''}
+          <div style="font-size:10px;color:var(--muted);margin-top:2px;">${typeLabel(c.type_prestation)}</div>
+          ${assignes.length ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">👤 ${assignes.join(', ')}</div>` : ''}
+          <div style="margin-top:6px;font-size:10.5px;font-weight:600;color:#d97706;">⚠ ${moisLabel}</div>
+        </div>`
+      }).join('')
+      const cardsT = urgentTrimest.map(c => {
+        const assignes = Array.isArray(c.assignes) && c.assignes.length ? c.assignes : (c.assigne_a ? [c.assigne_a] : [])
+        return `<div onclick="ouvrirModalReleve('${c.id}','${periodeTrimestrielle(annee, trimActionnable)}')"
+          style="background:white;border:1.5px solid #fbbf24;border-radius:8px;padding:10px 12px;cursor:pointer;min-width:150px;max-width:220px;flex-shrink:0;transition:box-shadow 0.15s;"
+          onmouseover="this.style.boxShadow='0 2px 8px rgba(251,191,36,0.35)'" onmouseout="this.style.boxShadow=''">
+          <div style="font-weight:600;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.client}</div>
+          ${c.numero_machine ? `<div style="font-size:10px;color:var(--muted);">#${c.numero_machine}</div>` : ''}
+          <div style="font-size:10px;color:var(--muted);margin-top:2px;">${typeLabel(c.type_prestation)}</div>
+          ${assignes.length ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">👤 ${assignes.join(', ')}</div>` : ''}
+          <div style="margin-top:6px;font-size:10.5px;font-weight:600;color:#d97706;">⚠ ${trimLabel}</div>
+        </div>`
+      }).join('')
+      blocksHtml += `
+        <div style="margin-bottom:16px;">
+          <div style="font-size:12px;font-weight:700;color:#d97706;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+            <span style="background:#fef3c7;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;">⚠</span>
+            À traiter${moisLabel ? ` — ${moisLabel}${trimLabel ? ' / '+trimLabel : ''}` : ''} <span style="font-weight:400;color:var(--muted);font-size:11px;margin-left:4px;">${totalUrgent} contrat${totalUrgent>1?'s':''}</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">${cardsM}${cardsT}</div>
+        </div>`
+    }
+
+    // Bloc retards
+    if (totalRetard > 0) {
+      const grouped = {}
+      for (const {contrat, periode} of retardItems) {
+        const key = contrat.id
+        if (!grouped[key]) grouped[key] = { contrat, periodes: [] }
+        grouped[key].periodes.push(periode)
+      }
+      const cards = Object.values(grouped).map(({contrat: c, periodes}) => {
+        const assignes = Array.isArray(c.assignes) && c.assignes.length ? c.assignes : (c.assigne_a ? [c.assigne_a] : [])
+        const periodesLabel = periodes.map(p => p.includes('-Q') ? p.split('-')[1] : moisNomsCourt[parseInt(p.split('-')[1])-1]).join(', ')
+        return `<div onclick="ouvrirModalReleve('${c.id}','${periodes[periodes.length-1]}')"
+          style="background:white;border:1.5px solid #fca5a5;border-radius:8px;padding:10px 12px;cursor:pointer;min-width:150px;max-width:220px;flex-shrink:0;transition:box-shadow 0.15s;"
+          onmouseover="this.style.boxShadow='0 2px 8px rgba(239,68,68,0.25)'" onmouseout="this.style.boxShadow=''">
+          <div style="font-weight:600;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.client}</div>
+          ${c.numero_machine ? `<div style="font-size:10px;color:var(--muted);">#${c.numero_machine}</div>` : ''}
+          <div style="font-size:10px;color:var(--muted);margin-top:2px;">${typeLabel(c.type_prestation)}</div>
+          ${assignes.length ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">👤 ${assignes.join(', ')}</div>` : ''}
+          <div style="margin-top:6px;font-size:10.5px;font-weight:600;color:#ef4444;">● ${periodes.length} période${periodes.length>1?'s':''} : ${periodesLabel}</div>
+        </div>`
+      }).join('')
+      blocksHtml += `
+        <div style="margin-bottom:16px;">
+          <div style="font-size:12px;font-weight:700;color:#ef4444;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+            <span style="background:#fee2e2;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;">●</span>
+            En retard <span style="font-weight:400;color:var(--muted);font-size:11px;margin-left:4px;">${Object.keys(grouped).length} contrat${Object.keys(grouped).length>1?'s':''}</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">${cards}</div>
+        </div>`
+    }
+
+    // Bloc en attente
+    if (totalAttente > 0) {
+      const grouped = {}
+      for (const {contrat, periode} of enAttenteItems) {
+        const key = contrat.id
+        if (!grouped[key]) grouped[key] = { contrat, periodes: [] }
+        grouped[key].periodes.push(periode)
+      }
+      const cards = Object.values(grouped).map(({contrat: c, periodes}) => {
+        const periodesLabel = periodes.map(p => p.includes('-Q') ? p.split('-')[1] : moisNomsCourt[parseInt(p.split('-')[1])-1]).join(', ')
+        return `<div onclick="ouvrirModalReleve('${c.id}','${periodes[0]}')"
+          style="background:white;border:1.5px solid #fdba74;border-radius:8px;padding:10px 12px;cursor:pointer;min-width:150px;max-width:220px;flex-shrink:0;transition:box-shadow 0.15s;"
+          onmouseover="this.style.boxShadow='0 2px 8px rgba(249,115,22,0.25)'" onmouseout="this.style.boxShadow=''">
+          <div style="font-weight:600;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.client}</div>
+          ${c.numero_machine ? `<div style="font-size:10px;color:var(--muted);">#${c.numero_machine}</div>` : ''}
+          <div style="font-size:10px;color:var(--muted);margin-top:2px;">${typeLabel(c.type_prestation)}</div>
+          <div style="margin-top:6px;font-size:10.5px;font-weight:600;color:#f97316;">⏳ ${periodesLabel}</div>
+        </div>`
+      }).join('')
+      blocksHtml += `
+        <div style="margin-bottom:16px;">
+          <div style="font-size:12px;font-weight:700;color:#f97316;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+            <span style="background:#fff7ed;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;">⏳</span>
+            En attente <span style="font-weight:400;color:var(--muted);font-size:11px;margin-left:4px;">${Object.keys(grouped).length} contrat${Object.keys(grouped).length>1?'s':''}</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">${cards}</div>
+        </div>`
+    }
+
+    if (totalUrgent === 0 && totalRetard === 0 && totalAttente === 0) {
+      blocksHtml = `<div style="display:flex;align-items:center;gap:10px;color:var(--success);font-size:13px;font-weight:600;padding:12px 0;">
+        <span style="font-size:20px;">✅</span> Tout est à jour ! Aucune action requise.
+      </div>`
+    }
+
+    htmlPriorite = `
+      <div style="background:var(--surface-alt);border:1px solid var(--border-soft);border-radius:12px;padding:16px 20px;margin-bottom:24px;">
+        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+          🎯 Actions à faire maintenant
+          <span style="font-size:11px;font-weight:400;color:var(--muted);">${new Date().toLocaleDateString('fr-FR',{month:'long',year:'numeric'})}</span>
+        </div>
+        ${blocksHtml}
+      </div>`
+  }
+
+  // ── Grille complète (tableau) ─────────────────────────────
+  const colHighlightMois = annee === anneeEnCours && moisActionnable > 0 ? moisActionnable : -1
+  const colHighlightTrim = annee === anneeEnCours && trimActionnable > 0 ? trimActionnable : -1
+
+  function ligneClientHtml(c, cells) {
+    const assignes = Array.isArray(c.assignes) && c.assignes.length ? c.assignes : (c.assigne_a ? [c.assigne_a] : [])
+    const assigneEl = assignes.length ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;white-space:normal;">👤 ${assignes.join(', ')}</div>` : ''
+    return `<tr>
+      <td style="padding:8px 12px;border:1px solid var(--border-soft);white-space:nowrap;cursor:pointer;position:sticky;left:0;z-index:2;background:var(--surface);min-width:170px;" onclick="ouvrirHistoriqueContrat('${c.id}')">
+        <div style="font-weight:600;font-size:13px;color:var(--brand);">${c.client}${c.numero_machine ? `<span style="font-size:10px;color:var(--muted);font-weight:400;margin-left:5px;">#${c.numero_machine}</span>` : ''}</div>
+        <div style="font-size:10.5px;color:var(--muted);">${typeLabel(c.type_prestation)}</div>
+        ${assigneEl}
+      </td>
+      ${cells}
+    </tr>`
   }
 
   // Section mensuel
   let htmlMensuel = ''
   if (mensuel.length > 0) {
-    const entetes = moisNomsCourt.map(m => `<th style="padding:6px 4px;font-size:11px;font-weight:600;color:var(--muted);text-align:center;min-width:36px;border:1px solid var(--border-soft);background:var(--surface-alt);">${m}</th>`).join('')
-    const lignes = mensuel.map(c => {
-      const cells = Array.from({length:12}, (_,i) => cellule(c, periodeMensuelle(annee, i+1))).join('')
-      const assignes = Array.isArray(c.assignes) && c.assignes.length ? c.assignes : (c.assigne_a ? [c.assigne_a] : [])
-      const assigneEl = assignes.length ? `<span style="font-size:10px;color:var(--muted);display:block;">👤 ${assignes.join(', ')}</span>` : ''
-      return `<tr>
-        <td style="padding:8px 12px;border:1px solid var(--border-soft);white-space:nowrap;cursor:pointer;" onclick="ouvrirHistoriqueContrat('${c.id}')">
-          <span style="font-weight:600;font-size:13px;color:var(--brand);">${c.client}</span>
-          ${c.numero_machine ? `<span style="font-size:10px;color:var(--muted);margin-left:6px;">#${c.numero_machine}</span>` : ''}
-          <span style="font-size:10px;color:var(--muted);display:block;">${typeLabel(c.type_prestation)}</span>
-          ${assigneEl}
-        </td>
-        ${cells}
-      </tr>`
+    const mensuelFiltres = showAll ? mensuel : mensuel.filter(c => contratAActionnable(c))
+    const nbCaches = mensuel.length - mensuelFiltres.length
+    const entetes = moisNomsCourt.map((m, i) => {
+      const isCur = (i + 1) === colHighlightMois
+      return `<th style="padding:7px 4px;font-size:11px;font-weight:${isCur?'700':'600'};color:${isCur?'#d97706':'var(--muted)'};text-align:center;min-width:44px;border:1px solid var(--border-soft);background:${isCur?'#fef9c3':'var(--surface-alt)'};">${m}</th>`
     }).join('')
+    const lignes = mensuelFiltres.map(c => {
+      const cells = Array.from({length:12}, (_,i) => cellule(c, periodeMensuelle(annee, i+1), (i+1) === colHighlightMois)).join('')
+      return ligneClientHtml(c, cells)
+    }).join('')
+    const hiddenInfo = nbCaches > 0 ? `<span style="font-size:11px;color:var(--muted);">(${nbCaches} client${nbCaches>1?'s':''} à jour masqué${nbCaches>1?'s':''})</span>` : ''
     htmlMensuel = `
-      <div style="margin-bottom:24px;">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-          <span style="font-size:13px;font-weight:700;color:var(--ink);">Mensuel</span>
-          <span style="font-size:11px;color:var(--muted);background:var(--surface-alt);padding:2px 8px;border-radius:10px;">${mensuel.length} contrat${mensuel.length>1?'s':''}</span>
+      <div style="margin-bottom:28px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+          <span style="font-size:13px;font-weight:700;color:var(--ink);">📅 Mensuel</span>
+          <span style="font-size:11px;color:var(--muted);background:var(--surface-alt);padding:2px 8px;border-radius:10px;">${mensuelFiltres.length}/${mensuel.length} affiché${mensuelFiltres.length>1?'s':''}</span>
+          ${hiddenInfo}
         </div>
-        <div style="overflow-x:auto;">
-          <table style="border-collapse:collapse;min-width:600px;">
+        <div style="overflow-x:auto;border-radius:8px;border:1px solid var(--border-soft);">
+          <table style="border-collapse:collapse;width:100%;">
             <thead><tr>
-              <th style="padding:8px 12px;font-size:11px;font-weight:600;color:var(--muted);text-align:left;border:1px solid var(--border-soft);background:var(--surface-alt);min-width:180px;">Client</th>
+              <th style="padding:8px 12px;font-size:11px;font-weight:600;color:var(--muted);text-align:left;border:1px solid var(--border-soft);background:var(--surface-alt);min-width:170px;position:sticky;left:0;z-index:3;">Client</th>
               ${entetes}
             </tr></thead>
-            <tbody>${lignes}</tbody>
+            <tbody>${lignes || `<tr><td colspan="13" style="text-align:center;padding:20px;color:var(--muted);font-size:12px;">✅ Tous les clients sont à jour ce mois-ci</td></tr>`}</tbody>
           </table>
         </div>
       </div>`
@@ -4057,46 +4270,51 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
   // Section trimestriel
   let htmlTrimest = ''
   if (trimest.length > 0) {
-    const entetesTrim = ['T1','T2','T3','T4'].map(t => `<th style="padding:6px 4px;font-size:11px;font-weight:600;color:var(--muted);text-align:center;min-width:70px;border:1px solid var(--border-soft);background:var(--surface-alt);">${t}</th>`).join('')
-    const lignes = trimest.map(c => {
-      const cells = [1,2,3,4].map(t => cellule(c, periodeTrimestrielle(annee, t))).join('')
-      const assignes = Array.isArray(c.assignes) && c.assignes.length ? c.assignes : (c.assigne_a ? [c.assigne_a] : [])
-      const assigneEl = assignes.length ? `<span style="font-size:10px;color:var(--muted);display:block;">👤 ${assignes.join(', ')}</span>` : ''
-      return `<tr>
-        <td style="padding:8px 12px;border:1px solid var(--border-soft);white-space:nowrap;cursor:pointer;" onclick="ouvrirHistoriqueContrat('${c.id}')">
-          <span style="font-weight:600;font-size:13px;color:var(--brand);">${c.client}</span>
-          ${c.numero_machine ? `<span style="font-size:10px;color:var(--muted);margin-left:6px;">#${c.numero_machine}</span>` : ''}
-          <span style="font-size:10px;color:var(--muted);display:block;">${typeLabel(c.type_prestation)}</span>
-          ${assigneEl}
-        </td>
-        ${cells}
-      </tr>`
+    const trimestFiltres = showAll ? trimest : trimest.filter(c => contratAActionnable(c))
+    const nbCachesT = trimest.length - trimestFiltres.length
+    const entetesTrim = ['T1','T2','T3','T4'].map((t, i) => {
+      const isCur = (i + 1) === colHighlightTrim
+      return `<th style="padding:7px 12px;font-size:11px;font-weight:${isCur?'700':'600'};color:${isCur?'#d97706':'var(--muted)'};text-align:center;min-width:80px;border:1px solid var(--border-soft);background:${isCur?'#fef9c3':'var(--surface-alt)'};">${t}</th>`
     }).join('')
+    const lignes = trimestFiltres.map(c => {
+      const cells = [1,2,3,4].map(t => cellule(c, periodeTrimestrielle(annee, t), t === colHighlightTrim)).join('')
+      return ligneClientHtml(c, cells)
+    }).join('')
+    const hiddenInfoT = nbCachesT > 0 ? `<span style="font-size:11px;color:var(--muted);">(${nbCachesT} client${nbCachesT>1?'s':''} à jour masqué${nbCachesT>1?'s':''})</span>` : ''
     htmlTrimest = `
-      <div style="margin-bottom:24px;">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-          <span style="font-size:13px;font-weight:700;color:var(--ink);">Trimestriel</span>
-          <span style="font-size:11px;color:var(--muted);background:var(--surface-alt);padding:2px 8px;border-radius:10px;">${trimest.length} contrat${trimest.length>1?'s':''}</span>
+      <div style="margin-bottom:28px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+          <span style="font-size:13px;font-weight:700;color:var(--ink);">🗓 Trimestriel</span>
+          <span style="font-size:11px;color:var(--muted);background:var(--surface-alt);padding:2px 8px;border-radius:10px;">${trimestFiltres.length}/${trimest.length} affiché${trimestFiltres.length>1?'s':''}</span>
+          ${hiddenInfoT}
         </div>
-        <div style="overflow-x:auto;">
-          <table style="border-collapse:collapse;min-width:400px;">
+        <div style="overflow-x:auto;border-radius:8px;border:1px solid var(--border-soft);">
+          <table style="border-collapse:collapse;width:100%;">
             <thead><tr>
-              <th style="padding:8px 12px;font-size:11px;font-weight:600;color:var(--muted);text-align:left;border:1px solid var(--border-soft);background:var(--surface-alt);min-width:180px;">Client</th>
+              <th style="padding:8px 12px;font-size:11px;font-weight:600;color:var(--muted);text-align:left;border:1px solid var(--border-soft);background:var(--surface-alt);min-width:170px;position:sticky;left:0;z-index:3;">Client</th>
               ${entetesTrim}
             </tr></thead>
-            <tbody>${lignes}</tbody>
+            <tbody>${lignes || `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);font-size:12px;">✅ Tous les clients sont à jour ce trimestre</td></tr>`}</tbody>
           </table>
         </div>
       </div>`
   }
 
-  // Légende
-  const legende = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;font-size:11.5px;color:var(--muted);">
-    <span style="display:flex;align-items:center;gap:5px;"><span style="color:var(--success);font-size:14px;font-weight:700;">✓</span> Traité</span>
-    <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#f97316;"></span> En attente</span>
-    <span style="display:flex;align-items:center;gap:5px;"><span style="color:#ef4444;font-size:12px;">●</span> À faire (en retard)</span>
-    <span style="display:flex;align-items:center;gap:5px;"><span style="color:#f59e0b;font-size:12px;">⚠</span> À faire (ce mois/trimestre)</span>
-    <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:var(--surface-alt);border:1px solid var(--border-soft);border-radius:2px;"></span> Futur</span>
+  // Barre de contrôle grille (filtre + légende)
+  const filtreBtn = `<button onclick="toggleFiltreRecurrents()"
+    style="background:${showAll?'var(--surface-alt)':'var(--brand)'};color:${showAll?'var(--ink)':'#fff'};border:1px solid ${showAll?'var(--border)':'var(--brand)'};border-radius:6px;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;">
+    ${showAll ? '👁 Tout afficher' : '🎯 Seulement à traiter'}
+  </button>`
+
+  const legende = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;font-size:11px;color:var(--muted);align-items:center;justify-content:space-between;">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+      <span style="font-size:11px;font-weight:600;color:var(--ink);">Légende :</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="color:var(--success);font-size:14px;font-weight:700;">✓</span> Traité</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#f97316;"></span> En attente</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="color:#ef4444;font-size:12px;">●</span> En retard</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="color:#f59e0b;font-size:12px;">⚠</span> À faire maintenant</span>
+    </div>
+    ${filtreBtn}
   </div>`
 
   el.innerHTML = contrats.length === 0
@@ -4105,7 +4323,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
         <div style="font-size:15px;font-weight:600;margin-bottom:8px;">Aucun contrat récurrent</div>
         <div style="font-size:13px;">Cliquez sur <b>+ Nouveau contrat</b> pour commencer.</div>
       </div>`
-    : legende + htmlMensuel + htmlTrimest
+    : htmlPriorite + legende + htmlMensuel + htmlTrimest
 }
 
 // ── Modal Nouveau/Édition contrat ─────────────────────────
