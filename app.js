@@ -3865,20 +3865,30 @@ function periodeMensuelle(annee, mois) {
 }
 
 function statutPeriode(periode, anneeAff) {
-  // Retourne: 'passe', 'courant', 'futur'
+  // Logique : on facture le mois/trimestre PRÉCÉDENT (le mois en cours n'est pas encore terminé)
+  // Ex: en juin → on traite mai ; en T2 (avr-juin) → on traite T1
   const now = new Date()
-  const moisCourant  = now.getFullYear() === anneeAff ? now.getMonth() + 1 : (now.getFullYear() > anneeAff ? 13 : 0)
-  const trimCourant  = now.getFullYear() === anneeAff ? Math.ceil((now.getMonth() + 1) / 3) : (now.getFullYear() > anneeAff ? 5 : 0)
+
+  if (now.getFullYear() !== anneeAff) {
+    return now.getFullYear() > anneeAff ? 'passe' : 'futur'
+  }
+
+  const moisCourant = now.getMonth() + 1  // 1-12
+  const trimCourant = Math.ceil(moisCourant / 3)  // 1-4
 
   if (periode.includes('-Q')) {
     const trim = parseInt(periode.split('-Q')[1])
-    if (trim < trimCourant) return 'passe'
-    if (trim === trimCourant) return 'courant'
+    const trimActionnable = trimCourant - 1  // dernier trimestre complété
+    if (trimActionnable <= 0) return 'futur'  // en Q1, rien d'actionnable cette année
+    if (trim < trimActionnable) return 'passe'
+    if (trim === trimActionnable) return 'courant'
     return 'futur'
   } else {
     const mois = parseInt(periode.split('-')[1])
-    if (mois < moisCourant) return 'passe'
-    if (mois === moisCourant) return 'courant'
+    const moisActionnable = moisCourant - 1  // mois précédent
+    if (moisActionnable <= 0) return 'futur'  // en janvier, rien d'actionnable cette année
+    if (mois < moisActionnable) return 'passe'
+    if (mois === moisActionnable) return 'courant'
     return 'futur'
   }
 }
@@ -3931,11 +3941,13 @@ function mettreAJourBadgeRecurrents(contrats, relevesMap, annee) {
     if (badge) badge.style.display = 'none'
     return
   }
+  const moisActionnable = now.getMonth()  // = moisCourant - 1 (0-indexed donne directement le nb de mois passés)
+  const trimActionnable = Math.ceil(now.getMonth() / 3)  // nb de trimestres complétés
   let nbRetard = 0
   for (const c of contrats) {
     const periodes = c.frequence === 'mensuelle'
-      ? Array.from({length: now.getMonth() + 1}, (_, i) => periodeMensuelle(annee, i + 1))
-      : Array.from({length: Math.ceil((now.getMonth() + 1) / 3)}, (_, i) => periodeTrimestrielle(annee, i + 1))
+      ? Array.from({length: moisActionnable}, (_, i) => periodeMensuelle(annee, i + 1))
+      : Array.from({length: trimActionnable}, (_, i) => periodeTrimestrielle(annee, i + 1))
     for (const p of periodes) {
       const releve = relevesMap[c.id]?.[p]
       if (!releve || !releve.fait) nbRetard++
