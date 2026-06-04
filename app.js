@@ -3966,6 +3966,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
     const releve = relevesMap[contrat.id]?.[periode]
     const statut = statutPeriode(periode, annee)
     const fait = releve?.fait
+    const enAttente = releve?.en_attente && !fait
 
     if (statut === 'futur') {
       return `<td style="padding:6px;text-align:center;border:1px solid var(--border-soft);background:var(--surface-alt);"></td>`
@@ -3980,7 +3981,13 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
         <span style="color:var(--success);font-size:16px;font-weight:700;">✓</span>
       </td>`
     }
-    // Pas fait, période passée ou courante
+    if (enAttente) {
+      const commentaire = releve.commentaire ? `\n${releve.commentaire}` : ''
+      return `<td style="padding:6px;text-align:center;border:1px solid var(--border-soft);background:#fff7ed;cursor:pointer;" onclick="ouvrirModalReleve('${contrat.id}','${periode}')" title="En attente${commentaire}">
+        <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#f97316;"></span>
+      </td>`
+    }
+    // À traiter, période passée ou courante
     const isCourant = statut === 'courant'
     const bg = isCourant ? '#fffbeb' : '#fef2f2'
     const icon = isCourant ? '⚠' : '●'
@@ -3996,7 +4003,8 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
     const entetes = moisNomsCourt.map(m => `<th style="padding:6px 4px;font-size:11px;font-weight:600;color:var(--muted);text-align:center;min-width:36px;border:1px solid var(--border-soft);background:var(--surface-alt);">${m}</th>`).join('')
     const lignes = mensuel.map(c => {
       const cells = Array.from({length:12}, (_,i) => cellule(c, periodeMensuelle(annee, i+1))).join('')
-      const assigneEl = c.assigne_a ? `<span style="font-size:10px;color:var(--muted);display:block;">${c.assigne_a}</span>` : ''
+      const assignes = Array.isArray(c.assignes) && c.assignes.length ? c.assignes : (c.assigne_a ? [c.assigne_a] : [])
+      const assigneEl = assignes.length ? `<span style="font-size:10px;color:var(--muted);display:block;">👤 ${assignes.join(', ')}</span>` : ''
       return `<tr>
         <td style="padding:8px 12px;border:1px solid var(--border-soft);white-space:nowrap;cursor:pointer;" onclick="ouvrirHistoriqueContrat('${c.id}')">
           <span style="font-weight:600;font-size:13px;color:var(--brand);">${c.client}</span>
@@ -4031,7 +4039,8 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
     const entetesTrim = ['T1','T2','T3','T4'].map(t => `<th style="padding:6px 4px;font-size:11px;font-weight:600;color:var(--muted);text-align:center;min-width:70px;border:1px solid var(--border-soft);background:var(--surface-alt);">${t}</th>`).join('')
     const lignes = trimest.map(c => {
       const cells = [1,2,3,4].map(t => cellule(c, periodeTrimestrielle(annee, t))).join('')
-      const assigneEl = c.assigne_a ? `<span style="font-size:10px;color:var(--muted);display:block;">${c.assigne_a}</span>` : ''
+      const assignes = Array.isArray(c.assignes) && c.assignes.length ? c.assignes : (c.assigne_a ? [c.assigne_a] : [])
+      const assigneEl = assignes.length ? `<span style="font-size:10px;color:var(--muted);display:block;">👤 ${assignes.join(', ')}</span>` : ''
       return `<tr>
         <td style="padding:8px 12px;border:1px solid var(--border-soft);white-space:nowrap;cursor:pointer;" onclick="ouvrirHistoriqueContrat('${c.id}')">
           <span style="font-weight:600;font-size:13px;color:var(--brand);">${c.client}</span>
@@ -4063,6 +4072,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
   // Légende
   const legende = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;font-size:11.5px;color:var(--muted);">
     <span style="display:flex;align-items:center;gap:5px;"><span style="color:var(--success);font-size:14px;font-weight:700;">✓</span> Traité</span>
+    <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#f97316;"></span> En attente</span>
     <span style="display:flex;align-items:center;gap:5px;"><span style="color:#ef4444;font-size:12px;">●</span> À faire (en retard)</span>
     <span style="display:flex;align-items:center;gap:5px;"><span style="color:#f59e0b;font-size:12px;">⚠</span> À faire (ce mois/trimestre)</span>
     <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:12px;background:var(--surface-alt);border:1px solid var(--border-soft);border-radius:2px;"></span> Futur</span>
@@ -4085,15 +4095,17 @@ async function ouvrirModalContratRecurrent(id = null) {
   const titre = document.getElementById('modal-contrat-recurrent-titre')
   titre.textContent = id ? 'Modifier le contrat' : 'Nouveau contrat'
 
-  // Remplir la liste des employés
-  const sel = document.getElementById('cr-assigne')
-  sel.innerHTML = '<option value="">— Non assigné —</option>'
+  // Remplir les cases à cocher des employés
   const { data: employes } = await db.from('employes').select('id,nom,email').order('nom')
+  const assignesList = document.getElementById('cr-assignes-list')
+  assignesList.innerHTML = ''
   ;(employes || []).forEach(e => {
-    const opt = document.createElement('option')
-    opt.value = e.nom
-    opt.textContent = e.nom
-    sel.appendChild(opt)
+    const label = document.createElement('label')
+    label.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;padding:3px 6px;border-radius:6px;'
+    label.onmouseover = () => label.style.background = 'var(--surface-alt)'
+    label.onmouseout  = () => label.style.background = ''
+    label.innerHTML = `<input type="checkbox" value="${e.nom}" style="accent-color:var(--brand);width:14px;height:14px;"> ${e.nom}`
+    assignesList.appendChild(label)
   })
 
   // Vider le formulaire
@@ -4105,6 +4117,8 @@ async function ouvrirModalContratRecurrent(id = null) {
   document.getElementById('cr-notes').value     = ''
   document.querySelector('input[name="cr-frequence"][value="mensuelle"]').checked = true
   document.getElementById('cr-compteurs-list').innerHTML = ''
+  // Décocher tous les assignés
+  document.querySelectorAll('#cr-assignes-list input[type="checkbox"]').forEach(cb => cb.checked = false)
 
   if (id) {
     // Charger les données existantes
@@ -4116,10 +4130,14 @@ async function ouvrirModalContratRecurrent(id = null) {
       document.getElementById('cr-prix-fixe').value = contrat.prix_fixe ?? ''
       document.getElementById('cr-prix-unite').value= contrat.prix_unite ?? ''
       document.getElementById('cr-notes').value     = contrat.notes || ''
-      document.getElementById('cr-assigne').value   = contrat.assigne_a || ''
       const radioFreq = document.querySelector(`input[name="cr-frequence"][value="${contrat.frequence}"]`)
       if (radioFreq) radioFreq.checked = true
       ;(contrat.compteurs || []).forEach(cpt => ajouterLigneCompteur(cpt.nom, cpt.prix))
+      // Cocher les assignés
+      const assignes = Array.isArray(contrat.assignes) ? contrat.assignes : (contrat.assigne_a ? [contrat.assigne_a] : [])
+      document.querySelectorAll('#cr-assignes-list input[type="checkbox"]').forEach(cb => {
+        if (assignes.includes(cb.value)) cb.checked = true
+      })
     }
   }
 
@@ -4157,6 +4175,9 @@ async function sauvegarderContratRecurrent() {
     if (nom) compteurs.push({ nom, prix })
   })
 
+  // Récupérer les assignés cochés
+  const assignes = Array.from(document.querySelectorAll('#cr-assignes-list input[type="checkbox"]:checked')).map(cb => cb.value)
+
   const payload = {
     client,
     numero_machine:   document.getElementById('cr-machine').value.trim() || null,
@@ -4165,7 +4186,8 @@ async function sauvegarderContratRecurrent() {
     prix_fixe:        parseFloat(document.getElementById('cr-prix-fixe').value) || null,
     prix_unite:       parseFloat(document.getElementById('cr-prix-unite').value) || null,
     compteurs,
-    assigne_a:        document.getElementById('cr-assigne').value || null,
+    assignes,
+    assigne_a:        assignes[0] || null,  // compat. ascendante
     notes:            document.getElementById('cr-notes').value.trim() || null,
   }
 
@@ -4234,6 +4256,7 @@ async function ouvrirModalReleve(contratId, periode) {
   document.getElementById('releve-date').value = releve?.date_traitement || new Date().toISOString().split('T')[0]
   document.getElementById('releve-commentaire').value = releve?.commentaire || ''
   document.getElementById('releve-fait').checked = releve?.fait || false
+  document.getElementById('releve-en-attente').checked = (releve?.en_attente && !releve?.fait) || false
 
   modal.classList.remove('hidden')
 }
@@ -4250,10 +4273,14 @@ async function sauvegarderReleve() {
     if (!isNaN(val)) valeurs[nom] = val
   })
 
+  const fait       = document.getElementById('releve-fait').checked
+  const enAttente  = document.getElementById('releve-en-attente').checked && !fait
+
   const payload = {
     contrat_id:      contratId,
     periode,
-    fait:            document.getElementById('releve-fait').checked,
+    fait,
+    en_attente:      enAttente,
     date_traitement: document.getElementById('releve-date').value || null,
     valeurs,
     commentaire:     document.getElementById('releve-commentaire').value.trim() || null,
@@ -4291,7 +4318,7 @@ async function ouvrirHistoriqueContrat(id) {
       ${contrat.numero_machine ? `<div><span style="color:var(--muted);">Machine :</span> <b>#${contrat.numero_machine}</b></div>` : ''}
       ${contrat.prix_fixe ? `<div><span style="color:var(--muted);">Prix fixe :</span> <b>${contrat.prix_fixe} €</b></div>` : ''}
       ${contrat.prix_unite ? `<div><span style="color:var(--muted);">Prix unité :</span> <b>${contrat.prix_unite} €</b></div>` : ''}
-      ${contrat.assigne_a ? `<div><span style="color:var(--muted);">Assigné :</span> <b>${contrat.assigne_a}</b></div>` : ''}
+      ${(Array.isArray(contrat.assignes) && contrat.assignes.length ? contrat.assignes : (contrat.assigne_a ? [contrat.assigne_a] : [])).length ? `<div><span style="color:var(--muted);">Assigné(s) :</span> <b>${(Array.isArray(contrat.assignes) && contrat.assignes.length ? contrat.assignes : [contrat.assigne_a]).join(', ')}</b></div>` : ''}
     </div>
     ${compteursList ? `<div style="margin-top:8px;font-size:12px;color:var(--muted);">Compteurs : ${compteursList}</div>` : ''}
     ${contrat.notes ? `<div style="margin-top:8px;font-size:12px;color:var(--ink-soft);">${contrat.notes}</div>` : ''}
@@ -4305,7 +4332,9 @@ async function ouvrirHistoriqueContrat(id) {
     listeEl.innerHTML = releves.map(r => {
       const statutStr = r.fait
         ? `<span style="color:var(--success);font-weight:700;">✓ Traité</span>${r.date_traitement ? ` <span style="font-size:11px;color:var(--muted);">le ${formatDate(r.date_traitement)}</span>` : ''}`
-        : `<span style="color:var(--danger);">✗ Non traité</span>`
+        : r.en_attente
+          ? `<span style="display:inline-flex;align-items:center;gap:5px;color:#c2410c;font-weight:600;"><span style="width:8px;height:8px;border-radius:50%;background:#f97316;display:inline-block;"></span>En attente</span>`
+          : `<span style="color:var(--danger);">✗ Non traité</span>`
       const valeursStr = r.valeurs && Object.keys(r.valeurs).length
         ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">${Object.entries(r.valeurs).map(([k,v]) => `${k}: <b>${v}</b>`).join(' · ')}</div>`
         : ''

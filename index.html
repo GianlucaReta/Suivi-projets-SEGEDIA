@@ -551,10 +551,8 @@
         <button type="button" onclick="ajouterLigneCompteur()" style="margin-top:8px;font-size:12.5px;color:var(--brand);background:none;border:none;cursor:pointer;font-family:inherit;font-weight:600;padding:0;">+ Ajouter un compteur</button>
       </div>
       <div class="form-group">
-        <label>Assigné à</label>
-        <select id="cr-assigne" style="width:100%;box-sizing:border-box;">
-          <option value="">— Non assigné —</option>
-        </select>
+        <label style="display:block;margin-bottom:6px;">Assigné(s) à</label>
+        <div id="cr-assignes-list" style="display:flex;flex-direction:column;gap:6px;max-height:140px;overflow-y:auto;padding:4px 0;"></div>
       </div>
       <div class="form-group">
         <label>Notes</label>
@@ -583,10 +581,17 @@
         <label>Commentaire</label>
         <textarea id="releve-commentaire" rows="2" placeholder="Remarque éventuelle..." style="width:100%;box-sizing:border-box;resize:vertical;"></textarea>
       </div>
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;background:var(--success-bg);border:1px solid var(--success);border-radius:8px;padding:10px 14px;">
-        <input type="checkbox" id="releve-fait" style="width:16px;height:16px;accent-color:var(--success);cursor:pointer;">
-        <span style="font-size:13.5px;font-weight:600;color:var(--success);">✓ Marquer comme traité</span>
-      </label>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px 14px;">
+          <input type="checkbox" id="releve-en-attente" style="width:16px;height:16px;accent-color:#f97316;cursor:pointer;" onchange="if(this.checked) document.getElementById('releve-fait').checked=false">
+          <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#f97316;flex-shrink:0;"></span>
+          <span style="font-size:13.5px;font-weight:600;color:#c2410c;">En attente</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;background:var(--success-bg);border:1px solid var(--success);border-radius:8px;padding:10px 14px;">
+          <input type="checkbox" id="releve-fait" style="width:16px;height:16px;accent-color:var(--success);cursor:pointer;" onchange="if(this.checked) document.getElementById('releve-en-attente').checked=false">
+          <span style="font-size:13.5px;font-weight:600;color:var(--success);">✓ Marquer comme traité</span>
+        </label>
+      </div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;">
       <button onclick="fermerModals()" class="btn-secondary">Annuler</button>
