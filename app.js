@@ -2920,8 +2920,26 @@ async function mettreAJourBadgeRecouvrement() {
 }
 
 // ── Page Recouvrement ──────────────────────────────────
+function filtrerRecouvrement(q) {
+  const terme = q.toLowerCase().trim()
+  const cards = document.querySelectorAll('#recouvrement-liste .rec-card')
+  let visible = 0
+  cards.forEach(card => {
+    const nom = card.querySelector('[data-client]')?.dataset.client || card.textContent
+    const match = !terme || nom.toLowerCase().includes(terme)
+    card.style.display = match ? '' : 'none'
+    if (match) visible++
+  })
+  const counter = document.getElementById('recouvrement-search-count')
+  if (counter) counter.textContent = terme ? `${visible} résultat${visible !== 1 ? 's' : ''}` : ''
+}
+
 async function chargerRecouvrement() {
   if (!utilisateurAccesFactures) return
+  const searchInput = document.getElementById('recouvrement-search')
+  if (searchInput) searchInput.value = ''
+  const searchCount = document.getElementById('recouvrement-search-count')
+  if (searchCount) searchCount.textContent = ''
   const liste = document.getElementById('recouvrement-liste')
   const kpis  = document.getElementById('recouvrement-kpis')
   const stats = document.getElementById('recouvrement-stats-bar')
@@ -3071,7 +3089,7 @@ async function chargerRecouvrement() {
     }).join('')
 
     return `
-      <div class="rec-card" style="background:var(--surface);border:1px solid ${cfg.border};border-left:4px solid ${cfg.dot};border-radius:12px;padding:16px 20px;margin-bottom:12px;">
+      <div class="rec-card" data-client="${c.nom}" style="background:var(--surface);border:1px solid ${cfg.border};border-left:4px solid ${cfg.dot};border-radius:12px;padding:16px 20px;margin-bottom:12px;">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
           <div style="flex:1;min-width:0;">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
