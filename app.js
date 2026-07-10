@@ -2636,9 +2636,9 @@ function ouvrirModalRelance(id) {
   const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
   const auj = new Date().toISOString().split('T')[0]
 
-  // Toutes les factures impayées non litige du client, triées par échéance
+  // Uniquement les factures en retard (échues) — exclure celles pas encore dues
   const facImpayees = toutes
-    .filter(f => f.client === client && !f.solde && !f.litige)
+    .filter(f => f.client === client && !f.solde && !f.litige && f.date_echeance && f.date_echeance < auj)
     .sort((a, b) => (a.date_echeance || '').localeCompare(b.date_echeance || ''))
 
   const total = facImpayees.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
@@ -2778,8 +2778,9 @@ function ouvrirModalRelanceR2(id) {
   const email = toutes.find(f => f.client === client && f.email_client)?.email_client || null
   const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
 
+  const auj2 = new Date().toISOString().split('T')[0]
   const facImpayees = toutes
-    .filter(f => f.client === client && !f.solde && !f.litige)
+    .filter(f => f.client === client && !f.solde && !f.litige && f.date_echeance && f.date_echeance < auj2)
     .sort((a, b) => (a.date_echeance || '').localeCompare(b.date_echeance || ''))
 
   const total = facImpayees.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
