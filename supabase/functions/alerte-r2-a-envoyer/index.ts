@@ -19,7 +19,7 @@ Deno.serve(async () => {
   // Récupère toutes les factures R1 envoyée mais R2 pas encore envoyée
   const { data: factures, error } = await supabase
     .from("factures")
-    .select("id, numero, client, montant, date_relance, date_echeance")
+    .select("id, numero, client, montant, date_relance, date_echeance, moyen_paiement")
     .eq("solde", false)
     .eq("litige", false)
     .not("date_relance", "is", null)
@@ -34,10 +34,29 @@ Deno.serve(async () => {
   const { data: exclus } = await supabase.from("clients_exclus").select("nom");
   const nomsExclus = new Set((exclus || []).map((e: any) => e.nom));
 
-  // Filtre : R1 envoyée depuis ≥ 15 jours, client non exclu
+  // Moyen de paiement dominant par client — espèce/prélèvement = en attente
+  // de lettrage, pas de relance (cohérent avec la page Recouvrement).
+  const MODES_LETTRAGE = new Set(["espèce", "prélèvement"]);
+  const modeParClient: Record<string, Record<string, number>> = {};
+  for (const f of factures || []) {
+    const m = (f.moyen_paiement || "").toLowerCase().trim();
+    if (!m) continue;
+    (modeParClient[f.client] = modeParClient[f.client] || {})[m] =
+      (modeParClient[f.client]?.[m] || 0) + 1;
+  }
+  const estLettrage = (client: string): boolean => {
+    const counts = modeParClient[client];
+    if (!counts) return false;
+    let best: string | null = null, bestN = 0;
+    for (const [m, n] of Object.entries(counts)) if (n > bestN) { best = m; bestN = n; }
+    return best !== null && MODES_LETTRAGE.has(best);
+  };
+
+  // Filtre : R1 envoyée depuis ≥ 15 jours, client non exclu, hors lettrage
   const aujMs = new Date(aujourd_hui).getTime();
   const aRelancer = (factures || []).filter((f: any) => {
     if (nomsExclus.has(f.client)) return false;
+    if (estLettrage(f.client)) return false;
     if (!f.date_relance) return false;
     const joursDepuisR1 = Math.floor((aujMs - new Date(f.date_relance).getTime()) / 86400000);
     return joursDepuisR1 >= 15;
