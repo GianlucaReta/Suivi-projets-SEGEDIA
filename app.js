@@ -2902,14 +2902,22 @@ async function mettreAJourBadgeRecouvrement() {
   if (!badge) return
   const auj = new Date().toISOString().split('T')[0]
   const { data: exclusData } = await db.from('clients_exclus').select('nom')
-  const { data: factures }   = await db.from('factures').select('client,date_echeance,date_relance,date_relance_r2,date_appel,solde,litige').eq('solde', false).eq('litige', false).limit(5000)
+  const { data: factures }   = await db.from('factures').select('client,date_echeance,date_relance,date_relance_r2,date_appel,solde,litige,moyen_paiement').eq('solde', false).eq('litige', false).limit(5000)
   const nomsExclus = new Set((exclusData || []).map(e => e.nom))
   const enRetard = (factures || []).filter(f => !nomsExclus.has(f.client) && f.date_echeance && f.date_echeance < auj)
+  const MODES_LETTRAGE = new Set(['espèce', 'prélèvement'])
   const parClient = {}
-  enRetard.forEach(f => { if (!parClient[f.client]) parClient[f.client] = f })
+  enRetard.forEach(f => { if (!parClient[f.client]) parClient[f.client] = []; parClient[f.client].push(f) })
   // Count urgent: r0 (no relance) + r1_urgent (R1 ≥ 15j, no R2)
+  // — en excluant les clients espèce/prélèvement (en attente de lettrage, pas de relance)
   let urgent = 0
-  Object.values(parClient).forEach(f => {
+  Object.values(parClient).forEach(facts => {
+    const counts = {}
+    for (const f of facts) { const m = (f.moyen_paiement || '').toLowerCase().trim(); if (m) counts[m] = (counts[m] || 0) + 1 }
+    let mode = null, bestN = 0
+    for (const [m, n] of Object.entries(counts)) if (n > bestN) { mode = m; bestN = n }
+    if (MODES_LETTRAGE.has(mode)) return
+    const f = facts[0]
     if (!f.date_relance) { urgent++; return }
     if (!f.date_relance_r2 && !f.date_appel) {
       const j = Math.floor((new Date(auj) - new Date(f.date_relance)) / 86400000)
@@ -2975,6 +2983,28 @@ async function chargerRecouvrement() {
     parClient[f.client].push(f)
   })
 
+  // ── Séparation par moyen de paiement ──────────────────────
+  // Espèce & prélèvement ne sont PAS de vrais impayés : ils attendent
+  // seulement la validation/le lettrage. On les sort du flux de relance
+  // mais on les garde dans l'encours analytique (section dédiée + total).
+  const MODES_LETTRAGE = new Set(['espèce', 'prélèvement'])
+  function moyenDominant(facts) {
+    const counts = {}
+    for (const f of facts) {
+      const m = (f.moyen_paiement || '').toLowerCase().trim()
+      if (m) counts[m] = (counts[m] || 0) + 1
+    }
+    let best = null, bestN = 0
+    for (const [m, n] of Object.entries(counts)) if (n > bestN) { best = m; bestN = n }
+    return best
+  }
+  const parClientRelance = {}
+  const parClientLettrage = {}
+  for (const [nom, facts] of Object.entries(parClient)) {
+    if (MODES_LETTRAGE.has(moyenDominant(facts))) parClientLettrage[nom] = facts
+    else parClientRelance[nom] = facts
+  }
+
   function getEtapeClient(facts) {
     if (facts.some(f => f.date_appel)) return 'appel'
     if (facts.some(f => f.date_relance_r2)) return 'r2'
@@ -2982,7 +3012,7 @@ async function chargerRecouvrement() {
     return 'r0'
   }
 
-  const clientsList = Object.entries(parClient).map(([nom, facts]) => {
+  const clientsList = Object.entries(parClientRelance).map(([nom, facts]) => {
     const etape = getEtapeClient(facts)
     const r1Date = facts.find(f => f.date_relance)?.date_relance
     const joursR1 = r1Date ? Math.floor((new Date(auj) - new Date(r1Date)) / 86400000) : 0
@@ -2997,15 +3027,27 @@ async function chargerRecouvrement() {
     return (order[ka] ?? 9) - (order[kb] ?? 9)
   })
 
+  // Clients espèce/prélèvement : en attente de lettrage (hors relance)
+  const lettrageList = Object.entries(parClientLettrage).map(([nom, facts]) => {
+    const total = facts.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
+    return { nom, facts, total, moyen: moyenDominant(facts) }
+  }).sort((a, b) => b.total - a.total)
+
   // KPI counts
   const nbR0     = clientsList.filter(c => c.etape === 'r0').length
   const nbR1Urg  = clientsList.filter(c => c.r2Urgent).length
   const nbR1     = clientsList.filter(c => c.etape === 'r1' && !c.r2Urgent).length
   const nbR2     = clientsList.filter(c => c.etape === 'r2').length
   const nbAppel  = clientsList.filter(c => c.etape === 'appel').length
-  const totalEnc = enRetard.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
+  const nbFacRelance  = clientsList.reduce((s, c) => s + c.facts.length, 0)
+  const totalRelance  = clientsList.reduce((s, c) => s + c.total, 0)
+  const totalLettrage = lettrageList.reduce((s, c) => s + c.total, 0)
+  const totalEnc      = totalRelance + totalLettrage  // encours analytique complet
 
-  if (stats) stats.innerHTML = `${clientsList.length} client${clientsList.length > 1 ? 's' : ''} · ${enRetard.length} facture${enRetard.length > 1 ? 's' : ''} · <b style="font-family:'IBM Plex Mono',monospace;">${fmt(totalEnc)} €</b> en retard`
+  if (stats) stats.innerHTML =
+    `<b>${clientsList.length}</b> client${clientsList.length > 1 ? 's' : ''} à relancer · ${nbFacRelance} facture${nbFacRelance > 1 ? 's' : ''} · <b style="font-family:'IBM Plex Mono',monospace;color:var(--danger);">${fmt(totalRelance)} €</b>`
+    + (lettrageList.length ? ` &nbsp;·&nbsp; <span style="color:var(--muted);">🔵 ${lettrageList.length} en attente de lettrage · ${fmt(totalLettrage)} €</span>` : '')
+    + ` &nbsp;·&nbsp; <span style="color:var(--muted);">Encours total <b style="font-family:'IBM Plex Mono',monospace;">${fmt(totalEnc)} €</b></span>`
 
   const kpiData = [
     { label: 'À relancer', count: nbR0,    bg: '#fef2f2', border: '#fecaca', col: '#991b1b', emoji: '⚠' },
@@ -3036,7 +3078,7 @@ async function chargerRecouvrement() {
         : `<span title="Non ouvert" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--warn);vertical-align:middle;"></span>`)
     : ''
 
-  liste.innerHTML = clientsList.map(c => {
+  const cardsHtml = clientsList.length ? clientsList.map(c => {
     const cfgKey = c.etape === 'appel' ? 'appel' : c.etape === 'r2' ? 'r2' : c.r2Urgent ? 'r1u' : c.etape === 'r1' ? 'r1' : 'r0'
     const cfg = stageCfg[cfgKey]
 
@@ -3108,7 +3150,48 @@ async function chargerRecouvrement() {
         ${appelFact?.note_appel ? `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:8px 12px;font-size:12px;color:#166534;margin-bottom:12px;">📝 Note appel : ${appelFact.note_appel}</div>` : ''}
         <div class="rec-detail" style="display:none;margin-top:4px;">${facLignes}</div>
       </div>`
-  }).join('')
+  }).join('') : `<div style="text-align:center;padding:32px 0;color:var(--success);font-size:14px;font-weight:600;">✅ Aucune facture à relancer (virement / non défini)</div>`
+
+  // ── Section "En attente de lettrage" (espèce & prélèvement) ────────
+  const lettrageHtml = lettrageList.length ? `
+    <div style="margin-top:30px;padding-top:22px;border-top:1px dashed var(--border);">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
+        <span style="font-size:14px;font-weight:700;color:#1e40af;">🔵 En attente de lettrage</span>
+        <span style="font-size:11px;color:#1e40af;background:#eff6ff;border:1px solid #bfdbfe;padding:2px 9px;border-radius:10px;font-weight:600;">${lettrageList.length} client${lettrageList.length > 1 ? 's' : ''} · ${fmt(totalLettrage)} €</span>
+      </div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:14px;">Espèce & prélèvement — pas de relance (en attente de validation/lettrage), mais comptés dans l'encours.</div>
+      ${lettrageList.map(c => {
+        const badge = c.moyen === 'espèce'
+          ? `<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;padding:2px 8px;border-radius:10px;background:#fef9c3;color:#854d0e;border:1px solid #fde68a;">💵 Espèce</span>`
+          : `<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;padding:2px 8px;border-radius:10px;background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe;">🔄 Prélèvement</span>`
+        const facLignes = c.facts.map(f => {
+          const j = Math.floor((new Date(auj) - new Date(f.date_echeance)) / 86400000)
+          return `
+            <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border-soft);">
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);min-width:80px;">${f.numero}</div>
+              <div style="flex:1;font-size:12px;color:var(--ink);">${formatDate(f.date_echeance)}</div>
+              <div style="font-size:10.5px;color:var(--muted);font-weight:600;">+${j}j</div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--ink);">${fmt(f.montant)} €</div>
+            </div>`
+        }).join('')
+        return `
+          <div class="rec-card" data-client="${c.nom}" style="background:var(--surface);border:1px solid #bfdbfe;border-left:4px solid #3b82f6;border-radius:12px;padding:14px 20px;margin-bottom:10px;">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+              <div style="flex:1;min-width:0;">
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
+                  <div onclick="ouvrirFicheClient('${c.nom.replace(/'/g,"\\'")}')" style="font-size:14px;font-weight:700;color:var(--ink);cursor:pointer;border-bottom:1px dotted var(--muted);" title="Voir la fiche client 360°">${c.nom}</div>
+                  ${badge}
+                </div>
+                <div style="font-size:12px;color:var(--muted);">${c.facts.length} facture${c.facts.length > 1 ? 's' : ''} · <b style="font-family:'IBM Plex Mono',monospace;color:var(--ink);">${fmt(c.total)} €</b></div>
+              </div>
+              <button onclick="(function(btn){const d=btn.closest('.rec-card').querySelector('.rec-detail');d.style.display=d.style.display==='none'?'block':'none';btn.innerHTML=d.style.display==='none'?'▼ Factures':'▲ Masquer';})(this)" style="font-size:11.5px;padding:5px 12px;border-radius:7px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;">▼ Factures</button>
+            </div>
+            <div class="rec-detail" style="display:none;margin-top:8px;">${facLignes}</div>
+          </div>`
+      }).join('')}
+    </div>` : ''
+
+  liste.innerHTML = cardsHtml + lettrageHtml
 
   mettreAJourBadgeRecouvrement()
 }

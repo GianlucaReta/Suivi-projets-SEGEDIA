@@ -79,17 +79,40 @@ Deno.serve(async () => {
     return new Response(JSON.stringify({ message: "Aucune facture en retard." }), { status: 200 });
   }
 
-  // ── J+3 : factures échues exactement il y a 3 jours ──────
+  // ── Séparation par moyen de paiement dominant par client ──
+  // Espèce & prélèvement ne sont pas de vrais impayés : en attente de
+  // lettrage. On les isole du flux de relance (section dédiée).
+  const MODES_LETTRAGE = new Set(["espèce", "prélèvement"]);
+  const modeParClient: Record<string, Record<string, number>> = {};
+  for (const f of factures) {
+    const m = ((f.moyen_paiement as string) || "").toLowerCase().trim();
+    if (!m) continue;
+    (modeParClient[f.client] = modeParClient[f.client] || {})[m] =
+      (modeParClient[f.client]?.[m] || 0) + 1;
+  }
+  const estLettrage = (client: string): boolean => {
+    const counts = modeParClient[client];
+    if (!counts) return false;
+    let best: string | null = null, bestN = 0;
+    for (const [m, n] of Object.entries(counts)) if (n > bestN) { best = m; bestN = n; }
+    return best !== null && MODES_LETTRAGE.has(best);
+  };
+  const facturesRelance  = factures.filter((f: any) => !estLettrage(f.client));
+  const facturesLettrage = factures.filter((f: any) => estLettrage(f.client));
+  const montantLettrage  = facturesLettrage.reduce((s: number, f: any) => s + (parseFloat(f.montant) || 0), 0);
+  const clientsLettrage  = new Set(facturesLettrage.map((f: any) => f.client)).size;
+
+  // ── J+3 : factures À RELANCER échues exactement il y a 3 jours ──
   const dateJ3 = new Date(maintenant);
   dateJ3.setUTCDate(dateJ3.getUTCDate() - 3);
   const strJ3 = dateJ3.toISOString().split("T")[0];
-  const facturesJ3 = factures.filter((f: any) => f.date_echeance === strJ3);
+  const facturesJ3 = facturesRelance.filter((f: any) => f.date_echeance === strJ3);
   const montantJ3  = facturesJ3.reduce((s: number, f: any) => s + (parseFloat(f.montant) || 0), 0);
 
-  // ── Reste : toutes les autres factures en retard ──────────
-  const facturesReste = factures.filter((f: any) => f.date_echeance !== strJ3);
+  // ── Reste : autres factures À RELANCER en retard ──────────
+  const facturesReste = facturesRelance.filter((f: any) => f.date_echeance !== strJ3);
   const montantReste  = facturesReste.reduce((s: number, f: any) => s + (parseFloat(f.montant) || 0), 0);
-  const montantTotal  = factures.reduce((s: number, f: any) => s + (parseFloat(f.montant) || 0), 0);
+  const montantTotal  = facturesRelance.reduce((s: number, f: any) => s + (parseFloat(f.montant) || 0), 0);
 
   // ── Helper : tableau de lignes ─────────────────────────────
   const lignesTable = (arr: any[], showRetard: boolean) => arr.map((f: any) => {
@@ -165,24 +188,30 @@ Deno.serve(async () => {
 
       <div style="display:flex;gap:16px;margin-bottom:28px;">
         <div style="flex:1;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px;">
-          <div style="font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Total en retard</div>
+          <div style="font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">À relancer</div>
           <div style="font-size:22px;font-weight:700;color:#991b1b;font-family:monospace;">${fmtMontant(montantTotal)} €</div>
-          <div style="font-size:11px;color:#b91c1c;margin-top:2px;">${factures.length} facture${factures.length > 1 ? "s" : ""}</div>
+          <div style="font-size:11px;color:#b91c1c;margin-top:2px;">${facturesRelance.length} facture${facturesRelance.length > 1 ? "s" : ""} · virement</div>
         </div>
         <div style="flex:1;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:14px;">
           <div style="font-size:10px;font-weight:700;color:#78350f;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Nouvelles J+3</div>
           <div style="font-size:22px;font-weight:700;color:#78350f;font-family:monospace;">${fmtMontant(montantJ3)} €</div>
           <div style="font-size:11px;color:#92400e;margin-top:2px;">${facturesJ3.length} facture${facturesJ3.length > 1 ? "s" : ""}</div>
         </div>
-        <div style="flex:1;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px;">
-          <div style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Retards antérieurs</div>
-          <div style="font-size:22px;font-weight:700;color:#374151;font-family:monospace;">${fmtMontant(montantReste)} €</div>
-          <div style="font-size:11px;color:#6b7280;margin-top:2px;">${facturesReste.length} facture${facturesReste.length > 1 ? "s" : ""}</div>
+        <div style="flex:1;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px;">
+          <div style="font-size:10px;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">🔵 En attente lettrage</div>
+          <div style="font-size:22px;font-weight:700;color:#1e40af;font-family:monospace;">${fmtMontant(montantLettrage)} €</div>
+          <div style="font-size:11px;color:#3b82f6;margin-top:2px;">${facturesLettrage.length} facture${facturesLettrage.length > 1 ? "s" : ""} · espèce/prélèv.</div>
         </div>
       </div>
 
       ${sectionJ3}
       ${sectionReste}
+
+      ${facturesLettrage.length > 0 ? `
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 20px;margin-top:28px;">
+          <h3 style="color:#1e40af;font-size:14px;margin:0 0 4px;">🔵 En attente de lettrage — pas de relance</h3>
+          <p style="color:#3b82f6;font-size:12px;margin:0;">${facturesLettrage.length} facture${facturesLettrage.length > 1 ? "s" : ""} chez ${clientsLettrage} client${clientsLettrage > 1 ? "s" : ""} en espèce/prélèvement (${fmtMontant(montantLettrage)} €). Ce ne sont pas des impayés : en attente de validation/lettrage. Comptés dans l'encours mais hors relance.</p>
+        </div>` : ""}
 
       <p style="margin-top:24px;font-size:12px;color:#9ca3af;border-top:1px solid #f0f0f0;padding-top:16px;">Connectez-vous à SuiviPro pour mettre à jour les statuts. - SuiviPro SEGEDIA</p>
     </div>`;
@@ -193,13 +222,20 @@ Deno.serve(async () => {
     body: JSON.stringify({
       from: "SuiviPro <alertes@segedia.fr>",
       to: [DESTINATAIRE],
-      subject: `${facturesJ3.length > 0 ? `🔔 ${facturesJ3.length} nouvelle${facturesJ3.length > 1 ? "s" : ""} J+3 · ` : ""}${factures.length} retard${factures.length > 1 ? "s" : ""} · ${fmtMontant(montantTotal)} €`,
+      subject: `${facturesJ3.length > 0 ? `🔔 ${facturesJ3.length} nouvelle${facturesJ3.length > 1 ? "s" : ""} J+3 · ` : ""}${facturesRelance.length} à relancer · ${fmtMontant(montantTotal)} €`,
       html,
     }),
   });
 
   return new Response(
-    JSON.stringify({ envoi: { email: DESTINATAIRE, status: res.status }, nb: factures.length, nbJ3: facturesJ3.length, montant: montantTotal }),
+    JSON.stringify({
+      envoi: { email: DESTINATAIRE, status: res.status },
+      a_relancer: facturesRelance.length,
+      montant_a_relancer: montantTotal,
+      nbJ3: facturesJ3.length,
+      en_attente_lettrage: facturesLettrage.length,
+      montant_lettrage: montantLettrage,
+    }),
     { status: 200 }
   );
 });
