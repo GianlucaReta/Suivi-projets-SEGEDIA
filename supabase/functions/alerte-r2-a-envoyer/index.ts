@@ -145,6 +145,7 @@ Deno.serve(async () => {
         },
         body: JSON.stringify({
           from: "SuiviPro <suivipro@segedia.fr>",
+          reply_to: "info@segedia.fr",
           to: email,
           subject: `[SuiviPro] ${aRelancer.length} R2 à envoyer - ${fmtEur(totalGlobal)} €`,
           html,

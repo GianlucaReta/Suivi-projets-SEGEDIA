@@ -34,6 +34,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         from: "SEGEDIA SERVICES <alertes@segedia.fr>",
+        reply_to: "info@segedia.fr",
         to: [to],
         subject,
         html,

@@ -114,6 +114,7 @@ Deno.serve(async () => {
       },
       body: JSON.stringify({
         from: "SuiviPro <alertes@segedia.fr>",
+        reply_to: "info@segedia.fr",
         to: [email],
         subject: `${tachesEmploye.length} tâche${tachesEmploye.length > 1 ? "s" : ""} en retard - SuiviPro`,
         html,
