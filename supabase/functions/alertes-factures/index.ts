@@ -221,6 +221,7 @@ Deno.serve(async () => {
     headers: { "Authorization": `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       from: "SuiviPro <alertes@segedia.fr>",
+      reply_to: "info@segedia.fr",
       to: [DESTINATAIRE],
       subject: `${facturesJ3.length > 0 ? `🔔 ${facturesJ3.length} nouvelle${facturesJ3.length > 1 ? "s" : ""} J+3 · ` : ""}${facturesRelance.length} à relancer · ${fmtMontant(montantTotal)} €`,
       html,
