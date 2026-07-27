@@ -3870,6 +3870,13 @@ function parseDateEcheanceDL(str) {
   return `${annee}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
 }
 
+// Détecte un avoir dans les tâches associées (ex: "N°A2607014 ...").
+// Un avoir commence par "A" suivi directement d'un chiffre — à distinguer
+// des bons de livraison (N°BL..., N°BLNOURDINN..., N°BLJOODIS...).
+function contientAvoir(commentaire) {
+  return !!commentaire && /N°A\d/.test(commentaire)
+}
+
 async function importerCSVFactures(file) {
   if (!file) return
   const text = await file.text()
@@ -3888,7 +3895,7 @@ async function importerCSVFactures(file) {
   // Ignorer la ligne header
   const dataRows = rows.slice(1).filter(r => r[5] && r[5].trim())
 
-  let nbExclus = 0, nbNouveaux = 0, nbMisAJour = 0
+  let nbExclus = 0, nbNouveaux = 0, nbMisAJour = 0, nbAvoirs = 0
   const factures = dataRows.map(cols => {
     const numero  = cols[5]?.trim() || null
     const client  = cols[0]?.trim() || 'Client inconnu'
@@ -3905,14 +3912,17 @@ async function importerCSVFactures(file) {
     const ville         = cols[7]?.trim() || null
     const commentaire   = cols[3]?.trim().slice(0, 500) || null
     const date_paiement_csv = parseDateEcheanceDL(cols[12]?.trim() || null)
+    // Un avoir dans les tâches associées solde la facture, même sans paiement
+    const avoirDetecte = contientAvoir(commentaire)
+    if (avoirDetecte) nbAvoirs++
 
     const existant = existantesMap.get(numero)
     if (existant) {
       nbMisAJour++
       // Règle anti-régression : le statut soldé ne peut jamais reculer.
       // Si marqué manuellement "soldé" dans l'app → on garde true même si le CSV dit non.
-      // Si DISTRILOG dit soldé → on met true.
-      const solde = existant.solde || soldeCSV
+      // Si DISTRILOG dit soldé (ou qu'un avoir a été détecté) → on met true.
+      const solde = existant.solde || soldeCSV || avoirDetecte
       // La note manuelle n'est jamais écrasée par le CSV
       const note = existant.note ?? null
       // date_paiement : priorité à la valeur existante, sinon celle du CSV
@@ -3920,7 +3930,7 @@ async function importerCSVFactures(file) {
       return { numero, client, montant, date_emission, date_echeance, solde, ville, commentaire, note, date_paiement }
     } else {
       nbNouveaux++
-      return { numero, client, montant, date_emission, date_echeance, solde: soldeCSV, ville, commentaire, date_paiement: date_paiement_csv }
+      return { numero, client, montant, date_emission, date_echeance, solde: soldeCSV || avoirDetecte, ville, commentaire, date_paiement: date_paiement_csv }
     }
   }).filter(Boolean)
 
@@ -3938,6 +3948,7 @@ async function importerCSVFactures(file) {
   const lignes = [
     nbNouveaux  > 0 ? `${nbNouveaux} nouvelle${nbNouveaux>1?'s':''} facture${nbNouveaux>1?'s':''}` : null,
     nbMisAJour  > 0 ? `${nbMisAJour} mise${nbMisAJour>1?'s':''} à jour` : null,
+    nbAvoirs    > 0 ? `${nbAvoirs} avoir${nbAvoirs>1?'s':''} détecté${nbAvoirs>1?'s':''} → soldée${nbAvoirs>1?'s':''} automatiquement` : null,
     nbExclus    > 0 ? `${nbExclus} ignorée${nbExclus>1?'s':''} (clients exclus)` : null,
   ].filter(Boolean)
   alert('✓ Import terminé\n' + lignes.join(' · '))
