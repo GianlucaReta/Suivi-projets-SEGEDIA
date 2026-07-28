@@ -2960,12 +2960,20 @@ function filtrerRecouvrement(q) {
   if (counter) counter.textContent = terme ? `${visible} résultat${visible !== 1 ? 's' : ''}` : ''
 }
 
+window._recouvrementTri = 'etape'  // 'etape' | 'montant' | 'anciennete'
+function changerTriRecouvrement(val) {
+  window._recouvrementTri = val
+  chargerRecouvrement()
+}
+
 async function chargerRecouvrement() {
   if (!utilisateurAccesFactures) return
   const searchInput = document.getElementById('recouvrement-search')
   if (searchInput) searchInput.value = ''
   const searchCount = document.getElementById('recouvrement-search-count')
   if (searchCount) searchCount.textContent = ''
+  const triSelect = document.getElementById('recouvrement-tri')
+  if (triSelect) triSelect.value = window._recouvrementTri || 'etape'
   const liste = document.getElementById('recouvrement-liste')
   const kpis  = document.getElementById('recouvrement-kpis')
   const stats = document.getElementById('recouvrement-stats-bar')
@@ -3029,6 +3037,7 @@ async function chargerRecouvrement() {
     return 'r0'
   }
 
+  const triSelectionne = window._recouvrementTri || 'etape'
   const clientsList = Object.entries(parClientRelance).map(([nom, facts]) => {
     const etape = getEtapeClient(facts)
     const r1Date = facts.find(f => f.date_relance)?.date_relance
@@ -3038,6 +3047,8 @@ async function chargerRecouvrement() {
     const joursRetardMax = Math.max(...facts.map(f => Math.floor((new Date(auj) - new Date(f.date_echeance)) / 86400000)))
     return { nom, facts, etape, r2Urgent, joursR1, total, joursRetardMax }
   }).sort((a, b) => {
+    if (triSelectionne === 'montant')     return b.total - a.total
+    if (triSelectionne === 'anciennete')  return b.joursRetardMax - a.joursRetardMax
     const order = { r0: 0, r1_urgent: 1, r1: 2, r2: 3, appel: 4 }
     const ka = a.r2Urgent ? 'r1_urgent' : a.etape
     const kb = b.r2Urgent ? 'r1_urgent' : b.etape
