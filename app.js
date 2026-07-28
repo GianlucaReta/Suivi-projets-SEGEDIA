@@ -3887,11 +3887,41 @@ function parseDateEcheanceDL(str) {
   return `${annee}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
 }
 
-// Détecte un avoir dans les tâches associées (ex: "N°A2607014 ...").
+// Détecte un avoir dans les tâches associées (ex: "A2404001").
 // Un avoir commence par "A" suivi directement d'un chiffre — à distinguer
-// des bons de livraison (N°BL..., N°BLNOURDINN..., N°BLJOODIS...).
-function contientAvoir(commentaire) {
-  return !!commentaire && /N°A\d/.test(commentaire)
+// des bons de livraison (BL..., BLNOURDINN..., BLJOODIS...).
+function contientAvoir(texte) {
+  return !!texte && /(?:^|[\s/])A\d{3,}/.test(texte)
+}
+
+// Résout la position des colonnes utiles à partir de la ligne d'en-tête,
+// au lieu d'indices fixes — l'ordre des colonnes DISTRILOG varie selon
+// le type d'export (ex: "T.associées" en position 3 ou 8 selon le fichier).
+function resoudreColonnesCSV(header) {
+  const norm = (s) => (s || '').toLowerCase().trim().replace(/[°.]/g, '')
+  const h = header.map(norm)
+  const trouve = (...noms) => {
+    for (const nom of noms) {
+      const i = h.findIndex(x => x === nom)
+      if (i !== -1) return i
+    }
+    for (const nom of noms) {
+      const i = h.findIndex(x => x.includes(nom))
+      if (i !== -1) return i
+    }
+    return -1
+  }
+  return {
+    client:          trouve('tiers'),
+    dateEmission:    trouve('date début', 'date debut'),
+    montant:         trouve('val ref', 'valref'),
+    numero:          trouve('npièce', 'npiece', 'numero'),
+    solde:           trouve('soldé', 'solde'),
+    ville:           trouve('ville'),
+    tachesAssociees: trouve('tassociées', 'tassociees'),
+    dateEcheance:    trouve('date échéance', 'date echeance'),
+    datePaiement:    trouve('date encaiss'),
+  }
 }
 
 async function importerCSVFactures(file) {
@@ -3899,6 +3929,21 @@ async function importerCSVFactures(file) {
   const text = await file.text()
   const rows = parseCSVDISTRILOG(text)
   if (!rows.length) { alert('Fichier vide ou format invalide.'); return }
+
+  // Résoudre les colonnes par nom d'en-tête (avec repli sur les positions
+  // historiques si l'en-tête ne correspond pas à un format connu)
+  const col = resoudreColonnesCSV(rows[0])
+  const idx = {
+    client:          col.client          !== -1 ? col.client          : 0,
+    dateEmission:    col.dateEmission     !== -1 ? col.dateEmission     : 1,
+    montant:         col.montant          !== -1 ? col.montant          : 4,
+    numero:          col.numero           !== -1 ? col.numero           : 5,
+    solde:           col.solde            !== -1 ? col.solde            : 6,
+    ville:           col.ville            !== -1 ? col.ville            : 7,
+    tachesAssociees: col.tachesAssociees  !== -1 ? col.tachesAssociees  : 3,
+    dateEcheance:    col.dateEcheance     !== -1 ? col.dateEcheance     : 11,
+    datePaiement:    col.datePaiement     !== -1 ? col.datePaiement     : 12,
+  }
 
   // Charger clients exclus + factures existantes en parallèle
   const [{ data: exclus }, { data: existantes }] = await Promise.all([
@@ -3910,25 +3955,25 @@ async function importerCSVFactures(file) {
   const existantesMap = new Map((existantes || []).map(f => [f.numero, f]))
 
   // Ignorer la ligne header
-  const dataRows = rows.slice(1).filter(r => r[5] && r[5].trim())
+  const dataRows = rows.slice(1).filter(r => r[idx.numero] && r[idx.numero].trim())
 
   let nbExclus = 0, nbNouveaux = 0, nbMisAJour = 0, nbAvoirs = 0
   const factures = dataRows.map(cols => {
-    const numero  = cols[5]?.trim() || null
-    const client  = cols[0]?.trim() || 'Client inconnu'
+    const numero  = cols[idx.numero]?.trim() || null
+    const client  = cols[idx.client]?.trim() || 'Client inconnu'
 
     // 1. Exclure les clients de la liste (comparaison exacte)
     if (nomsExclus.has(client)) { nbExclus++; return null }
     if (!numero) return null
 
-    const montantStr    = (cols[4] || '0').trim().replace(',', '.')
+    const montantStr    = (cols[idx.montant] || '0').trim().replace(',', '.')
     const montant       = parseFloat(montantStr) || 0
-    const date_emission = parseDateEmissionDL(cols[1])
-    const date_echeance = parseDateEcheanceDL(cols[11])
-    const soldeCSV      = (cols[6] || '').trim() === 'Oui'
-    const ville         = cols[7]?.trim() || null
-    const commentaire   = cols[3]?.trim().slice(0, 500) || null
-    const date_paiement_csv = parseDateEcheanceDL(cols[12]?.trim() || null)
+    const date_emission = parseDateEmissionDL(cols[idx.dateEmission])
+    const date_echeance = parseDateEcheanceDL(cols[idx.dateEcheance])
+    const soldeCSV      = (cols[idx.solde] || '').trim() === 'Oui'
+    const ville         = cols[idx.ville]?.trim() || null
+    const commentaire   = cols[idx.tachesAssociees]?.trim().slice(0, 500) || null
+    const date_paiement_csv = parseDateEcheanceDL(cols[idx.datePaiement]?.trim() || null)
     // Un avoir dans les tâches associées solde la facture, même sans paiement
     const avoirDetecte = contientAvoir(commentaire)
     if (avoirDetecte) nbAvoirs++
