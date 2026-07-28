@@ -1201,7 +1201,7 @@ async function chargerTachesGlobal() {
   }
 
   const tachesAvecAssignations = await Promise.all(data.map(async t => {
-    const { data: assignations } = await db.from('tache_assignations').select('employes(nom)').eq('tache_id', t.id)
+    const { data: assignations } = await db.from('tache_assignations').select('employes(nom, equipe)').eq('tache_id', t.id)
     return { ...t, assignations: assignations || [] }
   }))
 
@@ -1225,8 +1225,13 @@ async function chargerTachesGlobal() {
       v === 'urgent' ? (t.priorite === 'urgent' && t.statut !== 'fait') :
       t.statut === v
     )
-    // Multi-select équipe : OR entre toutes les équipes actives
-    const okEquipe = filtresTacheEquipe.size === 0 || filtresTacheEquipe.has(t.projets?.equipe)
+    // Multi-select équipe : OR entre toutes les équipes actives.
+    // Une tâche matche si son projet est de cette équipe, OU si l'un des
+    // assignés en fait partie — couvre les tâches sans projet (projet_id
+    // null) et les cas de collaboration inter-équipes.
+    const okEquipe = filtresTacheEquipe.size === 0
+      || filtresTacheEquipe.has(t.projets?.equipe)
+      || t.assignations.some(a => filtresTacheEquipe.has(a.employes?.equipe))
     return okStatut && okEquipe
   })
   if (!filtered.length) {
