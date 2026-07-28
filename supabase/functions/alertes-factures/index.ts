@@ -39,6 +39,9 @@ function joursFeriesFrance(annee: number): Set<string> {
 
 const fmtMontant = (v: number) => v.toLocaleString("fr-FR", { minimumFractionDigits: 2 });
 
+// Solde restant dû = montant - acompte/avoir déjà réglé (jamais négatif)
+const soldeRestant = (f: any) => Math.max(0, (parseFloat(f.montant) || 0) - (parseFloat(f.montant_paye) || 0));
+
 Deno.serve(async () => {
   const maintenant   = new Date();
   const aujourd_hui  = maintenant.toISOString().split("T")[0];
@@ -99,7 +102,7 @@ Deno.serve(async () => {
   };
   const facturesRelance  = factures.filter((f: any) => !estLettrage(f.client));
   const facturesLettrage = factures.filter((f: any) => estLettrage(f.client));
-  const montantLettrage  = facturesLettrage.reduce((s: number, f: any) => s + (parseFloat(f.montant) || 0), 0);
+  const montantLettrage  = facturesLettrage.reduce((s: number, f: any) => s + soldeRestant(f), 0);
   const clientsLettrage  = new Set(facturesLettrage.map((f: any) => f.client)).size;
 
   // ── J+3 : factures À RELANCER échues exactement il y a 3 jours ──
@@ -107,12 +110,12 @@ Deno.serve(async () => {
   dateJ3.setUTCDate(dateJ3.getUTCDate() - 3);
   const strJ3 = dateJ3.toISOString().split("T")[0];
   const facturesJ3 = facturesRelance.filter((f: any) => f.date_echeance === strJ3);
-  const montantJ3  = facturesJ3.reduce((s: number, f: any) => s + (parseFloat(f.montant) || 0), 0);
+  const montantJ3  = facturesJ3.reduce((s: number, f: any) => s + soldeRestant(f), 0);
 
   // ── Reste : autres factures À RELANCER en retard ──────────
   const facturesReste = facturesRelance.filter((f: any) => f.date_echeance !== strJ3);
-  const montantReste  = facturesReste.reduce((s: number, f: any) => s + (parseFloat(f.montant) || 0), 0);
-  const montantTotal  = facturesRelance.reduce((s: number, f: any) => s + (parseFloat(f.montant) || 0), 0);
+  const montantReste  = facturesReste.reduce((s: number, f: any) => s + soldeRestant(f), 0);
+  const montantTotal  = facturesRelance.reduce((s: number, f: any) => s + soldeRestant(f), 0);
 
   // ── Helper : tableau de lignes ─────────────────────────────
   const lignesTable = (arr: any[], showRetard: boolean) => arr.map((f: any) => {
@@ -123,7 +126,7 @@ Deno.serve(async () => {
       <tr>
         <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-family:monospace;font-size:12.5px;color:#555;">${f.numero}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-weight:600;font-size:13px;">${f.client}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;font-family:monospace;font-weight:600;font-size:13px;">${fmtMontant(parseFloat(f.montant))} €</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;font-family:monospace;font-weight:600;font-size:13px;">${fmtMontant(soldeRestant(f))} €</td>
         <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;color:#6b7280;font-size:12.5px;">${f.date_echeance}</td>
         ${showRetard ? `<td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;color:#ef4444;font-weight:600;font-size:12.5px;">+${joursRetard}j</td>` : ''}
       </tr>`;
