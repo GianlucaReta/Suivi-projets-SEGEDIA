@@ -19,7 +19,7 @@ Deno.serve(async () => {
   // Récupère toutes les factures R1 envoyée mais R2 pas encore envoyée
   const { data: factures, error } = await supabase
     .from("factures")
-    .select("id, numero, client, montant, date_relance, date_echeance, moyen_paiement")
+    .select("id, numero, client, montant, montant_paye, date_relance, date_echeance, moyen_paiement")
     .eq("solde", false)
     .eq("litige", false)
     .not("date_relance", "is", null)
@@ -90,18 +90,20 @@ Deno.serve(async () => {
     const [y, m, d] = s.split("-");
     return `${d}/${m}/${y}`;
   };
+  // Solde restant dû = montant - acompte/avoir déjà réglé (jamais négatif)
+  const soldeRestant = (f: any) => Math.max(0, (parseFloat(f.montant) || 0) - (parseFloat(f.montant_paye) || 0));
 
-  const totalGlobal = aRelancer.reduce((s: number, f: any) => s + (parseFloat(f.montant) || 0), 0);
+  const totalGlobal = aRelancer.reduce((s: number, f: any) => s + soldeRestant(f), 0);
   const nbClients = Object.keys(parClient).length;
 
   const lignesClients = Object.entries(parClient)
     .map(([client, facs]) => {
-      const total = facs.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0);
+      const total = facs.reduce((s, f) => s + soldeRestant(f), 0);
       const joursR1Max = Math.max(...facs.map((f: any) => Math.floor((aujMs - new Date(f.date_relance).getTime()) / 86400000)));
       const factLignes = facs
         .map(
           (f: any) =>
-            `<li style="margin-bottom:4px;"><b>${f.numero}</b> - ${fmtEur(parseFloat(f.montant))} € - échéance ${fmtDate(f.date_echeance)}</li>`
+            `<li style="margin-bottom:4px;"><b>${f.numero}</b> - ${fmtEur(soldeRestant(f))} € - échéance ${fmtDate(f.date_echeance)}</li>`
         )
         .join("");
       return `

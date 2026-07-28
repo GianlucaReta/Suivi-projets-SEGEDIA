@@ -1676,6 +1676,15 @@ function formatDate(dateStr) {
   return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
+// Solde restant dû sur une facture = montant total - acompte/avoir déjà réglé.
+// Utilisé partout où on calcule un montant à relancer, pour ne jamais
+// réclamer une somme déjà couverte par un acompte ou un avoir.
+function soldeRestant(f) {
+  const montant = parseFloat(f.montant) || 0
+  const paye    = parseFloat(f.montant_paye) || 0
+  return Math.max(0, montant - paye)
+}
+
 function formatPhone(p) {
   if (!p) return null
   const d = p.replace(/\D/g, '')
@@ -2641,17 +2650,19 @@ function ouvrirModalRelance(id) {
     .filter(f => f.client === client && !f.solde && !f.litige && f.date_echeance && f.date_echeance < auj)
     .sort((a, b) => (a.date_echeance || '').localeCompare(b.date_echeance || ''))
 
-  const total = facImpayees.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
+  const total = facImpayees.reduce((s, f) => s + soldeRestant(f), 0)
   const ids   = facImpayees.map(f => f.id)
 
   // Corps du mail selon singulier/pluriel
   let sujet, corps
   if (facImpayees.length === 1) {
     const f = facImpayees[0]
+    const restant = soldeRestant(f)
+    const mentionAcompte = f.montant_paye > 0 ? ` (après déduction d'un acompte/avoir de ${fmt(f.montant_paye)} €)` : ''
     sujet = `Relance facture N°${f.numero} - SEGEDIA SERVICES`
     corps = `Bonjour,
 
-Sauf erreur de notre part, la facture N°${f.numero} d'un montant de ${fmt(f.montant)} €, dont l'échéance était fixée au ${formatDate(f.date_echeance)}, n'a pas encore été réglée à ce jour.
+Sauf erreur de notre part, la facture N°${f.numero} d'un montant de ${fmt(restant)} €${mentionAcompte}, dont l'échéance était fixée au ${formatDate(f.date_echeance)}, n'a pas encore été réglée à ce jour.
 
 Nous vous remercions de bien vouloir procéder au règlement dans les meilleurs délais, aux coordonnées bancaires figurant au bas de votre facture.
 
@@ -2660,9 +2671,11 @@ Si le paiement de cette facture a déjà été effectué, merci de ne pas tenir 
 Cordialement,
 SEGEDIA SERVICES`
   } else {
-    const lignes = facImpayees.map(f =>
-      `  • N°${f.numero} - ${fmt(f.montant)} € - échéance le ${formatDate(f.date_echeance)}`
-    ).join('\n')
+    const lignes = facImpayees.map(f => {
+      const restant = soldeRestant(f)
+      const mention = f.montant_paye > 0 ? ` (acompte/avoir de ${fmt(f.montant_paye)} € déduit)` : ''
+      return `  • N°${f.numero} - ${fmt(restant)} €${mention} - échéance le ${formatDate(f.date_echeance)}`
+    }).join('\n')
     sujet = `Relance factures impayées - SEGEDIA SERVICES`
     corps = `Bonjour,
 
@@ -2783,7 +2796,7 @@ function ouvrirModalRelanceR2(id) {
     .filter(f => f.client === client && !f.solde && !f.litige && f.date_echeance && f.date_echeance < auj2)
     .sort((a, b) => (a.date_echeance || '').localeCompare(b.date_echeance || ''))
 
-  const total = facImpayees.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
+  const total = facImpayees.reduce((s, f) => s + soldeRestant(f), 0)
   const ids   = facImpayees.map(f => f.id)
 
   const echeancier = total >= 1000
@@ -2793,10 +2806,12 @@ function ouvrirModalRelanceR2(id) {
   let sujet, corps
   if (facImpayees.length === 1) {
     const f = facImpayees[0]
+    const restant = soldeRestant(f)
+    const mentionAcompte = f.montant_paye > 0 ? ` (après déduction d'un acompte/avoir de ${fmt(f.montant_paye)} €)` : ''
     sujet = `Relance 2ème avis - Facture N°${f.numero} - SEGEDIA SERVICES`
     corps = `Bonjour,
 
-Sauf erreur de notre part, et malgré notre premier rappel, la facture N°${f.numero} d'un montant de ${fmt(f.montant)} €, dont l'échéance était fixée au ${formatDate(f.date_echeance)}, n'a toujours pas été réglée à ce jour.
+Sauf erreur de notre part, et malgré notre premier rappel, la facture N°${f.numero} d'un montant de ${fmt(restant)} €${mentionAcompte}, dont l'échéance était fixée au ${formatDate(f.date_echeance)}, n'a toujours pas été réglée à ce jour.
 
 Nous vous demandons de bien vouloir procéder au règlement dans les plus brefs délais, aux coordonnées bancaires figurant au bas de votre facture.
 
@@ -2807,9 +2822,11 @@ Si le paiement a déjà été effectué, merci de ne pas tenir compte de ce mess
 Cordialement,
 SEGEDIA SERVICES`
   } else {
-    const lignes = facImpayees.map(f =>
-      `  • N°${f.numero} - ${fmt(f.montant)} € - échéance le ${formatDate(f.date_echeance)}`
-    ).join('\n')
+    const lignes = facImpayees.map(f => {
+      const restant = soldeRestant(f)
+      const mention = f.montant_paye > 0 ? ` (acompte/avoir de ${fmt(f.montant_paye)} € déduit)` : ''
+      return `  • N°${f.numero} - ${fmt(restant)} €${mention} - échéance le ${formatDate(f.date_echeance)}`
+    }).join('\n')
     sujet = `Relance 2ème avis - Factures impayées - SEGEDIA SERVICES`
     corps = `Bonjour,
 
@@ -2864,7 +2881,7 @@ function ouvrirModalAppel(id) {
   const noteExistante = facImpayees.find(f => f.note_appel)?.note_appel || ''
   const dateExistante = facImpayees.find(f => f.date_appel)?.date_appel || new Date().toISOString().split('T')[0]
   const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
-  const total = facImpayees.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
+  const total = facImpayees.reduce((s, f) => s + soldeRestant(f), 0)
 
   window._appelData = { client, ids }
   document.getElementById('modal-appel-client').textContent = client
@@ -3017,7 +3034,7 @@ async function chargerRecouvrement() {
     const r1Date = facts.find(f => f.date_relance)?.date_relance
     const joursR1 = r1Date ? Math.floor((new Date(auj) - new Date(r1Date)) / 86400000) : 0
     const r2Urgent = etape === 'r1' && joursR1 >= 15
-    const total = facts.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
+    const total = facts.reduce((s, f) => s + soldeRestant(f), 0)
     const joursRetardMax = Math.max(...facts.map(f => Math.floor((new Date(auj) - new Date(f.date_echeance)) / 86400000)))
     return { nom, facts, etape, r2Urgent, joursR1, total, joursRetardMax }
   }).sort((a, b) => {
@@ -3029,7 +3046,7 @@ async function chargerRecouvrement() {
 
   // Clients espèce/prélèvement : en attente de lettrage (hors relance)
   const lettrageList = Object.entries(parClientLettrage).map(([nom, facts]) => {
-    const total = facts.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
+    const total = facts.reduce((s, f) => s + soldeRestant(f), 0)
     return { nom, facts, total, moyen: moyenDominant(facts) }
   }).sort((a, b) => b.total - a.total)
 
@@ -3127,7 +3144,7 @@ async function chargerRecouvrement() {
           <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);min-width:80px;">${f.numero}</div>
           <div style="flex:1;font-size:12px;color:var(--ink);">${formatDate(f.date_echeance)}</div>
           <div style="font-size:10.5px;color:var(--danger);font-weight:600;">+${j}j</div>
-          <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--danger);">${fmt(f.montant)} €</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--danger);">${fmt(soldeRestant(f))} €</div>
         </div>`
     }).join('')
 
@@ -3171,7 +3188,7 @@ async function chargerRecouvrement() {
               <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);min-width:80px;">${f.numero}</div>
               <div style="flex:1;font-size:12px;color:var(--ink);">${formatDate(f.date_echeance)}</div>
               <div style="font-size:10.5px;color:var(--muted);font-weight:600;">+${j}j</div>
-              <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--ink);">${fmt(f.montant)} €</div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--ink);">${fmt(soldeRestant(f))} €</div>
             </div>`
         }).join('')
         return `
