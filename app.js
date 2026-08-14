@@ -3973,7 +3973,7 @@ async function importerCSVFactures(file) {
   // Ignorer la ligne header
   const dataRows = rows.slice(1).filter(r => r[idx.numero] && r[idx.numero].trim())
 
-  let nbExclus = 0, nbNouveaux = 0, nbMisAJour = 0, nbAvoirs = 0
+  let nbExclus = 0, nbNouveaux = 0, nbMisAJour = 0, nbAvoirs = 0, nbZeroEuro = 0
   const factures = dataRows.map(cols => {
     const numero  = cols[idx.numero]?.trim() || null
     const client  = cols[idx.client]?.trim() || 'Client inconnu'
@@ -3984,6 +3984,9 @@ async function importerCSVFactures(file) {
 
     const montantStr    = (cols[idx.montant] || '0').trim().replace(',', '.')
     const montant       = parseFloat(montantStr) || 0
+    // Les factures à 0 € n'ont aucune valeur à suivre (rien à encaisser,
+    // rien à relancer) — on ne les importe jamais, ni en création ni en MàJ.
+    if (montant === 0) { nbZeroEuro++; return null }
     const date_emission = parseDateEmissionDL(cols[idx.dateEmission])
     const date_echeance = parseDateEcheanceDL(cols[idx.dateEcheance])
     const soldeCSV      = (cols[idx.solde] || '').trim() === 'Oui'
@@ -4013,7 +4016,7 @@ async function importerCSVFactures(file) {
   }).filter(Boolean)
 
   if (!factures.length) {
-    alert(`Aucune facture valide trouvée.${nbExclus > 0 ? `\n(${nbExclus} ligne${nbExclus>1?'s':''} ignorée${nbExclus>1?'s':''} — clients exclus)` : ''}`)
+    alert(`Aucune facture valide trouvée.${nbExclus > 0 ? `\n(${nbExclus} ligne${nbExclus>1?'s':''} ignorée${nbExclus>1?'s':''} — clients exclus)` : ''}${nbZeroEuro > 0 ? `\n(${nbZeroEuro} ligne${nbZeroEuro>1?'s':''} ignorée${nbZeroEuro>1?'s':''} — montant à 0 €)` : ''}`)
     return
   }
 
@@ -4027,6 +4030,7 @@ async function importerCSVFactures(file) {
     nbNouveaux  > 0 ? `${nbNouveaux} nouvelle${nbNouveaux>1?'s':''} facture${nbNouveaux>1?'s':''}` : null,
     nbMisAJour  > 0 ? `${nbMisAJour} mise${nbMisAJour>1?'s':''} à jour` : null,
     nbAvoirs    > 0 ? `${nbAvoirs} avoir${nbAvoirs>1?'s':''} détecté${nbAvoirs>1?'s':''} → soldée${nbAvoirs>1?'s':''} automatiquement` : null,
+    nbZeroEuro  > 0 ? `${nbZeroEuro} ignorée${nbZeroEuro>1?'s':''} (montant à 0 €)` : null,
     nbExclus    > 0 ? `${nbExclus} ignorée${nbExclus>1?'s':''} (clients exclus)` : null,
   ].filter(Boolean)
   alert('✓ Import terminé\n' + lignes.join(' · '))
