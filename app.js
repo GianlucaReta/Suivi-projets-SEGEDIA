@@ -1562,6 +1562,45 @@ document.addEventListener('keydown', e => {
   }
 })
 
+// --- NOTIFICATIONS (création/modification tâche ou projet) ---
+// Journalise l'événement (pour le pop-up "nouveautés") et envoie un mail
+// aux personnes concernées. N'échoue jamais bruyamment : un souci d'envoi
+// ne doit pas empêcher la sauvegarde de la tâche/du projet.
+async function notifierChangement(type, action, titre, contexte, destinataires) {
+  try {
+    await db.from('notifications_activite').insert({
+      type, action, titre, contexte: contexte || null, auteur: utilisateurActifNom || null
+    })
+  } catch (e) { console.error('notifierChangement journal error', e) }
+
+  const emails = [...new Set((destinataires || []).filter(Boolean))]
+  if (!emails.length) return
+
+  const typeLabel   = type === 'tache' ? 'Tâche' : 'Projet'
+  const masculin    = type === 'projet'
+  const actionLabel = action === 'creation' ? (masculin ? 'créé' : 'créée') : (masculin ? 'modifié' : 'modifiée')
+  const emoji        = action === 'creation' ? '🆕' : '✏️'
+  const subject = `${emoji} ${typeLabel} ${actionLabel} : ${titre}`
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:auto;padding:20px;">
+      <div style="border-bottom:2px solid #EE7E24;padding-bottom:10px;margin-bottom:16px;">
+        <span style="font-weight:700;font-size:16px;color:#EE7E24;">SuiviPro</span>
+      </div>
+      <p style="font-size:15px;color:#1a1815;margin:0 0 6px;"><b>${typeLabel} ${actionLabel}</b>${contexte ? ` — ${contexte}` : ''}</p>
+      <p style="font-size:14px;color:#3a3733;margin:0 0 16px;">${titre}</p>
+      <p style="font-size:12px;color:#7a766f;margin:0;">Par ${utilisateurActifNom || 'un utilisateur'} · ${new Date().toLocaleString('fr-FR')}</p>
+      <p style="font-size:11.5px;color:#9ca3af;margin-top:20px;border-top:1px solid #eee;padding-top:12px;">Connectez-vous à SuiviPro pour voir le détail.</p>
+    </div>`
+
+  try {
+    await fetch(`${SUPABASE_URL}/functions/v1/notifier-equipe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_JWT}` },
+      body: JSON.stringify({ to: emails, subject, html })
+    })
+  } catch (e) { console.error('notifierChangement email error', e) }
+}
+
 // --- SAUVEGARDES ---
 async function sauvegarderProjet() {
   const nom = document.getElementById('input-projet-nom').value.trim()
@@ -1587,6 +1626,13 @@ async function sauvegarderProjet() {
     if (error) { console.error(error); alert('Erreur lors de la sauvegarde.'); return }
     fermerModals()
   }
+
+  // Notifier l'équipe du projet (pas d'assignation individuelle sur les projets) — en tâche de fond
+  db.from('employes').select('email').eq('equipe', payload.equipe).then(({ data: employesEquipe }) => {
+    notifierChangement('projet', id ? 'modification' : 'creation', nom, payload.client || null,
+      (employesEquipe || []).map(e => e.email))
+  })
+
   chargerProjets()
 }
 
@@ -1623,9 +1669,20 @@ async function sauvegarderTache() {
   }
 
   const checkboxes = document.querySelectorAll('input[name="employe-checkbox"]:checked')
-  if (checkboxes.length > 0 && tacheId) {
-    const assignations = Array.from(checkboxes).map(cb => ({ tache_id: tacheId, employe_id: cb.value }))
+  const idsAssignes = Array.from(checkboxes).map(cb => cb.value)
+  if (idsAssignes.length > 0 && tacheId) {
+    const assignations = idsAssignes.map(employe_id => ({ tache_id: tacheId, employe_id }))
     await db.from('tache_assignations').insert(assignations)
+  }
+
+  // Notifier les assignés — en tâche de fond, sans ralentir la fermeture du modal.
+  // On capture l'action et le projet avant fermerModals() qui réinitialise tacheEnEdition/projetActif.
+  const actionTache = tacheEnEdition ? 'modification' : 'creation'
+  const nomProjetTache = projetActif?.nom || null
+  if (idsAssignes.length > 0) {
+    db.from('employes').select('email').in('id', idsAssignes).then(({ data: employesAssignes }) => {
+      notifierChangement('tache', actionTache, desc, nomProjetTache, (employesAssignes || []).map(e => e.email))
+    })
   }
 
   fermerModals()
@@ -1701,6 +1758,53 @@ function initiales(nom) {
   return nom.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 }
 
+// --- POP-UP NOUVEAUTÉS ---
+const CLE_NOTIFS_VUES = 'suivi_dernieres_notifs_vues'
+
+async function verifierNouvellesNotifications() {
+  const { data: notifs } = await db.from('notifications_activite')
+    .select('*').order('created_at', { ascending: false }).limit(15)
+  if (!notifs || !notifs.length) return
+
+  const derniereVue = localStorage.getItem(CLE_NOTIFS_VUES)
+  if (!derniereVue) {
+    // Première utilisation de la fonctionnalité sur cet appareil : pas de
+    // rattrapage rétroactif, on part du principe que tout est déjà connu.
+    localStorage.setItem(CLE_NOTIFS_VUES, notifs[0].created_at)
+    return
+  }
+
+  const nouvelles = notifs.filter(n => n.created_at > derniereVue)
+  if (nouvelles.length) afficherPopupNotifications(nouvelles)
+}
+
+function afficherPopupNotifications(notifs) {
+  const el = document.getElementById('popup-notifications')
+  const liste = document.getElementById('popup-notifications-liste')
+  if (!el || !liste) return
+  liste.innerHTML = notifs.map(n => {
+    const emoji = n.action === 'creation' ? '🆕' : '✏️'
+    const typeLabel = n.type === 'tache' ? 'Tâche' : 'Projet'
+    const masculin = n.type === 'projet'
+    const actionLabel = n.action === 'creation' ? (masculin ? 'créé' : 'créée') : (masculin ? 'modifié' : 'modifiée')
+    const dateH = new Date(n.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
+    return `<div style="padding:8px 0;border-bottom:1px solid var(--border-soft);">
+      <div style="font-size:12px;font-weight:600;color:var(--ink);">${emoji} ${typeLabel} ${actionLabel}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:1px;">${n.titre}${n.contexte ? ` · ${n.contexte}` : ''}</div>
+      <div style="font-size:10.5px;color:var(--muted);margin-top:2px;">${[n.auteur, dateH].filter(Boolean).join(' · ')}</div>
+    </div>`
+  }).join('')
+  el.dataset.derniere = notifs[0].created_at
+  el.classList.remove('hidden')
+}
+
+function fermerPopupNotifications() {
+  const el = document.getElementById('popup-notifications')
+  if (!el) return
+  if (el.dataset.derniere) localStorage.setItem(CLE_NOTIFS_VUES, el.dataset.derniere)
+  el.classList.add('hidden')
+}
+
 // --- INIT ---
 mettreAJourSidebarUser()
 const _pageSauvegardee = localStorage.getItem('suivi_current_page')
@@ -1710,6 +1814,7 @@ if (_pageSauvegardee && document.getElementById('page-' + _pageSauvegardee)) {
   chargerDashboard()
 }
 chargerEmployes()
+verifierNouvellesNotifications()
 // --- CALENDRIER ---
 let calDate = new Date()
 let calType = 'projets' // projets ou taches

@@ -880,6 +880,15 @@
   </div>
 </div>
 
+<!-- POP-UP NOUVEAUTÉS (tâches/projets créés ou modifiés) -->
+<div id="popup-notifications" class="hidden" style="position:fixed;bottom:20px;right:20px;width:320px;max-height:70vh;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.16);z-index:9998;padding:14px 16px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <span style="font-size:13px;font-weight:700;color:var(--ink);">🔔 Nouveautés</span>
+    <button onclick="fermerPopupNotifications()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:0;">×</button>
+  </div>
+  <div id="popup-notifications-liste"></div>
+</div>
+
 <script src="app.js"></script>
 </body>
 </html>
