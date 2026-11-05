@@ -717,6 +717,19 @@
       <label>Assigné à (plusieurs possibles)</label>
       <div id="liste-checkboxes-employes" style="display:flex; flex-wrap:wrap; gap:0.5rem; padding:0.5rem; border:1px solid var(--border); border-radius:8px; max-height:150px; overflow-y:auto;"></div>
     </div>
+    <!-- Pièces jointes (photos, PDF) -->
+    <div class="form-group" id="section-pj-tache" style="border-radius:8px;"
+         ondragover="event.preventDefault();this.style.background='var(--brand-soft)'"
+         ondragleave="this.style.background=''"
+         ondrop="deposerFichiersTache(event)">
+      <label>Pièces jointes <span style="font-weight:400;color:var(--muted);">(photos, PDF · 10 Mo max)</span></label>
+      <div id="pj-tache-liste" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;"></div>
+      <label class="btn btn-secondary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:6px 12px;text-transform:none;letter-spacing:normal;font-weight:600;">
+        📎 Ajouter une photo ou un PDF
+        <input type="file" id="input-pj-tache" accept="image/*,application/pdf" multiple style="display:none;" onchange="choisirFichiersTache(this)">
+      </label>
+      <span id="pj-tache-statut" style="font-size:11.5px;color:var(--muted);margin-left:8px;"></span>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="fermerModals()">Annuler</button>
       <button class="btn btn-danger" id="btn-supprimer-tache" onclick="supprimerTache()" style="display:none;">🗑️ Supprimer</button>

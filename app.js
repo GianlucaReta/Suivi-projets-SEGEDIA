@@ -700,6 +700,7 @@ async function supprimerProjetDefinitif(id, nom) {
   const { data: taches } = await db.from('taches').select('id').eq('projet_id', id)
   const tacheIds = (taches || []).map(t => t.id)
   if (tacheIds.length) {
+    await supprimerPiecesJointesDeTaches(tacheIds)
     await db.from('tache_assignations').delete().in('tache_id', tacheIds)
     await db.from('commentaires_taches').delete().in('tache_id', tacheIds)
   }
@@ -1066,6 +1067,8 @@ async function ouvrirEditionTache(id) {
   // Afficher la section commentaires (uniquement en édition)
   const secCom = document.getElementById('section-commentaires-tache')
   if (secCom) { secCom.style.display = 'block'; chargerCommentairesTache(id) }
+  pjEnAttente = []
+  rafraichirPiecesJointesTache()
   document.getElementById('modal-tache').classList.remove('hidden')
 }
 
@@ -1108,6 +1111,7 @@ async function changerStatutTache(id, statutActuel, event) {
 async function supprimerTache() {
   if (!tacheEnEdition) return
   if (!confirm('Supprimer cette tâche définitivement ?')) return
+  await supprimerPiecesJointesDeTaches([tacheEnEdition.id])
   await db.from('tache_assignations').delete().eq('tache_id', tacheEnEdition.id)
   await db.from('taches').delete().eq('id', tacheEnEdition.id)
   fermerModals()
@@ -1150,6 +1154,200 @@ async function ajouterCommentaireTache() {
     logAction('commentaire', 'taches', tacheEnEdition.id, `Commentaire sur "${tacheEnEdition.description}"`)
     chargerCommentairesTache(tacheEnEdition.id)
   }
+}
+
+// ── PIÈCES JOINTES DES TÂCHES (photos, PDF) ──────────────
+const PJ_BUCKET     = 'pieces-jointes'
+const PJ_TAILLE_MAX = 10 * 1024 * 1024
+const PJ_TYPES      = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif', 'application/pdf']
+let pjEnAttente = []   // fichiers choisis pendant la création d'une tâche (envoyés à l'enregistrement)
+let pjUrlsTemp  = []   // aperçus temporaires des fichiers en attente (libérés à chaque rafraîchissement)
+
+function echapperHtmlPJ(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}
+
+function tailleLisiblePJ(octets) {
+  if (!octets) return ''
+  return octets < 1024 * 1024 ? `${Math.max(1, Math.round(octets / 1024))} Ko` : `${(octets / 1024 / 1024).toFixed(1).replace('.', ',')} Mo`
+}
+
+function typeFichierPJ(f) {
+  if (PJ_TYPES.includes(f.type)) return f.type
+  const ext = (f.name.split('.').pop() || '').toLowerCase()
+  return { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic', heif: 'image/heif', pdf: 'application/pdf' }[ext] || null
+}
+
+// Réduit une photo à 1600 px max en JPEG (une photo de téléphone passe de ~5 Mo à ~0,4 Mo).
+// Retourne null si le navigateur ne sait pas la décoder (ex. HEIC) : le fichier d'origine est alors envoyé tel quel.
+async function reduireImagePJ(file) {
+  try {
+    let bmp
+    try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }) }
+    catch { bmp = await createImageBitmap(file) }
+    const ratio = Math.min(1, 1600 / Math.max(bmp.width, bmp.height))
+    const w = Math.round(bmp.width * ratio), h = Math.round(bmp.height * ratio)
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h)
+    ctx.drawImage(bmp, 0, 0, w, h)
+    if (bmp.close) bmp.close()
+    return await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.82))
+  } catch (e) { return null }
+}
+
+async function preparerFichierPJ(file) {
+  const type = typeFichierPJ(file)
+  if (!type) return { erreur: `« ${file.name} » : seuls les photos et les PDF sont acceptés.` }
+  let blob = file, nom = file.name, mime = type
+  if (type.startsWith('image/') && type !== 'image/gif') {
+    const reduit = await reduireImagePJ(file)
+    if (reduit && (reduit.size < file.size || file.size > PJ_TAILLE_MAX)) {
+      blob = reduit; mime = 'image/jpeg'; nom = nom.replace(/\.[^.]+$/, '') + '.jpg'
+    }
+  }
+  if (blob.size > PJ_TAILLE_MAX) return { erreur: `« ${file.name} » dépasse 10 Mo.` }
+  return { blob, nom, type: mime }
+}
+
+// Envoie un fichier dans le stockage puis l'enregistre sur la tâche. Retourne un message d'erreur, ou null si tout va bien.
+async function televerserPJ(tacheId, fichier) {
+  const prep = await preparerFichierPJ(fichier)
+  if (prep.erreur) return prep.erreur
+  const ext = (prep.nom.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'bin'
+  const chemin = `${tacheId}/${crypto.randomUUID()}.${ext}`
+  const { error } = await db.storage.from(PJ_BUCKET).upload(chemin, prep.blob, { contentType: prep.type, upsert: false })
+  if (error) { console.error(error); return `« ${fichier.name} » : envoi impossible.` }
+  const { error: e2 } = await db.from('taches_pieces_jointes').insert({
+    tache_id: tacheId, nom: prep.nom, chemin, type_mime: prep.type, taille: prep.blob.size, auteur: utilisateurActifNom || 'Anonyme'
+  })
+  if (e2) {
+    console.error(e2)
+    await db.storage.from(PJ_BUCKET).remove([chemin])
+    return `« ${fichier.name} » : enregistrement impossible.`
+  }
+  return null
+}
+
+function choisirFichiersTache(input) {
+  const fichiers = Array.from(input.files || [])
+  input.value = ''   // permet de choisir à nouveau le même fichier
+  ajouterFichiersTache(fichiers)
+}
+
+function deposerFichiersTache(ev) {
+  ev.preventDefault()
+  ev.currentTarget.style.background = ''
+  ajouterFichiersTache(Array.from(ev.dataTransfer?.files || []))
+}
+
+async function ajouterFichiersTache(fichiers) {
+  if (!fichiers.length) return
+  const statut = document.getElementById('pj-tache-statut')
+  const erreurs = []
+
+  if (!tacheEnEdition) {
+    // Création : on garde les fichiers jusqu'à l'enregistrement de la tâche
+    for (const f of fichiers) {
+      const type = typeFichierPJ(f)
+      if (!type) erreurs.push(`« ${f.name} » : seuls les photos et les PDF sont acceptés.`)
+      else if (type === 'application/pdf' && f.size > PJ_TAILLE_MAX) erreurs.push(`« ${f.name} » dépasse 10 Mo.`)
+      else pjEnAttente.push(f)
+    }
+  } else {
+    const tacheId = tacheEnEdition.id
+    for (let i = 0; i < fichiers.length; i++) {
+      if (statut) statut.textContent = `Envoi ${i + 1}/${fichiers.length}…`
+      const e = await televerserPJ(tacheId, fichiers[i])
+      if (e) erreurs.push(e)
+    }
+    if (statut) statut.textContent = ''
+    if (erreurs.length < fichiers.length) logAction('piece_jointe', 'taches', tacheId, `Pièce jointe ajoutée à "${tacheEnEdition.description}"`)
+  }
+
+  await rafraichirPiecesJointesTache()
+  if (erreurs.length) alert('Certains fichiers n\'ont pas été joints :\n' + erreurs.join('\n'))
+}
+
+async function rafraichirPiecesJointesTache() {
+  const liste = document.getElementById('pj-tache-liste')
+  if (!liste) return
+  pjUrlsTemp.forEach(u => URL.revokeObjectURL(u))
+  pjUrlsTemp = []
+
+  let items = []
+  if (tacheEnEdition) {
+    const { data } = await db.from('taches_pieces_jointes').select('*').eq('tache_id', tacheEnEdition.id).order('created_at')
+    items = (data || []).map(p => ({
+      nom: p.nom, mime: p.type_mime, taille: p.taille,
+      url: db.storage.from(PJ_BUCKET).getPublicUrl(p.chemin).data.publicUrl,
+      retirer: `supprimerPieceJointe('${p.id}')`
+    }))
+  } else {
+    items = pjEnAttente.map((f, i) => {
+      const url = URL.createObjectURL(f); pjUrlsTemp.push(url)
+      return { nom: f.name, mime: typeFichierPJ(f), taille: f.size, url, retirer: `retirerPieceEnAttente(${i})` }
+    })
+  }
+
+  liste.innerHTML = items.map(it => {
+    const nom = echapperHtmlPJ(it.nom)
+    const estImage = (it.mime || '').startsWith('image/')
+    const tuileFixe = 'display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;font-size:22px;gap:2px;'
+    const apercu = estImage
+      ? `<img src="${it.url}" alt="${nom}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div style="display:none;${tuileFixe}">🖼️</div>`
+      : `<div style="${tuileFixe}">📄<span style="font-size:10px;font-weight:700;color:var(--muted);">PDF</span></div>`
+    return `<div style="position:relative;width:84px;">
+      <a href="${it.url}" target="_blank" rel="noopener" title="${nom}${it.taille ? ' · ' + tailleLisiblePJ(it.taille) : ''}"
+         style="display:block;width:84px;height:84px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface-alt);text-decoration:none;color:inherit;">${apercu}</a>
+      <button type="button" onclick="${it.retirer}" title="Retirer"
+        style="position:absolute;top:-7px;right:-7px;width:20px;height:20px;border-radius:50%;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:13px;line-height:1;padding:0;color:var(--danger);">×</button>
+      <div style="font-size:10.5px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${nom}">${nom}</div>
+    </div>`
+  }).join('')
+}
+
+function retirerPieceEnAttente(i) {
+  pjEnAttente.splice(i, 1)
+  rafraichirPiecesJointesTache()
+}
+
+async function supprimerPieceJointe(id) {
+  if (!confirm('Supprimer cette pièce jointe ?')) return
+  const { data: pj } = await db.from('taches_pieces_jointes').select('chemin,nom').eq('id', id).single()
+  if (!pj) return
+  const { error } = await db.from('taches_pieces_jointes').delete().eq('id', id)
+  if (error) { console.error(error); alert('Suppression impossible.'); return }
+  await db.storage.from(PJ_BUCKET).remove([pj.chemin])
+  if (tacheEnEdition) logAction('piece_jointe', 'taches', tacheEnEdition.id, `Pièce jointe retirée de "${tacheEnEdition.description}"`)
+  rafraichirPiecesJointesTache()
+}
+
+// Envoie les fichiers choisis à la création, une fois la tâche enregistrée
+async function televerserPiecesEnAttente(tacheId) {
+  if (!pjEnAttente.length) return
+  const fichiers = pjEnAttente.slice()
+  pjEnAttente = []
+  const btn = document.querySelector('#modal-tache .btn-primary')
+  const texte = btn?.textContent
+  const erreurs = []
+  for (let i = 0; i < fichiers.length; i++) {
+    if (btn) { btn.disabled = true; btn.textContent = `Envoi des fichiers (${i + 1}/${fichiers.length})…` }
+    const e = await televerserPJ(tacheId, fichiers[i])
+    if (e) erreurs.push(e)
+  }
+  if (btn) { btn.disabled = false; btn.textContent = texte }
+  if (erreurs.length < fichiers.length) logAction('piece_jointe', 'taches', tacheId, 'Pièce(s) jointe(s) ajoutée(s) à la création')
+  if (erreurs.length) alert('Certains fichiers n\'ont pas été joints :\n' + erreurs.join('\n'))
+}
+
+// Supprime les fichiers du stockage quand leurs tâches sont supprimées (les lignes disparaissent d'elles-mêmes)
+async function supprimerPiecesJointesDeTaches(tacheIds) {
+  if (!tacheIds.length) return
+  const { data } = await db.from('taches_pieces_jointes').select('chemin').in('tache_id', tacheIds)
+  const chemins = (data || []).map(p => p.chemin)
+  if (chemins.length) await db.storage.from(PJ_BUCKET).remove(chemins)
 }
 
 // --- TACHES GLOBAL ---
@@ -1467,6 +1665,8 @@ function ouvrirModalTache() {
   // Cacher les commentaires pour une nouvelle tâche
   const secCom = document.getElementById('section-commentaires-tache')
   if (secCom) secCom.style.display = 'none'
+  pjEnAttente = []
+  rafraichirPiecesJointesTache()
   document.getElementById('modal-tache').classList.remove('hidden')
 }
 
@@ -1483,6 +1683,9 @@ function ouvrirModalEmploye() {
 function fermerModals() {
   document.querySelectorAll('.modal-overlay').forEach(m => m.classList.add('hidden'))
   tacheEnEdition = null
+  pjEnAttente = []
+  pjUrlsTemp.forEach(u => URL.revokeObjectURL(u))
+  pjUrlsTemp = []
 }
 
 document.querySelectorAll('.modal-overlay').forEach(m => {
@@ -1699,6 +1902,9 @@ async function sauvegarderTache() {
     const assignations = idsAssignes.map(employe_id => ({ tache_id: tacheId, employe_id }))
     await db.from('tache_assignations').insert(assignations)
   }
+
+  // Pièces jointes choisies pendant la création : envoyées maintenant que la tâche existe
+  await televerserPiecesEnAttente(tacheId)
 
   // Notifier les assignés — en tâche de fond, sans ralentir la fermeture du modal.
   // On capture l'action et le projet avant fermerModals() qui réinitialise tacheEnEdition/projetActif.
