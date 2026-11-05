@@ -7,15 +7,34 @@ const db = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 // ── RECHERCHE GLOBALE ────────────────────────────────────
 let _searchTimeout = null
+let _searchSeq = 0   // numéro de la dernière recherche lancée (ignore les réponses périmées)
+
+// Masque la liste de résultats SANS toucher au texte tapé (contrairement à
+// fermerRecherche, qui vide aussi le champ — à n'utiliser qu'après un choix/Échap).
+function masquerResultatsRecherche() {
+  const el = document.getElementById('search-results')
+  if (el) el.style.display = 'none'
+}
+
+function afficherMessageRecherche(texte) {
+  const el = document.getElementById('search-results')
+  if (!el) return
+  el.innerHTML = `<div style="padding:12px 14px;color:var(--muted);font-size:12.5px;">${texte}</div>`
+  el.style.display = 'block'
+}
+
 function onSearchInput(val) {
   clearTimeout(_searchTimeout)
-  if (!val || val.length < 2) { fermerRecherche(); return }
-  _searchTimeout = setTimeout(() => lancerRecherche(val), 220)
+  const q = (val || '').trim()
+  if (q.length < 2) { _searchSeq++; masquerResultatsRecherche(); return }
+  _searchTimeout = setTimeout(() => lancerRecherche(q), 220)
 }
 
 async function lancerRecherche(query) {
   const q = query.toLowerCase().trim()
   if (!q) return
+  const seq = ++_searchSeq
+  afficherMessageRecherche('Recherche…')
   const [r1, r2, r3] = await Promise.all([
     db.from('projets').select('id,nom,client').eq('archive', false),
     db.from('taches').select('id,description,statut,projets(nom)').eq('archive', false),
@@ -23,6 +42,12 @@ async function lancerRecherche(query) {
       ? db.from('factures').select('id,numero,client,montant,solde')
       : Promise.resolve({ data: [] })
   ])
+  if (seq !== _searchSeq) return   // une recherche plus récente a été lancée entre-temps
+  if (r1.error || r2.error) {
+    console.error('Recherche :', r1.error || r2.error)
+    afficherMessageRecherche('Recherche indisponible, réessaie dans un instant.')
+    return
+  }
   const projets  = (r1.data || []).filter(p => p.nom?.toLowerCase().includes(q) || p.client?.toLowerCase().includes(q))
   const taches   = (r2.data || []).filter(t => t.description?.toLowerCase().includes(q))
   const factures = (r3.data || []).filter(f => f.numero?.toLowerCase().includes(q) || f.client?.toLowerCase().includes(q))
