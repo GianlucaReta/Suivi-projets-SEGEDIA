@@ -42,7 +42,7 @@ const fmtMontant = (v: number) => v.toLocaleString("fr-FR", { minimumFractionDig
 // Solde restant dû = montant - acompte/avoir déjà réglé (jamais négatif)
 const soldeRestant = (f: any) => Math.max(0, (parseFloat(f.montant) || 0) - (parseFloat(f.montant_paye) || 0));
 
-Deno.serve(async () => {
+async function traiter(req: Request): Promise<Response> {
   const maintenant   = new Date();
   const aujourd_hui  = maintenant.toISOString().split("T")[0];
   const jourSemaine  = maintenant.getUTCDay();
@@ -242,4 +242,27 @@ Deno.serve(async () => {
     }),
     { status: 200 }
   );
+}
+
+// ── Compte-rendu de chaque exécution (table envois_auto) ──
+// Permet à la fonction « surveillance-envois » de prévenir si l'alerte n'est pas partie.
+async function enregistrerExecution(nom: string, res: Response) {
+  try {
+    const corps = await res.clone().text();
+    const partiel = corps.match(/Envoy[ée] à (\d+)\/(\d+)/);
+    const erreur = res.status >= 400 || /"status":\s*[45]\d\d/.test(corps) || (partiel && partiel[1] !== partiel[2]);
+    const repos = /Week-end|Jour férié/.test(corps);
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    await admin.from("envois_auto").insert({
+      fonction: nom, statut: erreur ? "erreur" : repos ? "repos" : "ok", code: res.status, detail: corps.slice(0, 500),
+    });
+  } catch (e) { console.error("enregistrerExecution:", e); }
+}
+
+Deno.serve(async (req) => {
+  let res: Response;
+  try { res = await traiter(req); }
+  catch (e) { res = new Response(JSON.stringify({ error: String(e) }), { status: 500 }); }
+  await enregistrerExecution("alertes-factures", res);
+  return res;
 });
