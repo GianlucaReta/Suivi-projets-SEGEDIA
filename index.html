@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=20261117g" />
+  <link rel="stylesheet" href="style.css?v=20261117h" />
 </head>
 <body>
 
@@ -511,7 +511,7 @@
       <div id="bandeau-j1" style="display:none; background:#fff3cd; border:1px solid #ffc107; border-radius:10px; padding:12px 16px; margin-bottom:14px; position:relative;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
           <div style="flex:1;">
-            <div style="font-size:12.5px; font-weight:700; color:#7c4a00; margin-bottom:6px;">🔔 Nouvelles échéances dépassées depuis 3 jours (J+3)</div>
+            <div style="font-size:12.5px; font-weight:700; color:#7c4a00; margin-bottom:6px;"><i class="ico ico-bell"></i> Nouvelles échéances dépassées depuis 3 jours (J+3)</div>
             <div id="bandeau-j1-liste" style="font-size:12px; color:#7c4a00;"></div>
           </div>
           <button onclick="document.getElementById('bandeau-j1').style.display='none'" style="background:none;border:none;cursor:pointer;color:#7c4a00;font-size:18px;line-height:1;padding:0;margin-left:12px;flex-shrink:0;">×</button>
@@ -635,10 +635,10 @@
         <div class="form-group" style="flex:1;">
           <label>Type de prestation *</label>
           <select id="cr-type" style="width:100%;box-sizing:border-box;">
-            <option value="location_fontaine">📦 Location fontaine</option>
-            <option value="compteur">🔢 Relevé compteur</option>
-            <option value="badge">🏷️ Consommation badge</option>
-            <option value="mixte">📦+🔢 Fontaine + Compteur</option>
+            <option value="location_fontaine">Location fontaine</option>
+            <option value="compteur">Relevé compteur</option>
+            <option value="badge">Consommation badge</option>
+            <option value="mixte">Fontaine + compteur</option>
           </select>
         </div>
       </div>
@@ -892,7 +892,7 @@
         <input type="date" id="input-tache-fin" onchange="validerDates()" />
       </div>
     </div>
-    <p id="erreur-dates" style="color:var(--rouge); font-size:0.8rem; display:none;">⚠ La date de fin ne peut pas être avant la date de début.</p>
+    <p id="erreur-dates" style="color:var(--rouge); font-size:0.8rem; display:none;"><i class="ico ico-alert"></i> La date de fin ne peut pas être avant la date de début.</p>
     <div class="form-group">
       <label>Assigné à (plusieurs possibles)</label>
       <div id="liste-checkboxes-employes" style="display:flex; flex-wrap:wrap; gap:0.5rem; padding:0.5rem; border:1px solid var(--border); border-radius:8px; max-height:150px; overflow-y:auto;"></div>
@@ -905,7 +905,7 @@
       <label>Pièces jointes <span style="font-weight:400;color:var(--muted);">(photos, PDF · 10 Mo max)</span></label>
       <div id="pj-tache-liste" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;"></div>
       <label class="btn btn-secondary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:6px 12px;text-transform:none;letter-spacing:normal;font-weight:600;">
-        📎 Ajouter une photo ou un PDF
+        <i class="ico ico-paperclip"></i> Ajouter une photo ou un PDF
         <input type="file" id="input-pj-tache" accept="image/*,application/pdf" multiple style="display:none;" onchange="choisirFichiersTache(this)">
       </label>
       <span id="pj-tache-statut" style="font-size:11.5px;color:var(--muted);margin-left:8px;"></span>
@@ -958,7 +958,7 @@
 
     <!-- Section admin : rôle + code PIN -->
     <div id="section-admin-employe" style="display:none;border-top:1px dashed var(--border);padding-top:14px;margin-top:14px;">
-      <div style="font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:600;letter-spacing:0.07em;margin-bottom:10px;">⚙ Réservé administrateur</div>
+      <div style="font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:600;letter-spacing:0.07em;margin-bottom:10px;"><i class="ico ico-settings"></i> Réservé administrateur</div>
       <div class="form-group">
         <label>Rôle dans l'application</label>
         <select id="input-employe-role">
@@ -1014,7 +1014,7 @@
   <div class="modal-box" style="max-width:600px;">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;">
       <div>
-        <h2 style="font-size:16px;margin-bottom:4px;">📤 Relance — <span id="modal-relance-client"></span></h2>
+        <h2 style="font-size:16px;margin-bottom:4px;"><i class="ico ico-send"></i> Relance — <span id="modal-relance-client"></span></h2>
         <div id="modal-relance-nb" style="font-size:12px;color:var(--muted);"></div>
       </div>
       <button onclick="fermerModals()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:20px;line-height:1;padding:0;">×</button>
@@ -1028,7 +1028,7 @@
 
     <!-- Warning no email -->
     <div id="modal-relance-warning" style="display:none;align-items:center;gap:8px;background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12.5px;color:#991b1b;font-weight:600;">
-      ⚠ Aucun email renseigné pour ce client — ajoutez-le dans la colonne Contact de la liste des factures.
+      <i class="ico ico-alert"></i> Aucun email renseigné pour ce client — ajoutez-le dans la colonne Contact de la liste des factures.
     </div>
 
     <!-- Sujet -->
@@ -1055,7 +1055,7 @@
   <div class="modal-box" style="max-width:480px;">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;">
       <div>
-        <h2 style="font-size:16px;margin-bottom:4px;">📞 Appel — <span id="modal-appel-client"></span></h2>
+        <h2 style="font-size:16px;margin-bottom:4px;"><i class="ico ico-phone"></i> Appel — <span id="modal-appel-client"></span></h2>
         <div id="modal-appel-nb" style="font-size:12px;color:var(--muted);"></div>
       </div>
       <button onclick="fermerModals()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:20px;line-height:1;padding:0;">×</button>
@@ -1078,12 +1078,12 @@
 <!-- POP-UP NOUVEAUTÉS (tâches/projets créés ou modifiés) -->
 <div id="popup-notifications" class="hidden" style="position:fixed;bottom:20px;right:20px;width:320px;max-height:70vh;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.16);z-index:9998;padding:14px 16px;">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-    <span style="font-size:13px;font-weight:700;color:var(--ink);">🔔 Nouveautés</span>
+    <span style="font-size:13px;font-weight:700;color:var(--ink);"><i class="ico ico-bell"></i> Nouveautés</span>
     <button onclick="fermerPopupNotifications()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:0;">×</button>
   </div>
   <div id="popup-notifications-liste"></div>
 </div>
 
-<script src="app.js?v=20261117g" id="script-app"></script>
+<script src="app.js?v=20261117h" id="script-app"></script>
 </body>
 </html>

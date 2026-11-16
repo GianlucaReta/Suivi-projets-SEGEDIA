@@ -495,7 +495,7 @@ async function chargerDashboard() {
   } else {
     containerMT.innerHTML = `
       <div style="background:var(--brand-soft);border:1px solid #f0d5b0;border-radius:12px;padding:20px;text-align:center;">
-        <div style="font-size:28px;margin-bottom:8px;">👤</div>
+        <div style="font-size:28px;margin-bottom:8px;"><i class="ico ico-user"></i></div>
         <div style="font-weight:700;color:var(--ink);margin-bottom:4px;">Personnalisez votre dashboard</div>
         <div style="font-size:12.5px;color:var(--muted);margin-bottom:14px;">Sélectionnez votre profil pour voir vos tâches assignées</div>
         <button onclick="ouvrirSelecteurUtilisateur()" class="btn btn-primary" style="font-size:12.5px;">Choisir mon profil</button>
@@ -605,9 +605,9 @@ function renderTabsProjet(counts) {
   ]
   const equipes = [
     { val: 'tous',         label: 'Toutes les équipes' },
-    { val: 'technique',    label: '🔧 Technique' },
-    { val: 'operationnel', label: '⚙️ Opérationnel' },
-    { val: 'commercial',   label: '💼 Commercial' },
+    { val: 'technique',    label: '<i class="ico ico-tool"></i> Technique' },
+    { val: 'operationnel', label: '<i class="ico ico-settings"></i> Opérationnel' },
+    { val: 'commercial',   label: '<i class="ico ico-briefcase"></i> Commercial' },
   ]
   const actifS = v => v === 'tous' ? filtresProjStatut.size === 0 : filtresProjStatut.has(v)
   const actifE = v => v === 'tous' ? filtresProjEquipe.size === 0 : filtresProjEquipe.has(v)
@@ -722,7 +722,7 @@ async function chargerProjets() {
               const enRetardProjet = joursRestants < 0 && p.statut !== 'fait'
               const bientot = joursRestants >= 0 && joursRestants <= 7 && p.statut !== 'fait'
               const couleur = enRetardProjet ? 'var(--danger)' : bientot ? 'var(--warn)' : 'var(--ink-soft)'
-              const prefixe = enRetardProjet ? '⚑ ' : bientot ? '⚠ ' : ''
+              const prefixe = enRetardProjet ? '⚑ ' : bientot ? '<i class="ico ico-alert"></i> ' : ''
               dateLimiteHtml = `<span style="font-size:11.5px; font-weight:${enRetardProjet || bientot ? '600' : '400'}; color:${couleur}; font-family:'IBM Plex Mono',monospace;">${prefixe}${formatDate(p.date_fin_prevue)}</span>`
             }
             return `<tr onclick="ouvrirDetailProjetId('${p.id}')" style="border-bottom:1px solid var(--border-soft); cursor:pointer; transition:background 0.12s;" onmouseover="this.style.background='var(--surface-alt)'" onmouseout="this.style.background='transparent'">
@@ -799,7 +799,7 @@ async function chargerArchives() {
       </div>
       <div style="display:flex; gap:0.5rem; margin-top:0.8rem;">
         <button class="btn btn-secondary" style="flex:1; font-size:0.8rem;" onclick="event.stopPropagation(); desarchiverProjet('${projet.id}')">↩ Désarchiver</button>
-        <button class="btn btn-danger" style="font-size:0.8rem; padding:0.4rem 0.8rem;" onclick="event.stopPropagation(); supprimerProjetDefinitif('${projet.id}', '${projet.nom.replace(/'/g, "\\'")}')" title="Supprimer définitivement">🗑</button>
+        <button class="btn btn-danger" style="font-size:0.8rem; padding:0.4rem 0.8rem;" onclick="event.stopPropagation(); supprimerProjetDefinitif('${projet.id}', '${projet.nom.replace(/'/g, "\\'")}')" title="Supprimer définitivement"><i class="ico ico-trash"></i></button>
       </div>
     `
     card.addEventListener('click', () => ouvrirDetailProjet(projet))
@@ -816,7 +816,7 @@ async function archiverProjet() {
 }
 
 async function supprimerProjetDefinitif(id, nom) {
-  const confirmation = await confirmer(`⚠️ Supprimer définitivement "${nom}" ?\n\nCette action est irréversible : le projet et toutes ses tâches seront effacés définitivement.`)
+  const confirmation = await confirmer(`Supprimer définitivement "${nom}" ?\n\nCette action est irréversible : le projet et toutes ses tâches seront effacés définitivement.`)
   if (!confirmation) return
   // Double confirmation pour une suppression définitive
   const double = await confirmer(`Dernière confirmation : supprimer "${nom}" et toutes ses tâches de façon permanente ?`)
@@ -1429,8 +1429,8 @@ async function rafraichirPiecesJointesTache() {
     const estImage = (it.mime || '').startsWith('image/')
     const tuileFixe = 'display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;font-size:22px;gap:2px;'
     const apercu = estImage
-      ? `<img src="${it.url}" alt="${nom}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div style="display:none;${tuileFixe}">🖼️</div>`
-      : `<div style="${tuileFixe}">📄<span style="font-size:10px;font-weight:700;color:var(--muted);">PDF</span></div>`
+      ? `<img src="${it.url}" alt="${nom}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div style="display:none;${tuileFixe}"><i class="ico ico-photo"></i></div>`
+      : `<div style="${tuileFixe}"><i class="ico ico-file"></i><span style="font-size:10px;font-weight:700;color:var(--muted);">PDF</span></div>`
     return `<div style="position:relative;width:84px;">
       <a href="${it.url}" target="_blank" rel="noopener" title="${nom}${it.taille ? ' · ' + tailleLisiblePJ(it.taille) : ''}"
          style="display:block;width:84px;height:84px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface-alt);text-decoration:none;color:inherit;">${apercu}</a>
@@ -1495,9 +1495,9 @@ function renderFiltresTache() {
   ]
   const equipes = [
     { val: 'tous',           label: 'Toutes' },
-    { val: 'technique',      label: '🔧 Technique' },
-    { val: 'operationnel',   label: '⚙️ Opérationnel' },
-    { val: 'commercial',     label: '💼 Commercial' },
+    { val: 'technique',      label: '<i class="ico ico-tool"></i> Technique' },
+    { val: 'operationnel',   label: '<i class="ico ico-settings"></i> Opérationnel' },
+    { val: 'commercial',     label: '<i class="ico ico-briefcase"></i> Commercial' },
   ]
   const actifS = v => v === 'tous' ? filtresTacheStatut.size === 0 : filtresTacheStatut.has(v)
   const actifE = v => v === 'tous' ? filtresTacheEquipe.size === 0 : filtresTacheEquipe.has(v)
@@ -1691,7 +1691,7 @@ async function chargerEmployes() {
           <div class="employe-equipe">${e.equipe}</div>
           ${e.email ? `<div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px;">${e.email}</div>` : ''}
           ${e.telephone ? `<div style="font-size:0.72rem; color:var(--text-muted);">${e.telephone}</div>` : ''}
-          ${estAdmin() ? (e.a_un_code ? `<div style="font-size:0.7rem;color:var(--success);margin-top:4px;">🔑 Code configuré${e.pin_a_changer ? ' (provisoire)' : ''}</div>` : `<div style="font-size:0.7rem;color:var(--danger);margin-top:4px;">Pas de code : ne peut pas se connecter</div>`) : ''}
+          ${estAdmin() ? (e.a_un_code ? `<div style="font-size:0.7rem;color:var(--success);margin-top:4px;"><i class="ico ico-key"></i> Code configuré${e.pin_a_changer ? ' (provisoire)' : ''}</div>` : `<div style="font-size:0.7rem;color:var(--danger);margin-top:4px;">Pas de code : ne peut pas se connecter</div>`) : ''}
         </div>
       `).join('')
     }
@@ -2162,7 +2162,7 @@ function afficherPopupNotifications(notifs) {
   const liste = document.getElementById('popup-notifications-liste')
   if (!el || !liste) return
   liste.innerHTML = notifs.map(n => {
-    const emoji = n.action === 'creation' ? '🆕' : '✏️'
+    const emoji = n.action === 'creation' ? '<i class="ico ico-plus"></i>' : '<i class="ico ico-pencil"></i>'
     const typeLabel = n.type === 'tache' ? 'Tâche' : 'Projet'
     const masculin = n.type === 'projet'
     const actionLabel = n.action === 'creation' ? (masculin ? 'créé' : 'créée') : (masculin ? 'modifié' : 'modifiée')
@@ -2414,10 +2414,10 @@ async function chargerHistorique() {
     tache_statut:     '↻',
     facture_soldee:   '✓',
     facture_annulee:  '↩',
-    commentaire:      '💬',
-    projet_statut:    '📁',
-    tournee:          '🚚',
-    contrat:          '🔁',
+    commentaire:      '<i class="ico ico-message"></i>',
+    projet_statut:    '<i class="ico ico-folder"></i>',
+    tournee:          '<i class="ico ico-truck"></i>',
+    contrat:          '<i class="ico ico-repeat"></i>',
   }
   container.innerHTML = `
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
@@ -2627,7 +2627,7 @@ async function chargerFactures() {
     { val:'attente',  label:'En attente' },
     { val:'retard',   label:'En retard' },
     { val:'soldees',  label:'Soldées' },
-    { val:'acompte',  label:'💰 Avec acompte' }
+    { val:'acompte',  label:'<i class="ico ico-coin"></i> Avec acompte' }
   ]
   const actifF = v => v === 'toutes' ? filtresFact.size === 0 : filtresFact.has(v)
   const filtresEl = document.getElementById('filtres-factures')
@@ -2753,7 +2753,7 @@ async function chargerFactures() {
             if (f.solde) {
               statutHtml = `<span style="color:var(--success); font-weight:600; font-size:11px;">Soldée</span>`
             } else if (f.litige) {
-              statutHtml = `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px;background:#ede9fe;color:#5b21b6;">⚠ Litige</span>`
+              statutHtml = `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px;background:#ede9fe;color:#5b21b6;"><i class="ico ico-alert"></i> Litige</span>`
             } else if (enRetard) {
               let bg, col
               if (joursRetard <= 30)       { bg = '#fef9c3'; col = '#854d0e' }
@@ -2780,8 +2780,8 @@ async function chargerFactures() {
             // ── Colonne Relance — pipeline R1/R2/Appel ──────────────────
             const dot = (emailId, lue) => emailId
               ? (lue
-                  ? `<span title="✓ Email ouvert" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--success);margin-left:4px;vertical-align:middle;flex-shrink:0;"></span>`
-                  : `<span title="📨 Email envoyé — non ouvert" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--warn);margin-left:4px;vertical-align:middle;flex-shrink:0;"></span>`)
+                  ? `<span title="Email ouvert" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--success);margin-left:4px;vertical-align:middle;flex-shrink:0;"></span>`
+                  : `<span title="Email envoyé, pas encore ouvert" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--warn);margin-left:4px;vertical-align:middle;flex-shrink:0;"></span>`)
               : ''
 
             const etapeF = !f.date_relance ? 'r0'
@@ -2793,24 +2793,24 @@ async function chargerFactures() {
 
             let relanceHtml
             if (etapeF === 'r0') {
-              relanceHtml = f.solde ? '' : `<button onclick="ouvrirModalRelance('${f.id}')" style="font-size:10.5px;padding:2px 7px;border-radius:4px;background:var(--brand-soft);color:var(--brand-deep);border:1px solid var(--brand);cursor:pointer;font-family:inherit;font-weight:600;">📤 R1</button>`
+              relanceHtml = f.solde ? '' : `<button onclick="ouvrirModalRelance('${f.id}')" style="font-size:10.5px;padding:2px 7px;border-radius:4px;background:var(--brand-soft);color:var(--brand-deep);border:1px solid var(--brand);cursor:pointer;font-family:inherit;font-weight:600;"><i class="ico ico-send"></i> R1</button>`
             } else if (etapeF === 'r1') {
               relanceHtml = `
                 <div style="display:flex;align-items:center;gap:2px;margin-bottom:3px;">
                   <span style="font-size:10.5px;color:var(--muted);">R1 · ${formatDate(f.date_relance)}</span>${dot(f.relance_email_id, f.relance_lue)}
                 </div>
-                <button onclick="ouvrirModalRelanceR2('${f.id}')" style="font-size:10px;padding:2px 7px;border-radius:4px;background:${r2Urgent ? '#fee2e2' : 'var(--surface-alt)'};color:${r2Urgent ? '#991b1b' : 'var(--muted)'};border:1px solid ${r2Urgent ? '#fca5a5' : 'var(--border)'};cursor:pointer;font-family:inherit;font-weight:${r2Urgent ? '700' : '400'};white-space:nowrap;">${r2Urgent ? '🔴 R2 urgente' : '📤 R2'}</button>`
+                <button onclick="ouvrirModalRelanceR2('${f.id}')" style="font-size:10px;padding:2px 7px;border-radius:4px;background:${r2Urgent ? '#fee2e2' : 'var(--surface-alt)'};color:${r2Urgent ? '#991b1b' : 'var(--muted)'};border:1px solid ${r2Urgent ? '#fca5a5' : 'var(--border)'};cursor:pointer;font-family:inherit;font-weight:${r2Urgent ? '700' : '400'};white-space:nowrap;">${r2Urgent ? '<i class="ico ico-alert"></i> R2 urgente' : '<i class="ico ico-send"></i> R2'}</button>`
             } else if (etapeF === 'r2') {
               relanceHtml = `
                 <div style="display:flex;align-items:center;gap:2px;margin-bottom:3px;">
                   <span style="font-size:10.5px;color:var(--muted);">R2 · ${formatDate(f.date_relance_r2)}</span>${dot(f.relance_r2_email_id, f.relance_r2_lue)}
                 </div>
-                <button onclick="ouvrirModalAppel('${f.id}')" style="font-size:10px;padding:2px 7px;border-radius:4px;background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd;cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap;">📞 Appel</button>`
+                <button onclick="ouvrirModalAppel('${f.id}')" style="font-size:10px;padding:2px 7px;border-radius:4px;background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd;cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap;"><i class="ico ico-phone"></i> Appel</button>`
             } else {
               relanceHtml = `
-                <div style="font-size:10.5px;color:var(--success);font-weight:600;margin-bottom:2px;">📞 ${formatDate(f.date_appel)}</div>
+                <div style="font-size:10.5px;color:var(--success);font-weight:600;margin-bottom:2px;"><i class="ico ico-phone"></i> ${formatDate(f.date_appel)}</div>
                 ${f.note_appel ? `<div style="font-size:10px;color:var(--muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(f.note_appel||'').replace(/"/g,'&quot;')}">${f.note_appel}</div>` : ''}
-                <button onclick="ouvrirModalAppel('${f.id}')" style="font-size:10px;padding:1px 6px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;margin-top:2px;">✏️ Modifier</button>`
+                <button onclick="ouvrirModalAppel('${f.id}')" style="font-size:10px;padding:1px 6px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;margin-top:2px;"><i class="ico ico-pencil"></i> Modifier</button>`
             }
 
             // Payé le éditable
@@ -2827,10 +2827,10 @@ async function chargerFactures() {
                 ${!f.solde
                   ? (f.litige
                       ? `<button onclick="annulerLitige('${f.id}')" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:#ede9fe;color:#5b21b6;border:none;cursor:pointer;font-family:inherit;white-space:nowrap;">Clore litige</button>`
-                      : `<button onclick="marquerLitige('${f.id}')" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;white-space:nowrap;">⚠ Litige</button>`)
+                      : `<button onclick="marquerLitige('${f.id}')" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;white-space:nowrap;"><i class="ico ico-alert"></i> Litige</button>`)
                   : ''}
-                <button onclick="ouvrirHistoriqueFacture('${f.id}')" title="Historique de la facture" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;white-space:nowrap;">🕘 Historique</button>
-                <button onclick="editerMontantPaye('${f.id}',${montantPaye})" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:${montantPaye > 0 ? '#fee2e2' : 'var(--surface-alt)'};color:${montantPaye > 0 ? '#991b1b' : 'var(--muted)'};border:1px solid ${montantPaye > 0 ? '#fca5a5' : 'var(--border)'};cursor:pointer;font-family:inherit;white-space:nowrap;font-weight:${montantPaye > 0 ? '700' : '400'};">${montantPaye > 0 ? '💰 Acompte' : '+ Acompte'}</button>
+                <button onclick="ouvrirHistoriqueFacture('${f.id}')" title="Historique de la facture" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;white-space:nowrap;"><i class="ico ico-history"></i> Historique</button>
+                <button onclick="editerMontantPaye('${f.id}',${montantPaye})" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:${montantPaye > 0 ? '#fee2e2' : 'var(--surface-alt)'};color:${montantPaye > 0 ? '#991b1b' : 'var(--muted)'};border:1px solid ${montantPaye > 0 ? '#fca5a5' : 'var(--border)'};cursor:pointer;font-family:inherit;white-space:nowrap;font-weight:${montantPaye > 0 ? '700' : '400'};">${montantPaye > 0 ? '<i class="ico ico-coin"></i> Acompte' : '+ Acompte'}</button>
               </div>`
 
             return `
@@ -2839,8 +2839,8 @@ async function chargerFactures() {
                 <td style="padding:10px 16px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-soft); white-space:nowrap;">${f.numero}</td>
                 <td style="padding:10px 16px; font-weight:600; color:var(--ink);"><span onclick="ouvrirFicheClient('${f.client.replace(/'/g,"\\'")}')" style="cursor:pointer;border-bottom:1px dotted var(--muted);" title="Voir la fiche client 360°">${f.client}</span></td>
                 <td data-col="contact" style="padding:8px 16px; min-width:150px; max-width:180px;">
-                  <div onclick="editerContactFacture('${f.id}','telephone','${(f.telephone||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}',this)" title="Cliquer pour modifier" style="cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:${f.telephone ? 'var(--ink)' : 'var(--muted)'};padding:2px 0;">${f.telephone ? '📞 ' + formatPhone(f.telephone) : '<span style="font-size:11px;">+ Tél.</span>'}</div>
-                  <div onclick="editerContactFacture('${f.id}','email_client','${(f.email_client||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}',this)" title="Cliquer pour modifier" style="cursor:pointer;font-size:11px;color:${f.email_client ? 'var(--ink-soft)' : 'var(--muted)'};padding:2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;">${f.email_client ? '✉ ' + f.email_client : '<span>+ Email</span>'}</div>
+                  <div onclick="editerContactFacture('${f.id}','telephone','${(f.telephone||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}',this)" title="Cliquer pour modifier" style="cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:${f.telephone ? 'var(--ink)' : 'var(--muted)'};padding:2px 0;">${f.telephone ? '<i class="ico ico-phone"></i> ' + formatPhone(f.telephone) : '<span style="font-size:11px;">+ Tél.</span>'}</div>
+                  <div onclick="editerContactFacture('${f.id}','email_client','${(f.email_client||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}',this)" title="Cliquer pour modifier" style="cursor:pointer;font-size:11px;color:${f.email_client ? 'var(--ink-soft)' : 'var(--muted)'};padding:2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;">${f.email_client ? '<i class="ico ico-mail"></i> ' + f.email_client : '<span>+ Email</span>'}</div>
                 </td>
                 <td style="padding:10px 16px; text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:600; color:${enRetard ? 'var(--danger)' : 'var(--ink)'}; white-space:nowrap;">${parseFloat(f.montant).toLocaleString('fr-FR', {minimumFractionDigits:2})} €</td>
                 <td data-col="emission" style="padding:10px 16px; color:var(--ink-soft); font-size:12px; white-space:nowrap;">${f.date_emission ? formatDate(f.date_emission) : '—'}</td>
@@ -2856,7 +2856,7 @@ async function chargerFactures() {
                 </td>
                 <td data-col="relance" style="padding:10px 16px;">${relanceHtml}</td>
                 <td data-col="note" style="padding:6px 20px 6px 16px; width:160px; max-width:160px;">
-                  <button onclick="ouvrirNoteFacture('${f.id}', \`${(f.note || '').replace(/`/g,'\\`').replace(/\n/g,' ')}\`)" style="font-size:11px;padding:3px 10px;border-radius:5px;border:1px solid var(--border);background:var(--surface-alt);cursor:pointer;color:${f.note ? 'var(--ink-soft)' : 'var(--muted)'};font-family:inherit;width:100%;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;text-align:left;" title="${(f.note||'').replace(/"/g,'&quot;')}">${f.note ? '📝 ' + f.note.slice(0,22) + (f.note.length > 22 ? '…' : '') : '+ Note'}</button>
+                  <button onclick="ouvrirNoteFacture('${f.id}', \`${(f.note || '').replace(/`/g,'\\`').replace(/\n/g,' ')}\`)" style="font-size:11px;padding:3px 10px;border-radius:5px;border:1px solid var(--border);background:var(--surface-alt);cursor:pointer;color:${f.note ? 'var(--ink-soft)' : 'var(--muted)'};font-family:inherit;width:100%;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;text-align:left;" title="${(f.note||'').replace(/"/g,'&quot;')}">${f.note ? '<i class="ico ico-note"></i> ' + f.note.slice(0,22) + (f.note.length > 22 ? '…' : '') : '+ Note'}</button>
                 </td>
                 <td style="padding:10px 16px; text-align:center; white-space:nowrap;">${actionBtns}</td>
               </tr>`
@@ -2977,7 +2977,7 @@ async function ouvrirFicheClient(nomClient) {
     const montant = parseFloat(f.montant)||0
     let statut
     if (f.solde) statut = `<span style="color:var(--success);font-size:11px;font-weight:600;">✓ Soldée${f.date_paiement?' '+formatDate(f.date_paiement):''}</span>`
-    else if (f.litige) statut = `<span style="color:#5b21b6;font-size:11px;font-weight:600;">⚠ Litige</span>`
+    else if (f.litige) statut = `<span style="color:#5b21b6;font-size:11px;font-weight:600;"><i class="ico ico-alert"></i> Litige</span>`
     else if (f.date_echeance && f.date_echeance < auj) {
       const j = Math.floor((new Date(auj) - new Date(f.date_echeance))/86400000)
       statut = `<span style="color:var(--danger);font-size:11px;font-weight:600;">+${j}j retard</span>`
@@ -2997,8 +2997,8 @@ async function ouvrirFicheClient(nomClient) {
       <div>
         <div style="font-weight:700;font-size:20px;color:var(--ink);">${nomClient}</div>
         <div style="display:flex;gap:14px;margin-top:6px;font-size:12px;color:var(--muted);flex-wrap:wrap;align-items:center;">
-          ${email ? `<span>✉ ${email}</span>` : `<span style="color:var(--danger);">Pas d'email</span>`}
-          ${tel ? `<span>📞 ${formatPhone(tel)}</span>` : ''}
+          ${email ? `<span><i class="ico ico-mail"></i> ${email}</span>` : `<span style="color:var(--danger);">Pas d'email</span>`}
+          ${tel ? `<span><i class="ico ico-phone"></i> ${formatPhone(tel)}</span>` : ''}
           <span style="display:flex;align-items:center;gap:6px;">
             <span style="color:var(--muted);">Paiement :</span>
             <select id="select-moyen-paiement" onchange="sauvegarderMoyenPaiement('${nomClient.replace(/'/g, "\\'")}')" style="font-size:12px;padding:2px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--ink);cursor:pointer;font-family:inherit;">
@@ -3285,7 +3285,7 @@ SEGEDIA SERVICES`
   window._relanceData = { client, email, ids, type: 'r1' }
   // Le titre a pu être remplacé par « Relance R2 » lors d'une ouverture précédente
   const titreR1 = document.querySelector('#modal-relance-email h2')
-  if (titreR1) titreR1.innerHTML = `📤 Relance — <span id="modal-relance-client"></span>`
+  if (titreR1) titreR1.innerHTML = `<i class="ico ico-send"></i> Relance — <span id="modal-relance-client"></span>`
   document.getElementById('modal-relance-client').textContent = client
   document.getElementById('modal-relance-nb').textContent =
     `${facImpayees.length} facture${facImpayees.length > 1 ? 's' : ''} impayée${facImpayees.length > 1 ? 's' : ''} · Total : ${fmt(total)} €`
@@ -3356,9 +3356,9 @@ async function envoyerRelanceEmail() {
     else chargerFactures()
     mettreAJourBadgeRecouvrement()
   } catch (e) {
-    btn.textContent = '📤 Envoyer'
+    btn.textContent = 'Envoyer'
     btn.disabled = false
-    afficherToast(`❌ Échec de l'envoi : ${e.message}`, true)
+    afficherToast(`Échec de l'envoi : ${e.message}`, true)
   }
 }
 
@@ -3485,7 +3485,7 @@ SEGEDIA SERVICES`
   const warning = document.getElementById('modal-relance-warning')
   const sendBtn = document.getElementById('btn-envoyer-relance')
   const titleEl = document.querySelector('#modal-relance-email h2')
-  if (titleEl) titleEl.innerHTML = `📤 Relance R2 — <span id="modal-relance-client">${esc(client)}</span>`
+  if (titleEl) titleEl.innerHTML = `<i class="ico ico-send"></i> Relance R2 — <span id="modal-relance-client">${esc(client)}</span>`
   if (!email) {
     warning.style.display = 'flex'
     sendBtn.disabled = true; sendBtn.style.opacity = '0.4'; sendBtn.style.cursor = 'not-allowed'
@@ -3626,7 +3626,7 @@ async function chargerRecouvrement() {
   if (!enRetard.length) {
     if (kpis) kpis.innerHTML = ''
     if (stats) stats.innerHTML = ''
-    liste.innerHTML = `<div style="text-align:center;padding:60px 0;color:var(--success);font-size:15px;font-weight:600;">✅ Aucune facture en retard !</div>`
+    liste.innerHTML = `<div style="text-align:center;padding:60px 0;color:var(--success);font-size:15px;font-weight:600;"><i class="ico ico-check"></i> Aucune facture en retard !</div>`
     return
   }
 
@@ -3703,15 +3703,15 @@ async function chargerRecouvrement() {
 
   if (stats) stats.innerHTML =
     `<b>${clientsList.length}</b> client${clientsList.length > 1 ? 's' : ''} à relancer · ${nbFacRelance} facture${nbFacRelance > 1 ? 's' : ''} · <b style="font-family:'IBM Plex Mono',monospace;color:var(--danger);">${fmt(totalRelance)} €</b>`
-    + (lettrageList.length ? ` &nbsp;·&nbsp; <span style="color:var(--muted);">🔵 ${lettrageList.length} en attente de lettrage · ${fmt(totalLettrage)} €</span>` : '')
+    + (lettrageList.length ? ` &nbsp;·&nbsp; <span style="color:var(--muted);"><i class="ico ico-hourglass"></i> ${lettrageList.length} en attente de lettrage · ${fmt(totalLettrage)} €</span>` : '')
     + ` &nbsp;·&nbsp; <span style="color:var(--muted);">Encours total <b style="font-family:'IBM Plex Mono',monospace;">${fmt(totalEnc)} €</b></span>`
 
   const kpiData = [
-    { label: 'À relancer', count: nbR0,    bg: '#fef2f2', border: '#fecaca', col: '#991b1b', emoji: '⚠' },
-    { label: 'R2 urgente',  count: nbR1Urg, bg: '#fff7ed', border: '#fed7aa', col: '#9a3412', emoji: '🔴' },
-    { label: 'R1 envoyée',  count: nbR1,    bg: '#fffbeb', border: '#fde68a', col: '#78350f', emoji: '✉' },
-    { label: 'R2 envoyée',  count: nbR2,    bg: '#eff6ff', border: '#bfdbfe', col: '#1e40af', emoji: '📧' },
-    { label: 'Appel fait',  count: nbAppel, bg: '#f0fdf4', border: '#86efac', col: '#166534', emoji: '📞' },
+    { label: 'À relancer', count: nbR0,    bg: '#fef2f2', border: '#fecaca', col: '#991b1b', emoji: '<i class="ico ico-alert"></i>' },
+    { label: 'R2 urgente',  count: nbR1Urg, bg: '#fff7ed', border: '#fed7aa', col: '#9a3412', emoji: '<i class="ico ico-alert"></i>' },
+    { label: 'R1 envoyée',  count: nbR1,    bg: '#fffbeb', border: '#fde68a', col: '#78350f', emoji: '<i class="ico ico-mail"></i>' },
+    { label: 'R2 envoyée',  count: nbR2,    bg: '#eff6ff', border: '#bfdbfe', col: '#1e40af', emoji: '<i class="ico ico-mail"></i>' },
+    { label: 'Appel fait',  count: nbAppel, bg: '#f0fdf4', border: '#86efac', col: '#166534', emoji: '<i class="ico ico-phone"></i>' },
   ]
   if (kpis) kpis.innerHTML = kpiData.map(k => `
     <div style="background:${k.bg};border:1px solid ${k.border};border-radius:12px;padding:14px 18px;min-width:110px;flex:1;">
@@ -3724,9 +3724,9 @@ async function chargerRecouvrement() {
   const stageCfg = {
     r0:    { label: 'À relancer',       bg: '#fef2f2', border: '#fecaca', col: '#991b1b', dot: '#ef4444' },
     r1:    { label: 'R1 envoyée',       bg: '#fffbeb', border: '#fde68a', col: '#78350f', dot: '#f59e0b' },
-    r1u:   { label: '⚠ R2 urgente',    bg: '#fff7ed', border: '#fed7aa', col: '#9a3412', dot: '#f97316' },
+    r1u:   { label: '<i class="ico ico-alert"></i> R2 urgente',    bg: '#fff7ed', border: '#fed7aa', col: '#9a3412', dot: '#f97316' },
     r2:    { label: 'R2 envoyée',       bg: '#eff6ff', border: '#bfdbfe', col: '#1e40af', dot: '#3b82f6' },
-    appel: { label: '📞 Appelé',        bg: '#f0fdf4', border: '#86efac', col: '#166534', dot: '#22c55e' },
+    appel: { label: '<i class="ico ico-phone"></i> Appelé',        bg: '#f0fdf4', border: '#86efac', col: '#166534', dot: '#22c55e' },
   }
 
   const dotHtml = (emailId, lue) => emailId
@@ -3804,23 +3804,23 @@ async function chargerRecouvrement() {
           </div>
         </div>
         ${timelineHtml}
-        ${appelFact?.note_appel ? `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:8px 12px;font-size:12px;color:#166534;margin-bottom:12px;">📝 Note appel : ${appelFact.note_appel}</div>` : ''}
+        ${appelFact?.note_appel ? `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:8px 12px;font-size:12px;color:#166534;margin-bottom:12px;"><i class="ico ico-note"></i> Note appel : ${appelFact.note_appel}</div>` : ''}
         <div class="rec-detail" style="display:none;margin-top:4px;">${facLignes}</div>
       </div>`
-  }).join('') : `<div style="text-align:center;padding:32px 0;color:var(--success);font-size:14px;font-weight:600;">✅ Aucune facture à relancer (virement / non défini)</div>`
+  }).join('') : `<div style="text-align:center;padding:32px 0;color:var(--success);font-size:14px;font-weight:600;"><i class="ico ico-check"></i> Aucune facture à relancer (virement / non défini)</div>`
 
   // ── Section "En attente de lettrage" (espèce & prélèvement) ────────
   const lettrageHtml = lettrageList.length ? `
     <div style="margin-top:30px;padding-top:22px;border-top:1px dashed var(--border);">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
-        <span style="font-size:14px;font-weight:700;color:#1e40af;">🔵 En attente de lettrage</span>
+        <span style="font-size:14px;font-weight:700;color:#1e40af;"><i class="ico ico-hourglass"></i> En attente de lettrage</span>
         <span style="font-size:11px;color:#1e40af;background:#eff6ff;border:1px solid #bfdbfe;padding:2px 9px;border-radius:10px;font-weight:600;">${lettrageList.length} client${lettrageList.length > 1 ? 's' : ''} · ${fmt(totalLettrage)} €</span>
       </div>
       <div style="font-size:11.5px;color:var(--muted);margin-bottom:14px;">Espèce & prélèvement — pas de relance (en attente de validation/lettrage), mais comptés dans l'encours.</div>
       ${lettrageList.map(c => {
         const badge = c.moyen === 'espèce'
-          ? `<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;padding:2px 8px;border-radius:10px;background:#fef9c3;color:#854d0e;border:1px solid #fde68a;">💵 Espèce</span>`
-          : `<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;padding:2px 8px;border-radius:10px;background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe;">🔄 Prélèvement</span>`
+          ? `<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;padding:2px 8px;border-radius:10px;background:#fef9c3;color:#854d0e;border:1px solid #fde68a;"><i class="ico ico-cash"></i> Espèce</span>`
+          : `<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;padding:2px 8px;border-radius:10px;background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe;"><i class="ico ico-refresh"></i> Prélèvement</span>`
         const facLignes = c.facts.map(f => {
           const j = Math.floor((new Date(auj) - new Date(f.date_echeance)) / 86400000)
           return `
@@ -3913,15 +3913,15 @@ async function chargerEncaissements() {
 
   container.innerHTML = `
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
-      ${kpiCard('retard', '⚠', 'En retard', en_retard, '#fef2f2', '#fecaca', '#991b1b', true)}
-      ${kpiCard('semaine', '📅', 'Cette semaine', cette_semaine, 'var(--brand-soft)', 'var(--brand)', 'var(--brand-deep)')}
-      ${kpiCard('mois', '🗓', 'Ce mois', ce_mois, 'var(--surface)', 'var(--border)', 'var(--ink)')}
-      ${kpiCard('plus', '⏳', 'Plus tard', plus_tard, 'var(--surface-alt)', 'var(--border)', 'var(--muted)')}
+      ${kpiCard('retard', '<i class="ico ico-alert"></i>', 'En retard', en_retard, '#fef2f2', '#fecaca', '#991b1b', true)}
+      ${kpiCard('semaine', '<i class="ico ico-calendar"></i>', 'Cette semaine', cette_semaine, 'var(--brand-soft)', 'var(--brand)', 'var(--brand-deep)')}
+      ${kpiCard('mois', '<i class="ico ico-calendar"></i>', 'Ce mois', ce_mois, 'var(--surface)', 'var(--border)', 'var(--ink)')}
+      ${kpiCard('plus', '<i class="ico ico-hourglass"></i>', 'Plus tard', plus_tard, 'var(--surface-alt)', 'var(--border)', 'var(--muted)')}
     </div>
 
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-        <div style="font-size:13px;font-weight:700;color:var(--ink);">📆 Calendrier des échéances</div>
+        <div style="font-size:13px;font-weight:700;color:var(--ink);"><i class="ico ico-calendar"></i> Calendrier des échéances</div>
         <div style="display:flex;gap:6px;align-items:center;">
           <button onclick="calEncNaviguer(-1)" class="btn btn-secondary" style="font-size:12px;padding:4px 12px;">←</button>
           <span id="cal-enc-titre" style="font-weight:600;font-size:13px;min-width:150px;text-align:center;"></span>
@@ -4044,7 +4044,7 @@ function afficherDetailJourEncaissement(dateStr) {
       </div>
       ${factures.map(f => `
         <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--surface);border-radius:7px;margin-bottom:4px;border:1px solid var(--border-soft);">
-          <div style="flex:1;"><div style="font-weight:600;font-size:12.5px;color:var(--ink);">${f.client}</div><div style="font-size:10.5px;color:var(--muted);">${f.numero}${f.telephone ? ' · 📞 ' + formatPhone(f.telephone) : ''}</div></div>
+          <div style="flex:1;"><div style="font-weight:600;font-size:12.5px;color:var(--ink);">${f.client}</div><div style="font-size:10.5px;color:var(--muted);">${f.numero}${f.telephone ? ' · <i class="ico ico-phone"></i> ' + formatPhone(f.telephone) : ''}</div></div>
           <div style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12.5px;color:var(--ink);">${fmt(f.montant)} €</div>
         </div>`).join('')}
     </div>`
@@ -4695,25 +4695,25 @@ function afficherApercuImport() {
       </div>
       <button onclick="annulerApercuImport()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">×</button>
     </div>
-    ${alertes.map(m => `<div style="background:#fef3c7;border:1px solid #fcd34d;color:#78350f;border-radius:8px;padding:9px 12px;font-size:12.5px;margin:10px 0;">⚠️ ${esc(m)}</div>`).join('')}
+    ${alertes.map(m => `<div style="background:#fef3c7;border:1px solid #fcd34d;color:#78350f;border-radius:8px;padding:9px 12px;font-size:12.5px;margin:10px 0;"><i class="ico ico-alert"></i> ${esc(m)}</div>`).join('')}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:14px 0;">
       ${[['Nouvelles', a.nouvelles.length, 'var(--success)'], ['Passent soldées', a.soldees.length, 'var(--brand-deep)'], ['Montants modifiés', a.montants.length, a.montants.length ? 'var(--danger)' : 'var(--muted)'], ['Autres mises à jour', a.echeances.length + a.autres.length, 'var(--ink-soft)'], ['Inchangées', a.inchangees, 'var(--muted)']]
         .map(([l, n, c]) => `<div style="background:var(--surface-alt);border-radius:8px;padding:10px 12px;"><div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">${l}</div><div style="font-size:22px;font-weight:700;color:${c};">${n}</div></div>`).join('')}
     </div>
-    ${bloc('✅', `${a.nouvelles.length} nouvelle${a.nouvelles.length > 1 ? 's' : ''} facture${a.nouvelles.length > 1 ? 's' : ''} · ${fmt(total(a.nouvelles))} €`, a.nouvelles, 'var(--success)',
+    ${bloc('<i class="ico ico-check"></i>', `${a.nouvelles.length} nouvelle${a.nouvelles.length > 1 ? 's' : ''} facture${a.nouvelles.length > 1 ? 's' : ''} · ${fmt(total(a.nouvelles))} €`, a.nouvelles, 'var(--success)',
       f => `${num(f.numero)}<span style="flex:1;">${esc(f.client)}</span><span style="color:var(--muted);">${f.date_echeance ? formatDate(f.date_echeance) : ''}</span><b style="font-family:'IBM Plex Mono',monospace;">${fmt(f.montant)} €</b>${f.solde ? '<span style="color:var(--success);font-size:11px;">soldée</span>' : ''}`, a.nouvelles.length <= 15)}
-    ${bloc('💰', `${a.soldees.length} facture${a.soldees.length > 1 ? 's' : ''} passe${a.soldees.length > 1 ? 'nt' : ''} « soldée »`, a.soldees, 'var(--brand-deep)',
+    ${bloc('<i class="ico ico-coin"></i>', `${a.soldees.length} facture${a.soldees.length > 1 ? 's' : ''} passe${a.soldees.length > 1 ? 'nt' : ''} « soldée »`, a.soldees, 'var(--brand-deep)',
       x => `${num(x.numero)}<span style="flex:1;">${esc(x.client)}</span><b style="font-family:'IBM Plex Mono',monospace;">${fmt(x.apres.montant)} €</b>`)}
-    ${bloc('✏️', `${a.montants.length} montant${a.montants.length > 1 ? 's' : ''} modifié${a.montants.length > 1 ? 's' : ''}`, a.montants, 'var(--danger)',
+    ${bloc('<i class="ico ico-pencil"></i>', `${a.montants.length} montant${a.montants.length > 1 ? 's' : ''} modifié${a.montants.length > 1 ? 's' : ''}`, a.montants, 'var(--danger)',
       x => `${num(x.numero)}<span style="flex:1;">${esc(x.client)}</span><span style="font-family:'IBM Plex Mono',monospace;">${fmt(x.avant.montant)} € → <b>${fmt(x.apres.montant)} €</b></span>`, true)}
-    ${bloc('📅', `${a.echeances.length} date${a.echeances.length > 1 ? 's' : ''} d'échéance modifiée${a.echeances.length > 1 ? 's' : ''}`, a.echeances, 'var(--ink-soft)',
+    ${bloc('<i class="ico ico-calendar"></i>', `${a.echeances.length} date${a.echeances.length > 1 ? 's' : ''} d'échéance modifiée${a.echeances.length > 1 ? 's' : ''}`, a.echeances, 'var(--ink-soft)',
       x => `${num(x.numero)}<span style="flex:1;">${esc(x.client)}</span><span>${x.avant.date_echeance ? formatDate(x.avant.date_echeance) : '—'} → <b>${x.apres.date_echeance ? formatDate(x.apres.date_echeance) : '—'}</b></span>`)}
-    ${bloc('🔄', `${a.autres.length} autre${a.autres.length > 1 ? 's' : ''} mise${a.autres.length > 1 ? 's' : ''} à jour (ville, commentaire, date…)`, a.autres, 'var(--ink-soft)',
+    ${bloc('<i class="ico ico-refresh"></i>', `${a.autres.length} autre${a.autres.length > 1 ? 's' : ''} mise${a.autres.length > 1 ? 's' : ''} à jour (ville, commentaire, date…)`, a.autres, 'var(--ink-soft)',
       x => `${num(x.numero)}<span style="flex:1;">${esc(x.client)}</span>`)}
-    ${bloc('🛡️', `${a.conservees.length} facture${a.conservees.length > 1 ? 's' : ''} soldée${a.conservees.length > 1 ? 's' : ''} dans le site mais pas dans DISTRILOG : elle${a.conservees.length > 1 ? 's restent' : ' reste'} soldée${a.conservees.length > 1 ? 's' : ''}`, a.conservees, 'var(--muted)',
+    ${bloc('<i class="ico ico-shield"></i>', `${a.conservees.length} facture${a.conservees.length > 1 ? 's' : ''} soldée${a.conservees.length > 1 ? 's' : ''} dans le site mais pas dans DISTRILOG : elle${a.conservees.length > 1 ? 's restent' : ' reste'} soldée${a.conservees.length > 1 ? 's' : ''}`, a.conservees, 'var(--muted)',
       f => `${num(f.numero)}<span style="flex:1;">${esc(f.client)}</span><b style="font-family:'IBM Plex Mono',monospace;">${fmt(f.montant)} €</b>`)}
     ${(a.ignoresZero || a.ignoresExclus) ? `<div style="font-size:12px;color:var(--muted);margin:6px 2px 0;">⏭️ Ignorées : ${[a.ignoresZero ? `${a.ignoresZero} à 0 €` : '', a.ignoresExclus ? `${a.ignoresExclus} de clients exclus` : ''].filter(Boolean).join(' · ')}</div>` : ''}
-    ${a.avoirs ? `<div style="font-size:12px;color:var(--muted);margin:4px 2px 0;">🧾 ${a.avoirs} avoir${a.avoirs > 1 ? 's' : ''} détecté${a.avoirs > 1 ? 's' : ''} dans les tâches associées (facture soldée automatiquement).</div>` : ''}
+    ${a.avoirs ? `<div style="font-size:12px;color:var(--muted);margin:4px 2px 0;"><i class="ico ico-receipt"></i> ${a.avoirs} avoir${a.avoirs > 1 ? 's' : ''} détecté${a.avoirs > 1 ? 's' : ''} dans les tâches associées (facture soldée automatiquement).</div>` : ''}
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="annulerApercuImport()">Annuler</button>
       <button class="btn btn-primary" id="btn-valider-import" onclick="validerImport()" ${rien ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''}>${rien ? 'Rien à importer' : `✓ Valider l'import (${aEcrire.length} facture${aEcrire.length > 1 ? 's' : ''})`}</button>
@@ -4943,7 +4943,7 @@ function statutPeriode(periode, anneeAff) {
 }
 
 function typeLabel(type) {
-  return { location_fontaine: '📦 Fontaine', compteur: '🔢 Compteur', badge: '🏷️ Badge', mixte: '📦+🔢 Mixte' }[type] || type
+  return { location_fontaine: '<i class="ico ico-box"></i> Fontaine', compteur: '<i class="ico ico-hash"></i> Compteur', badge: '<i class="ico ico-tag"></i> Badge', mixte: '<i class="ico ico-box"></i>+<i class="ico ico-hash"></i> Mixte' }[type] || type
 }
 
 // ── Chargement principal ──────────────────────────────────
@@ -5071,7 +5071,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
     // À traiter, période passée ou courante
     const isCourantStatut = statut === 'courant'
     const bg = isCourantStatut ? '#fffbeb' : '#fef2f2'
-    const icon = isCourantStatut ? '⚠' : '●'
+    const icon = isCourantStatut ? '<i class="ico ico-alert"></i>' : '●'
     const color = isCourantStatut ? '#f59e0b' : '#ef4444'
     return `<td style="padding:8px 4px;text-align:center;${colBorder}background:${bg};cursor:pointer;min-width:44px;" onclick="ouvrirModalReleve('${contrat.id}','${periode}')" title="À traiter">
       <span style="color:${color};font-size:15px;">${icon}</span>
@@ -5163,8 +5163,8 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
           <div style="font-weight:600;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.client}</div>
           ${c.numero_machine ? `<div style="font-size:10px;color:var(--muted);">#${c.numero_machine}</div>` : ''}
           <div style="font-size:10px;color:var(--muted);margin-top:2px;">${typeLabel(c.type_prestation)}</div>
-          ${assignes.length ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">👤 ${assignes.join(', ')}</div>` : ''}
-          <div style="margin-top:6px;font-size:10.5px;font-weight:600;color:#d97706;">⚠ ${moisLabel}</div>
+          ${assignes.length ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;"><i class="ico ico-user"></i> ${assignes.join(', ')}</div>` : ''}
+          <div style="margin-top:6px;font-size:10.5px;font-weight:600;color:#d97706;"><i class="ico ico-alert"></i> ${moisLabel}</div>
         </div>`
       }).join('')
       const cardsT = urgentTrimest.map(c => {
@@ -5175,14 +5175,14 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
           <div style="font-weight:600;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.client}</div>
           ${c.numero_machine ? `<div style="font-size:10px;color:var(--muted);">#${c.numero_machine}</div>` : ''}
           <div style="font-size:10px;color:var(--muted);margin-top:2px;">${typeLabel(c.type_prestation)}</div>
-          ${assignes.length ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">👤 ${assignes.join(', ')}</div>` : ''}
-          <div style="margin-top:6px;font-size:10.5px;font-weight:600;color:#d97706;">⚠ ${trimLabel}</div>
+          ${assignes.length ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;"><i class="ico ico-user"></i> ${assignes.join(', ')}</div>` : ''}
+          <div style="margin-top:6px;font-size:10.5px;font-weight:600;color:#d97706;"><i class="ico ico-alert"></i> ${trimLabel}</div>
         </div>`
       }).join('')
       blocksHtml += `
         <div style="margin-bottom:16px;">
           <div style="font-size:12px;font-weight:700;color:#d97706;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
-            <span style="background:#fef3c7;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;">⚠</span>
+            <span style="background:#fef3c7;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;"><i class="ico ico-alert"></i></span>
             À traiter${moisLabel ? ` — ${moisLabel}${trimLabel ? ' / '+trimLabel : ''}` : ''} <span style="font-weight:400;color:var(--muted);font-size:11px;margin-left:4px;">${totalUrgent} contrat${totalUrgent>1?'s':''}</span>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;">${cardsM}${cardsT}</div>
@@ -5206,7 +5206,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
           <div style="font-weight:600;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.client}</div>
           ${c.numero_machine ? `<div style="font-size:10px;color:var(--muted);">#${c.numero_machine}</div>` : ''}
           <div style="font-size:10px;color:var(--muted);margin-top:2px;">${typeLabel(c.type_prestation)}</div>
-          ${assignes.length ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">👤 ${assignes.join(', ')}</div>` : ''}
+          ${assignes.length ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;"><i class="ico ico-user"></i> ${assignes.join(', ')}</div>` : ''}
           <div style="margin-top:6px;font-size:10.5px;font-weight:600;color:#ef4444;">● ${periodes.length} période${periodes.length>1?'s':''} : ${periodesLabel}</div>
         </div>`
       }).join('')
@@ -5236,13 +5236,13 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
           <div style="font-weight:600;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.client}</div>
           ${c.numero_machine ? `<div style="font-size:10px;color:var(--muted);">#${c.numero_machine}</div>` : ''}
           <div style="font-size:10px;color:var(--muted);margin-top:2px;">${typeLabel(c.type_prestation)}</div>
-          <div style="margin-top:6px;font-size:10.5px;font-weight:600;color:#f97316;">⏳ ${periodesLabel}</div>
+          <div style="margin-top:6px;font-size:10.5px;font-weight:600;color:#f97316;"><i class="ico ico-hourglass"></i> ${periodesLabel}</div>
         </div>`
       }).join('')
       blocksHtml += `
         <div style="margin-bottom:16px;">
           <div style="font-size:12px;font-weight:700;color:#f97316;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
-            <span style="background:#fff7ed;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;">⏳</span>
+            <span style="background:#fff7ed;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;"><i class="ico ico-hourglass"></i></span>
             En attente <span style="font-weight:400;color:var(--muted);font-size:11px;margin-left:4px;">${Object.keys(grouped).length} contrat${Object.keys(grouped).length>1?'s':''}</span>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;">${cards}</div>
@@ -5251,14 +5251,14 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
 
     if (totalUrgent === 0 && totalRetard === 0 && totalAttente === 0) {
       blocksHtml = `<div style="display:flex;align-items:center;gap:10px;color:var(--success);font-size:13px;font-weight:600;padding:12px 0;">
-        <span style="font-size:20px;">✅</span> Tout est à jour ! Aucune action requise.
+        <span style="font-size:20px;"><i class="ico ico-check"></i></span> Tout est à jour ! Aucune action requise.
       </div>`
     }
 
     htmlPriorite = `
       <div style="background:var(--surface-alt);border:1px solid var(--border-soft);border-radius:12px;padding:16px 20px;margin-bottom:24px;">
         <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:12px;display:flex;align-items:center;gap:8px;">
-          🎯 Actions à faire maintenant
+          <i class="ico ico-target"></i> Actions à faire maintenant
           <span style="font-size:11px;font-weight:400;color:var(--muted);">${new Date().toLocaleDateString('fr-FR',{month:'long',year:'numeric'})}</span>
         </div>
         ${blocksHtml}
@@ -5271,12 +5271,12 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
 
   function ligneClientHtml(c, cells) {
     const assignes = Array.isArray(c.assignes) && c.assignes.length ? c.assignes : (c.assigne_a ? [c.assigne_a] : [])
-    const assigneEl = assignes.length ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;white-space:normal;">👤 ${assignes.join(', ')}</div>` : ''
+    const assigneEl = assignes.length ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;white-space:normal;"><i class="ico ico-user"></i> ${assignes.join(', ')}</div>` : ''
     return `<tr>
       <td style="padding:8px 12px;border:1px solid var(--border-soft);white-space:nowrap;cursor:pointer;position:sticky;left:0;z-index:2;background:var(--surface);min-width:170px;" onclick="ouvrirHistoriqueContrat('${c.id}')">
         <div style="font-weight:600;font-size:13px;color:var(--brand);">${c.client}${c.numero_machine ? `<span style="font-size:10px;color:var(--muted);font-weight:400;margin-left:5px;">#${c.numero_machine}</span>` : ''}</div>
         <div style="font-size:10.5px;color:var(--muted);">${typeLabel(c.type_prestation)}</div>
-        ${c.date_fin ? `<div style="font-size:10px;color:var(--danger);font-weight:600;margin-top:2px;">⏹ Fin le ${formatDate(c.date_fin)}</div>` : ''}
+        ${c.date_fin ? `<div style="font-size:10px;color:var(--danger);font-weight:600;margin-top:2px;"><i class="ico ico-stop"></i> Fin le ${formatDate(c.date_fin)}</div>` : ''}
         ${c.date_debut && c.date_debut.slice(0, 4) == annee ? `<div style="font-size:10px;color:var(--success);font-weight:600;margin-top:2px;">▶ Début le ${formatDate(c.date_debut)}</div>` : ''}
         ${assigneEl}
       </td>
@@ -5301,7 +5301,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
     htmlMensuel = `
       <div style="margin-bottom:28px;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
-          <span style="font-size:13px;font-weight:700;color:var(--ink);">📅 Mensuel</span>
+          <span style="font-size:13px;font-weight:700;color:var(--ink);"><i class="ico ico-calendar"></i> Mensuel</span>
           <span style="font-size:11px;color:var(--muted);background:var(--surface-alt);padding:2px 8px;border-radius:10px;">${mensuelFiltres.length}/${mensuel.length} affiché${mensuelFiltres.length>1?'s':''}</span>
           ${hiddenInfo}
         </div>
@@ -5311,7 +5311,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
               <th style="padding:8px 12px;font-size:11px;font-weight:600;color:var(--muted);text-align:left;border:1px solid var(--border-soft);background:var(--surface-alt);min-width:170px;position:sticky;left:0;z-index:3;">Client</th>
               ${entetes}
             </tr></thead>
-            <tbody>${lignes || `<tr><td colspan="13" style="text-align:center;padding:20px;color:var(--muted);font-size:12px;">✅ Tous les clients sont à jour ce mois-ci</td></tr>`}</tbody>
+            <tbody>${lignes || `<tr><td colspan="13" style="text-align:center;padding:20px;color:var(--muted);font-size:12px;"><i class="ico ico-check"></i> Tous les clients sont à jour ce mois-ci</td></tr>`}</tbody>
           </table>
         </div>
       </div>`
@@ -5334,7 +5334,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
     htmlTrimest = `
       <div style="margin-bottom:28px;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
-          <span style="font-size:13px;font-weight:700;color:var(--ink);">🗓 Trimestriel</span>
+          <span style="font-size:13px;font-weight:700;color:var(--ink);"><i class="ico ico-calendar"></i> Trimestriel</span>
           <span style="font-size:11px;color:var(--muted);background:var(--surface-alt);padding:2px 8px;border-radius:10px;">${trimestFiltres.length}/${trimest.length} affiché${trimestFiltres.length>1?'s':''}</span>
           ${hiddenInfoT}
         </div>
@@ -5344,7 +5344,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
               <th style="padding:8px 12px;font-size:11px;font-weight:600;color:var(--muted);text-align:left;border:1px solid var(--border-soft);background:var(--surface-alt);min-width:170px;position:sticky;left:0;z-index:3;">Client</th>
               ${entetesTrim}
             </tr></thead>
-            <tbody>${lignes || `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);font-size:12px;">✅ Tous les clients sont à jour ce trimestre</td></tr>`}</tbody>
+            <tbody>${lignes || `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);font-size:12px;"><i class="ico ico-check"></i> Tous les clients sont à jour ce trimestre</td></tr>`}</tbody>
           </table>
         </div>
       </div>`
@@ -5353,7 +5353,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
   // Barre de contrôle grille (filtre + légende)
   const filtreBtn = `<button onclick="toggleFiltreRecurrents()"
     style="background:${showAll?'var(--surface-alt)':'var(--brand)'};color:${showAll?'var(--ink)':'#fff'};border:1px solid ${showAll?'var(--border)':'var(--brand)'};border-radius:6px;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;">
-    ${showAll ? '👁 Tout afficher' : '🎯 Seulement à traiter'}
+    ${showAll ? '<i class="ico ico-eye"></i> Tout afficher' : '<i class="ico ico-target"></i> Seulement à traiter'}
   </button>`
 
   const legende = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;font-size:11px;color:var(--muted);align-items:center;justify-content:space-between;">
@@ -5362,14 +5362,14 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
       <span style="display:flex;align-items:center;gap:4px;"><span style="color:var(--success);font-size:14px;font-weight:700;">✓</span> Traité</span>
       <span style="display:flex;align-items:center;gap:4px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#f97316;"></span> En attente</span>
       <span style="display:flex;align-items:center;gap:4px;"><span style="color:#ef4444;font-size:12px;">●</span> En retard</span>
-      <span style="display:flex;align-items:center;gap:4px;"><span style="color:#f59e0b;font-size:12px;">⚠</span> À faire maintenant</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="color:#f59e0b;font-size:12px;"><i class="ico ico-alert"></i></span> À faire maintenant</span>
     </div>
     ${filtreBtn}
   </div>`
 
   el.innerHTML = contrats.length === 0
     ? `<div style="text-align:center;padding:60px 20px;color:var(--muted);">
-        <div style="font-size:40px;margin-bottom:12px;">📋</div>
+        <div style="font-size:40px;margin-bottom:12px;"><i class="ico ico-clipboard"></i></div>
         <div style="font-size:15px;font-weight:600;margin-bottom:8px;">Aucun contrat récurrent</div>
         <div style="font-size:13px;">Cliquez sur <b>+ Nouveau contrat</b> pour commencer.</div>
       </div>`
@@ -5532,7 +5532,7 @@ async function ouvrirModalReleve(contratId, periode) {
     ${contrat.numero_machine ? `· N° <b>${contrat.numero_machine}</b>` : ''}
     ${prixInfo ? `· ${prixInfo}` : ''}
     ${unitInfo ? `· ${unitInfo}` : ''}
-    ${contrat.assigne_a ? `<span style="margin-left:6px;color:var(--muted);">👤 ${contrat.assigne_a}</span>` : ''}
+    ${contrat.assigne_a ? `<span style="margin-left:6px;color:var(--muted);"><i class="ico ico-user"></i> ${contrat.assigne_a}</span>` : ''}
   `
 
   // Champs compteurs
@@ -5839,10 +5839,10 @@ function trBulleHtml(p, machinesTrouvees) {
     ${cl?.ville ? `<div class="tr-bulle-ville">${esc(cl.ville)}</div>` : ''}
     <div class="tr-bulle-pied">
       <span class="tr-pill" style="background:${k[0]};color:${k[1]};">${esc(op?.nom || 'Sans opérateur')}</span>
-      <span class="tr-mini" title="${nbM} machine${nbM > 1 ? 's' : ''}">☕ ${nbM}</span>
+      <span class="tr-mini" title="${nbM} machine${nbM > 1 ? 's' : ''}"><i class="ico ico-coffee"></i> ${nbM}</span>
       ${semaineTag}
-      ${cl?.infos ? `<span class="tr-mini" title="${esc(cl.infos)}">🔑</span>` : ''}
-      ${p.note ? `<span class="tr-mini" title="${esc(p.note)}">📝</span>` : ''}
+      ${cl?.infos ? `<span class="tr-mini" title="${esc(cl.infos)}"><i class="ico ico-key"></i></span>` : ''}
+      ${p.note ? `<span class="tr-mini" title="${esc(p.note)}"><i class="ico ico-note"></i></span>` : ''}
     </div>
     ${machinesHtml}
   </div>`
@@ -5875,17 +5875,17 @@ function afficherFicheTournee() {
         <div style="font-size:12.5px;color:var(--muted);margin-top:3px;">${TR_JOURS[p.jour - 1]} · <span class="tr-pill" style="background:${k[0]};color:${k[1]};">${esc(op?.nom || 'Sans opérateur')}</span> · ${freq}</div>
       </div>
       <div style="display:flex;gap:6px;">
-        <button class="btn btn-secondary" onclick="ouvrirModalPassage('${p.id}')">✏️ Modifier</button>
+        <button class="btn btn-secondary" onclick="ouvrirModalPassage('${p.id}')"><i class="ico ico-pencil"></i> Modifier</button>
         <button class="btn btn-secondary" onclick="selectionnerBulleTournee('${p.id}')" title="Fermer la fiche">✕</button>
       </div>
     </div>
     <table>
-      <tr><td>📍 Adresse</td><td>${cl?.adresse ? esc(cl.adresse) : aCompleter}${cl?.ville ? ` <span style="color:var(--muted);">· ${esc(cl.ville)}</span>` : ''}</td></tr>
-      <tr><td>✉️ Mail</td><td>${cl?.email ? `<a href="mailto:${esc(cl.email)}" style="color:var(--brand-deep);">${esc(cl.email)}</a>` : aCompleter}</td></tr>
-      <tr><td>🔑 Accès</td><td>${cl?.infos ? esc(cl.infos) : '<span style="color:var(--muted-soft);">aucune info</span>'}</td></tr>
-      ${p.note ? `<tr><td>📝 Remarque</td><td>${esc(p.note)}</td></tr>` : ''}
-      <tr><td>☕ Machines</td><td>${(p.machines || []).length ? p.machines.map(m => `<span class="tr-machine ${trouvees.includes(m) ? 'trouve' : ''}">${esc(m)}</span>`).join('') : aCompleter}</td></tr>
-      ${autres.length ? `<tr><td>📅 Autres passages</td><td>${autres.join('<br>')}</td></tr>` : ''}
+      <tr><td><i class="ico ico-pin"></i> Adresse</td><td>${cl?.adresse ? esc(cl.adresse) : aCompleter}${cl?.ville ? ` <span style="color:var(--muted);">· ${esc(cl.ville)}</span>` : ''}</td></tr>
+      <tr><td><i class="ico ico-mail"></i> Mail</td><td>${cl?.email ? `<a href="mailto:${esc(cl.email)}" style="color:var(--brand-deep);">${esc(cl.email)}</a>` : aCompleter}</td></tr>
+      <tr><td><i class="ico ico-key"></i> Accès</td><td>${cl?.infos ? esc(cl.infos) : '<span style="color:var(--muted-soft);">aucune info</span>'}</td></tr>
+      ${p.note ? `<tr><td><i class="ico ico-note"></i> Remarque</td><td>${esc(p.note)}</td></tr>` : ''}
+      <tr><td><i class="ico ico-coffee"></i> Machines</td><td>${(p.machines || []).length ? p.machines.map(m => `<span class="tr-machine ${trouvees.includes(m) ? 'trouve' : ''}">${esc(m)}</span>`).join('') : aCompleter}</td></tr>
+      ${autres.length ? `<tr><td><i class="ico ico-calendar"></i> Autres passages</td><td>${autres.join('<br>')}</td></tr>` : ''}
     </table>
   </div>`
 }
