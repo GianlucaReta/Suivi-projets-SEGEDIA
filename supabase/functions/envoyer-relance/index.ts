@@ -25,6 +25,35 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Sécurité : la clé publique du site permet d'appeler cette fonction. Sans
+    // contrôle, n'importe qui pouvait envoyer un mail « SEGEDIA SERVICES » à
+    // n'importe quelle adresse. Une relance ne part donc que vers l'adresse
+    // enregistrée pour le client des factures concernées.
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 200) {
+      return new Response(
+        JSON.stringify({ error: "Factures concernées manquantes" }),
+        { status: 400, headers: { ...CORS, "Content-Type": "application/json" } }
+      );
+    }
+    const dbVerif = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const { data: facs } = await dbVerif.from("factures").select("client").in("id", ids);
+    const clients = [...new Set((facs || []).map((f: { client: string }) => f.client))];
+    if (!facs || facs.length !== ids.length || clients.length !== 1) {
+      return new Response(
+        JSON.stringify({ error: "Factures introuvables ou de plusieurs clients" }),
+        { status: 400, headers: { ...CORS, "Content-Type": "application/json" } }
+      );
+    }
+    const { data: contacts } = await dbVerif.from("factures").select("email_client")
+      .eq("client", clients[0]).not("email_client", "is", null);
+    const adresses = new Set((contacts || []).map((c: { email_client: string }) => c.email_client.trim().toLowerCase()));
+    if (typeof to !== "string" || !adresses.has(to.trim().toLowerCase())) {
+      return new Response(
+        JSON.stringify({ error: "Adresse non enregistrée pour ce client" }),
+        { status: 403, headers: { ...CORS, "Content-Type": "application/json" } }
+      );
+    }
+
     // ── Envoi via Resend (avec suivi d'ouverture activé) ────────
     const resendRes = await fetch("https://api.resend.com/emails", {
       method: "POST",

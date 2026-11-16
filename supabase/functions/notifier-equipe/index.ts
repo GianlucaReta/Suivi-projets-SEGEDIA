@@ -1,7 +1,11 @@
 // Envoie un mail de notification interne (création/modification de tâche ou projet)
 // à une liste de destinataires. Ne touche à aucune donnée métier (factures, relances).
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -24,7 +28,18 @@ Deno.serve(async (req) => {
       );
     }
 
-    const destinataires: string[] = Array.isArray(to) ? to : [to];
+    const demandes: string[] = (Array.isArray(to) ? to : [to])
+      .filter((e: unknown) => typeof e === "string")
+      .map((e: string) => e.trim().toLowerCase());
+
+    // Sécurité : la clé publique du site permet d'appeler cette fonction, donc
+    // n'importe qui pourrait envoyer des mails « SuiviPro » à n'importe qui.
+    // On n'envoie qu'aux adresses des membres de l'équipe (table employes).
+    const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const { data: employes } = await db.from("employes").select("email").not("email", "is", null);
+    const autorises = new Set((employes || []).map((e: { email: string }) => e.email.trim().toLowerCase()));
+    const destinataires = [...new Set(demandes)].filter((e) => autorises.has(e));
+
     if (destinataires.length === 0) {
       return new Response(
         JSON.stringify({ message: "Aucun destinataire." }),

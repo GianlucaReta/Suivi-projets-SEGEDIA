@@ -1,1 +1,9 @@
 backup_factures_0euros_avant_suppression.json
+backup_contrats_recurrents_avant_maj.json
+backup_releves_recurrents_avant_maj.json
+backup_factures_avant_import.json
+backup_factures_jannat_avant_regroupement.json
+backup_releves_avant_rapprochement.json
+backup_releves_avant_rapprochement2.json
+update-contacts-factures.sql
+clients_sans_contact.csv

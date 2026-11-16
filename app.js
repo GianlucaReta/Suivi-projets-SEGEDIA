@@ -5,6 +5,33 @@ const SUPABASE_ANON_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const { createClient } = supabase
 const db = createClient(SUPABASE_URL, SUPABASE_KEY)
 
+// ── OUTILS COMMUNS ───────────────────────────────────────
+// Date du jour au format AAAA-MM-JJ, à l'heure française (toISOString donne
+// l'heure UTC : entre minuit et 1-2 h du matin, on obtenait la veille, et les
+// cases des calendriers affichaient les données du jour précédent).
+function dateLocaleISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function aujourdhuiISO() { return dateLocaleISO(new Date()) }
+
+// Le serveur ne renvoie jamais plus de 5 000 lignes par requête : au-delà, les
+// lignes manquantes disparaissaient sans erreur. On lit donc par pages de 1 000,
+// triées par id en dernier critère pour qu'aucune ligne ne saute d'une page à l'autre.
+async function toutesLesLignes(construireRequete, taillePage = 1000) {
+  const lignes = []
+  for (let debut = 0; ; debut += taillePage) {
+    const { data, error } = await construireRequete().order('id').range(debut, debut + taillePage - 1)
+    if (error) return { data: null, error }
+    lignes.push(...(data || []))
+    if (!data || data.length < taillePage) return { data: lignes, error: null }
+  }
+}
+
+// Échappe un texte avant de l'insérer dans du HTML
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}
+
 // ── RECHERCHE GLOBALE ────────────────────────────────────
 let _searchTimeout = null
 let _searchSeq = 0   // numéro de la dernière recherche lancée (ignore les réponses périmées)
@@ -39,7 +66,13 @@ async function lancerRecherche(query) {
     db.from('projets').select('id,nom,client').eq('archive', false),
     db.from('taches').select('id,description,statut,projets(nom)').eq('archive', false),
     utilisateurAccesFactures
-      ? db.from('factures').select('id,numero,client,montant,solde')
+      ? (() => {
+          // Recherche côté serveur (sur toutes les factures, pas seulement les 5 000 premières)
+          const motif = q.replace(/[,()*%\\]/g, ' ').trim()
+          return motif
+            ? db.from('factures').select('id,numero,client,montant,solde').or(`numero.ilike.*${motif}*,client.ilike.*${motif}*`).limit(8)
+            : Promise.resolve({ data: [] })
+        })()
       : Promise.resolve({ data: [] })
   ])
   if (seq !== _searchSeq) return   // une recherche plus récente a été lancée entre-temps
@@ -123,7 +156,7 @@ let utilisateurActifId       = localStorage.getItem('suivi_user_id')          ||
 let utilisateurActifNom      = localStorage.getItem('suivi_user_nom')         || null
 let utilisateurActifEquipe   = localStorage.getItem('suivi_user_equipe')      || null
 let utilisateurAccesFactures = localStorage.getItem('suivi_acces_factures') === '1'
-let utilisateurRole          = localStorage.getItem('suivi_user_role')        || 'admin'  // 'admin' | 'commercial' | 'operationnel'
+let utilisateurRole          = localStorage.getItem('suivi_user_role')        || 'operationnel'  // 'admin' | 'commercial' | 'operationnel'
 
 function estAdmin()        { return utilisateurRole === 'admin' }
 function estCommercial()   { return utilisateurRole === 'commercial' || utilisateurRole === 'admin' }
@@ -194,7 +227,7 @@ function showPage(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
   document.getElementById('page-' + page).classList.add('active')
-  const navMap = { dashboard: 'dashboard', projets: 'projet', taches: 'tâche', employes: 'équipe', archives: 'archive', calendrier: 'calendrier', factures: 'factures', recouvrement: 'recouvrement', recurrents: 'récurrents' }
+  const navMap = { dashboard: 'dashboard', projets: 'projet', taches: 'tâche', employes: 'équipe', archives: 'archive', calendrier: 'calendrier', factures: 'factures', recouvrement: 'recouvrement', recurrents: 'récurrents', tournees: 'tournées' }
   document.querySelectorAll('.nav-item').forEach(n => {
     if (n.textContent.toLowerCase().includes(navMap[page])) n.classList.add('active')
   })
@@ -207,6 +240,7 @@ function showPage(page) {
   if (page === 'factures') chargerFactures()
   if (page === 'recouvrement') { chargerRecouvrement(); mettreAJourBadgeRecouvrement() }
   if (page === 'recurrents') chargerRecurrents()
+  if (page === 'tournees') chargerTournees()
   // Mémoriser l'onglet courant pour le restaurer au rechargement
   // On exclut les sous-pages sans état propre (detail = vue d'un projet spécifique)
   if (page !== 'detail') localStorage.setItem('suivi_current_page', page)
@@ -245,6 +279,9 @@ function mettreAJourSidebarUser() {
 }
 
 async function ouvrirSelecteurUtilisateur() {
+  // Changer de profil donnait les droits du profil choisi (ex. accès aux factures)
+  // à n'importe qui : réservé aux administrateurs depuis l'arrivée des codes personnels.
+  if (!estAdmin()) { alert('Pour utiliser un autre profil, déconnecte-toi puis entre le code de cette personne.'); return }
   document.getElementById('modal-selecteur-user').classList.remove('hidden')
   const { data } = await db.from('employes').select('*').order('nom')
   const container = document.getElementById('liste-selecteur-users')
@@ -267,7 +304,7 @@ async function ouvrirSelecteurUtilisateur() {
 
 // --- DASHBOARD ---
 async function chargerDashboard() {
-  const aujourd_hui = new Date().toISOString().split('T')[0]
+  const aujourd_hui = aujourdhuiISO()
 
   // Greeting
   const greetingEl = document.getElementById('dashboard-greeting')
@@ -300,12 +337,9 @@ async function chargerDashboard() {
   const containerPP = document.getElementById('dashboard-projets-prioritaires')
 
   if (projets && projets.length) {
-    const avecPct = await Promise.all(projets.slice(0, 6).map(async p => {
-      const { count: total } = await db.from('taches').select('*', { count:'exact', head:true }).eq('projet_id', p.id).eq('archive', false)
-      const { count: faites } = await db.from('taches').select('*', { count:'exact', head:true }).eq('projet_id', p.id).eq('archive', false).eq('statut','fait')
-      const pct = (total || 0) > 0 ? Math.round(((faites || 0) / (total || 1)) * 100) : 0
-      return { ...p, pct }
-    }))
+    const six = projets.slice(0, 6)
+    const av = await avancementProjets(six.map(p => p.id))
+    const avecPct = six.map(p => ({ ...p, pct: av[p.id].pct }))
 
     containerPP.innerHTML = `
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
@@ -405,7 +439,7 @@ async function chargerDashboard() {
   }
 
   // ── Tâches en retard (globales) ──────────────────────────────
-  const { data: retard } = await db.from('taches')
+  const { data: retardBrut } = await db.from('taches')
     .select('*, projets(nom)')
     .lt('date_fin_prevue', aujourd_hui)
     .neq('statut', 'fait')
@@ -413,7 +447,7 @@ async function chargerDashboard() {
     .order('date_fin_prevue', { ascending: true })
 
   const containerR = document.getElementById('dashboard-retard')
-  if (!retard || !retard.length) { containerR.innerHTML = '' }
+  const retard = retardBrut || []
 
   containerR.innerHTML = `
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
@@ -441,7 +475,7 @@ async function chargerDashboard() {
   const containerF = document.getElementById('dashboard-factures')
   if (containerF && utilisateurAccesFactures) {
     const [{ data: facturesTout }, { data: exclusDash }] = await Promise.all([
-      db.from('factures').select('client,montant,solde,date_echeance'),
+      toutesLesLignes(() => db.from('factures').select('id,client,montant,solde,date_echeance').eq('solde', false)),
       db.from('clients_exclus').select('nom')
     ])
     const nomsExclusDash = new Set((exclusDash || []).map(e => e.nom))
@@ -484,6 +518,20 @@ async function chargerDashboard() {
 }
 
 // --- PROJETS ---
+// Avancement de plusieurs projets en UNE requête (avant : 2 requêtes par projet)
+async function avancementProjets(projetIds) {
+  const res = {}
+  projetIds.forEach(id => { res[id] = { total: 0, faites: 0, pct: 0 } })
+  if (!projetIds.length) return res
+  const { data } = await db.from('taches').select('projet_id,statut').in('projet_id', projetIds).eq('archive', false)
+  for (const t of data || []) {
+    const r = res[t.projet_id]; if (!r) continue
+    r.total++; if (t.statut === 'fait') r.faites++
+  }
+  for (const r of Object.values(res)) r.pct = r.total ? Math.round((r.faites / r.total) * 100) : 0
+  return res
+}
+
 function renderTabsProjet(counts) {
   const tabs = [
     { val: 'tous',       label: 'Tous',        count: counts.tous },
@@ -581,14 +629,10 @@ async function chargerProjets() {
   }
 
   // Charger les progressions
-  const projetsAvecPct = await Promise.all(filtered.map(async projet => {
-    const { count: total } = await db.from('taches').select('*', { count: 'exact', head: true }).eq('projet_id', projet.id).eq('archive', false)
-    const { count: faites } = await db.from('taches').select('*', { count: 'exact', head: true }).eq('projet_id', projet.id).eq('archive', false).eq('statut', 'fait')
-    const pct = (total || 0) > 0 ? Math.round(((faites || 0) / (total || 1)) * 100) : 0
-    return { ...projet, total: total || 0, faites: faites || 0, pct }
-  }))
+  const av = await avancementProjets(filtered.map(p => p.id))
+  const projetsAvecPct = filtered.map(projet => ({ ...projet, ...av[projet.id] }))
 
-  const aujourd_hui = new Date().toISOString().split('T')[0]
+  const aujourd_hui = aujourdhuiISO()
 
   container.style.display = 'block'
   container.innerHTML = `
@@ -748,13 +792,13 @@ async function ouvrirDetailProjet(projet) {
 
 async function chargerTachesDetail() {
   if (!projetActif) return
-  let query = db.from('taches').select('*').eq('projet_id', projetActif.id).order('created_at', { ascending: false })
+  let query = db.from('taches').select('*, tache_assignations(employes(nom, equipe))').eq('projet_id', projetActif.id).order('created_at', { ascending: false })
   if (!projetActif.archive) query = query.eq('archive', false)
   const { data } = await query
   const container = document.getElementById('detail-taches')
   const kanbanEl = document.getElementById('detail-kanban')
   const ganttSection = document.getElementById('section-gantt')
-  const aujourd_hui = new Date().toISOString().split('T')[0]
+  const aujourd_hui = aujourdhuiISO()
 
   // Toujours appliquer la bonne vue avant d'afficher les données
   appliquerVueProjet()
@@ -769,10 +813,7 @@ async function chargerTachesDetail() {
     return
   }
 
-  const tachesAvecAssignations = await Promise.all(data.map(async t => {
-    const { data: assignations } = await db.from('tache_assignations').select('employes(nom, equipe)').eq('tache_id', t.id)
-    return { ...t, assignations: assignations || [] }
-  }))
+  const tachesAvecAssignations = data.map(t => ({ ...t, assignations: t.tache_assignations || [] }))
 
   if (vueProjet === 'kanban') {
     afficherKanban(tachesAvecAssignations, aujourd_hui)
@@ -1421,7 +1462,7 @@ function setVueTachesGlobal(vue) {
 }
 
 async function chargerTachesGlobal() {
-  const aujourd_hui = new Date().toISOString().split('T')[0]
+  const aujourd_hui = aujourdhuiISO()
 
   // Filtre visible uniquement en vue liste
   const filterEl = document.getElementById('filtres-taches')
@@ -1434,16 +1475,13 @@ async function chargerTachesGlobal() {
   if (listeEl)  listeEl.style.display  = vueTachesGlobal === 'liste'  ? 'block' : 'none'
   if (kanbanEl) kanbanEl.style.display = vueTachesGlobal === 'kanban' ? 'block' : 'none'
 
-  const { data } = await db.from('taches').select('*, projets(nom, equipe)').eq('archive', false).order('date_fin_prevue', { ascending: true })
+  const { data } = await db.from('taches').select('*, projets(nom, equipe), tache_assignations(employes(nom, equipe))').eq('archive', false).order('date_fin_prevue', { ascending: true })
   if (!data || !data.length) {
     if (listeEl) listeEl.innerHTML = '<p style="color:var(--muted);">Aucune tâche.</p>'
     return
   }
 
-  const tachesAvecAssignations = await Promise.all(data.map(async t => {
-    const { data: assignations } = await db.from('tache_assignations').select('employes(nom, equipe)').eq('tache_id', t.id)
-    return { ...t, assignations: assignations || [] }
-  }))
+  const tachesAvecAssignations = data.map(t => ({ ...t, assignations: t.tache_assignations || [] }))
 
   // Stats bar
   const actives  = tachesAvecAssignations.filter(t => t.statut !== 'fait').length
@@ -1693,6 +1731,14 @@ function ouvrirModalEmploye() {
   document.getElementById('input-employe-nom').value = ''
   document.getElementById('input-employe-email').value = ''
   document.getElementById('input-employe-telephone').value = ''
+  // Sans cette remise à zéro, un nouveau membre héritait du rôle et du code
+  // du dernier membre ouvert (et l'enregistrement échouait : « code déjà utilisé »)
+  const sectionAdmin = document.getElementById('section-admin-employe')
+  if (sectionAdmin) sectionAdmin.style.display = estAdmin() ? 'block' : 'none'
+  const inputRole = document.getElementById('input-employe-role')
+  const inputPin  = document.getElementById('input-employe-pin')
+  if (inputRole) inputRole.value = 'operationnel'
+  if (inputPin)  inputPin.value  = ''
   document.getElementById('btn-supprimer-employe').style.display = 'none'
   document.getElementById('modal-employe').classList.remove('hidden')
 }
@@ -1782,7 +1828,7 @@ document.addEventListener('keydown', e => {
 
   // N : nouvelle tâche (si l'utilisateur est sur une page où c'est possible)
   if (e.key === 'n' || e.key === 'N') {
-    const btnNouv = document.querySelector('[onclick*="ouvrirNouvelleTache"]:not([style*="display:none"])')
+    const btnNouv = document.querySelector('.page.active [onclick^="ouvrirModalTache"]')
     if (btnNouv) { e.preventDefault(); btnNouv.click() }
     return
   }
@@ -2053,16 +2099,18 @@ function fermerPopupNotifications() {
   el.classList.add('hidden')
 }
 
-// --- INIT ---
-mettreAJourSidebarUser()
-const _pageSauvegardee = localStorage.getItem('suivi_current_page')
-if (_pageSauvegardee && document.getElementById('page-' + _pageSauvegardee)) {
-  showPage(_pageSauvegardee)
-} else {
-  chargerDashboard()
+// --- INIT --- (lancé tout en bas du fichier, une fois toutes les variables déclarées)
+function demarrerApplication() {
+  mettreAJourSidebarUser()
+  const pageSauvegardee = localStorage.getItem('suivi_current_page')
+  if (pageSauvegardee && document.getElementById('page-' + pageSauvegardee)) {
+    showPage(pageSauvegardee)
+  } else {
+    chargerDashboard()
+  }
+  chargerEmployes()
+  verifierNouvellesNotifications()
 }
-chargerEmployes()
-verifierNouvellesNotifications()
 // --- CALENDRIER ---
 let calDate = new Date()
 let calType = 'projets' // projets ou taches
@@ -2138,7 +2186,7 @@ function afficherCalMensuelle(items, type) {
     html += `<div class="cal-num">${cur.getDate()}</div>`
 
     // Trouver les items de ce jour
-    const curStr = cur.toISOString().split('T')[0]
+    const curStr = dateLocaleISO(cur)
     items.forEach(item => {
       const debut = type === 'projet' ? null : item.date_debut
       const fin = type === 'projet' ? null : item.date_fin_prevue
@@ -2183,7 +2231,7 @@ function afficherCalTimeline(items, type) {
     const d = new Date(annee, mois, i)
     const isToday = d.getTime() === aujourd_hui.getTime()
     const isWeekend = d.getDay() === 0 || d.getDay() === 6
-    headerJours += `<div style="position:absolute; left:${(i-1)*largeurJour}px; width:${largeurJour}px; text-align:center; font-size:0.65rem; color:${isToday ? 'var(--bleu)' : isWeekend ? '#ccc' : 'var(--text-muted)'}; font-weight:${isToday ? '700' : '400'};">${i}</div>`
+    headerJours += `<div style="position:absolute; left:${(i-1)*largeurJour}px; width:${largeurJour}px; text-align:center; font-size:0.65rem; color:${isToday ? 'var(--brand)' : isWeekend ? '#ccc' : 'var(--text-muted)'}; font-weight:${isToday ? '700' : '400'};">${i}</div>`
   }
 
   // Lignes fond
@@ -2193,7 +2241,7 @@ function afficherCalTimeline(items, type) {
     const isToday = d.getTime() === aujourd_hui.getTime()
     const isWeekend = d.getDay() === 0 || d.getDay() === 6
     if (isWeekend) fond += `<div style="position:absolute; left:${(i-1)*largeurJour}px; top:0; width:${largeurJour}px; height:100%; background:rgba(0,0,0,0.03);"></div>`
-    if (isToday) fond += `<div style="position:absolute; left:${(i-1)*largeurJour}px; top:0; width:2px; height:100%; background:var(--bleu);"></div>`
+    if (isToday) fond += `<div style="position:absolute; left:${(i-1)*largeurJour}px; top:0; width:2px; height:100%; background:var(--brand);"></div>`
   }
 
   const rows = items.map(item => {
@@ -2283,6 +2331,8 @@ async function chargerHistorique() {
     facture_annulee:  '↩',
     commentaire:      '💬',
     projet_statut:    '📁',
+    tournee:          '🚚',
+    contrat:          '🔁',
   }
   container.innerHTML = `
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
@@ -2384,12 +2434,12 @@ async function chargerFactures() {
   // Charger la liste d'exclusion ET le panel en parallèle
   const [{ data: exclusData }, { data: factures }] = await Promise.all([
     db.from('clients_exclus').select('nom'),
-    db.from('factures').select('*').order('date_echeance', { ascending: false }).limit(5000)
+    toutesLesLignes(() => db.from('factures').select('*').order('date_echeance', { ascending: false }))
   ])
   chargerClientsExclus()
 
   const nomsExclus = new Set((exclusData || []).map(e => e.nom))
-  const aujourd_hui = new Date().toISOString().split('T')[0]
+  const aujourd_hui = aujourdhuiISO()
 
   // Exclure les clients masqués de TOUT l'affichage et des stats
   const toutes   = (factures || []).filter(f => !nomsExclus.has(f.client))
@@ -2401,7 +2451,7 @@ async function chargerFactures() {
   const montantRetard = enRetard.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0)
 
   // Bandeau J+3 : factures dont l'échéance était il y a exactement 3 jours et non en litige
-  const j3 = new Date(); j3.setDate(j3.getDate() - 3); const hierStr = j3.toISOString().split('T')[0]
+  const j3 = new Date(); j3.setDate(j3.getDate() - 3); const hierStr = dateLocaleISO(j3)
   const facturesJ1 = nonSolde.filter(f => !f.litige && f.date_echeance === hierStr)
   const bandeauEl = document.getElementById('bandeau-j1')
   const bandeauListeEl = document.getElementById('bandeau-j1-liste')
@@ -2722,7 +2772,7 @@ async function ouvrirFicheClient(nomClient) {
     return
   }
 
-  const auj = new Date().toISOString().split('T')[0]
+  const auj = aujourdhuiISO()
   const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
 
   // KPIs
@@ -2842,8 +2892,8 @@ async function sauvegarderMoyenPaiement(nomClient) {
   if (!sel) return
   const val = sel.value || null
   const { error } = await db.from('factures').update({ moyen_paiement: val }).eq('client', nomClient)
-  if (error) { afficherToast('Erreur lors de la sauvegarde', 'danger'); return }
-  afficherToast(`Moyen de paiement mis à jour pour ${nomClient}`, 'success')
+  if (error) { afficherToast('Erreur lors de la sauvegarde', true); return }
+  afficherToast(`Moyen de paiement mis à jour pour ${nomClient}`)
 }
 
 // ── BULK ACTIONS sur factures ────────────────────────────
@@ -2876,7 +2926,7 @@ async function bulkSolderFactures() {
     .map(cb => cb.value)
   if (!ids.length) { alert('Aucune facture non-soldée dans la sélection.'); return }
   if (!confirm(`Marquer ${ids.length} facture${ids.length>1?'s':''} comme soldée${ids.length>1?'s':''} ?`)) return
-  const date_paiement = new Date().toISOString().split('T')[0]
+  const date_paiement = aujourdhuiISO()
   await db.from('factures').update({ solde: true, date_paiement }).in('id', ids)
   afficherToast(`${ids.length} facture${ids.length>1?'s':''} soldée${ids.length>1?'s':''}`)
   chargerFactures()
@@ -2897,7 +2947,7 @@ function bulkExporterFactures() {
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8'})
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
-  const today = new Date().toISOString().split('T')[0]
+  const today = aujourdhuiISO()
   a.href = url; a.download = `factures_export_${today}.csv`
   document.body.appendChild(a); a.click()
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url) }, 100)
@@ -2905,7 +2955,7 @@ function bulkExporterFactures() {
 }
 
 async function marquerFactureSoldee(id) {
-  const date_paiement = new Date().toISOString().split('T')[0]
+  const date_paiement = aujourdhuiISO()
   const { data: f } = await db.from('factures').select('numero,client,montant').eq('id', id).single()
   await db.from('factures').update({ solde: true, date_paiement }).eq('id', id)
   if (f) {
@@ -2972,7 +3022,7 @@ async function editerMontantPaye(id, montantActuel) {
   const updates = { montant_paye: montantPaye }
   if (montantPaye >= montantTotal && montantTotal > 0) {
     updates.solde = true
-    updates.date_paiement = new Date().toISOString().split('T')[0]
+    updates.date_paiement = aujourdhuiISO()
   }
   await db.from('factures').update(updates).eq('id', id)
   chargerFactures()
@@ -3001,7 +3051,7 @@ function ouvrirModalRelance(id) {
   const email = toutes.find(f => f.client === client && f.email_client)?.email_client || null
 
   const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
-  const auj = new Date().toISOString().split('T')[0]
+  const auj = aujourdhuiISO()
 
   // Uniquement les factures en retard (échues) — exclure celles pas encore dues
   const facImpayees = toutes
@@ -3053,6 +3103,9 @@ SEGEDIA SERVICES`
 
   // Remplir le modal
   window._relanceData = { client, email, ids, type: 'r1' }
+  // Le titre a pu être remplacé par « Relance R2 » lors d'une ouverture précédente
+  const titreR1 = document.querySelector('#modal-relance-email h2')
+  if (titreR1) titreR1.innerHTML = `📤 Relance — <span id="modal-relance-client"></span>`
   document.getElementById('modal-relance-client').textContent = client
   document.getElementById('modal-relance-nb').textContent =
     `${facImpayees.length} facture${facImpayees.length > 1 ? 's' : ''} impayée${facImpayees.length > 1 ? 's' : ''} · Total : ${fmt(total)} €`
@@ -3149,7 +3202,7 @@ function ouvrirModalRelanceR2(id) {
   const email = toutes.find(f => f.client === client && f.email_client)?.email_client || null
   const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
 
-  const auj2 = new Date().toISOString().split('T')[0]
+  const auj2 = aujourdhuiISO()
   const facImpayees = toutes
     .filter(f => f.client === client && !f.solde && !f.litige && f.date_echeance && f.date_echeance < auj2)
     .sort((a, b) => (a.date_echeance || '').localeCompare(b.date_echeance || ''))
@@ -3216,7 +3269,7 @@ SEGEDIA SERVICES`
   const warning = document.getElementById('modal-relance-warning')
   const sendBtn = document.getElementById('btn-envoyer-relance')
   const titleEl = document.querySelector('#modal-relance-email h2')
-  if (titleEl) titleEl.innerHTML = `📤 Relance R2 — <span id="modal-relance-client">${client}</span>`
+  if (titleEl) titleEl.innerHTML = `📤 Relance R2 — <span id="modal-relance-client">${esc(client)}</span>`
   if (!email) {
     warning.style.display = 'flex'
     sendBtn.disabled = true; sendBtn.style.opacity = '0.4'; sendBtn.style.cursor = 'not-allowed'
@@ -3237,7 +3290,7 @@ function ouvrirModalAppel(id) {
   const facImpayees = toutes.filter(f => f.client === client && !f.solde && !f.litige)
   const ids = facImpayees.map(f => f.id)
   const noteExistante = facImpayees.find(f => f.note_appel)?.note_appel || ''
-  const dateExistante = facImpayees.find(f => f.date_appel)?.date_appel || new Date().toISOString().split('T')[0]
+  const dateExistante = facImpayees.find(f => f.date_appel)?.date_appel || aujourdhuiISO()
   const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
   const total = facImpayees.reduce((s, f) => s + soldeRestant(f), 0)
 
@@ -3275,9 +3328,9 @@ async function mettreAJourBadgeRecouvrement() {
   if (!utilisateurAccesFactures) return
   const badge = document.getElementById('nav-badge-recouvrement')
   if (!badge) return
-  const auj = new Date().toISOString().split('T')[0]
+  const auj = aujourdhuiISO()
   const { data: exclusData } = await db.from('clients_exclus').select('nom')
-  const { data: factures }   = await db.from('factures').select('client,date_echeance,date_relance,date_relance_r2,date_appel,solde,litige,moyen_paiement').eq('solde', false).eq('litige', false).limit(5000)
+  const { data: factures }   = await toutesLesLignes(() => db.from('factures').select('id,client,date_echeance,date_relance,date_relance_r2,date_appel,solde,litige,moyen_paiement').eq('solde', false).eq('litige', false).order('date_echeance'))
   const nomsExclus = new Set((exclusData || []).map(e => e.nom))
   const enRetard = (factures || []).filter(f => !nomsExclus.has(f.client) && f.date_echeance && f.date_echeance < auj)
   const MODES_LETTRAGE = new Set(['espèce', 'prélèvement'])
@@ -3340,11 +3393,11 @@ async function chargerRecouvrement() {
 
   const [{ data: exclusData }, { data: factures }] = await Promise.all([
     db.from('clients_exclus').select('nom'),
-    db.from('factures').select('*').eq('solde', false).eq('litige', false).not('date_echeance', 'is', null).order('date_echeance', { ascending: true }).limit(5000)
+    toutesLesLignes(() => db.from('factures').select('*').eq('solde', false).eq('litige', false).not('date_echeance', 'is', null).order('date_echeance', { ascending: true }))
   ])
 
   const nomsExclus = new Set((exclusData || []).map(e => e.nom))
-  const auj = new Date().toISOString().split('T')[0]
+  const auj = aujourdhuiISO()
   const fmt = v => parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
 
   // Rendre les factures accessibles aux modals R1/R2/Appel
@@ -3588,7 +3641,7 @@ async function chargerEncaissements() {
   if (!container) return
 
   const { data: exclusData } = await db.from('clients_exclus').select('nom')
-  const { data: factures }   = await db.from('factures').select('*').eq('solde', false).order('date_echeance', { ascending: true }).limit(5000)
+  const { data: factures }   = await toutesLesLignes(() => db.from('factures').select('*').eq('solde', false).order('date_echeance', { ascending: true }))
 
   const nomsExclus = new Set((exclusData || []).map(e => e.nom))
   const nonSoldes  = (factures || []).filter(f => !nomsExclus.has(f.client) && f.date_echeance && !f.litige)
@@ -3737,7 +3790,7 @@ function afficherCalendrierEncaissements() {
   for (let i = 0; i < 42; i++) {
     const isAujourdHui = cur.getTime() === aujourd_hui.getTime()
     const isAutreMois  = cur.getMonth() !== mois
-    const curStr = cur.toISOString().split('T')[0]
+    const curStr = dateLocaleISO(cur)
     const factsDuJour = parDate[curStr] || []
     const nbFacts = factsDuJour.length
     html += `<div class="cal-jour ${isAujourdHui ? 'aujourd-hui' : ''} ${isAutreMois ? 'autre-mois' : ''}" data-date="${curStr}" style="cursor:${nbFacts > 0 ? 'pointer' : 'default'};" ${nbFacts > 0 ? `onclick="afficherDetailJourEncaissement('${curStr}')"` : ''}>`
@@ -3790,7 +3843,7 @@ async function chargerAnalytique() {
   try {
 
   const { data: exclusData, error: errExclus } = await db.from('clients_exclus').select('nom')
-  const { data: factures, error: errFact }     = await db.from('factures').select('*').order('date_echeance', { ascending: true }).limit(5000)
+  const { data: factures, error: errFact }     = await toutesLesLignes(() => db.from('factures').select('*').order('date_echeance', { ascending: true }))
 
   if (errFact) { container.innerHTML = `<div style="color:var(--danger);padding:20px;">Erreur chargement : ${errFact.message}</div>`; return }
 
@@ -3813,11 +3866,11 @@ async function chargerAnalytique() {
   const nomsExclus = new Set((exclusData || []).map(e => e.nom))
   const toutes = (factures || []).filter(f => !nomsExclus.has(f.client))
   const enRetard = toutes.filter(f => {
-    const auj = new Date().toISOString().split('T')[0]
+    const auj = aujourdhuiISO()
     return !f.solde && !f.litige && f.date_echeance && f.date_echeance < auj
   })
 
-  const auj = new Date().toISOString().split('T')[0]
+  const auj = aujourdhuiISO()
 
   // ── DSO : délai moyen émission → paiement (factures soldées) ──
   const soldees = toutes.filter(f => f.solde && f.date_paiement && f.date_emission)
@@ -3989,10 +4042,10 @@ async function chargerAnalytique() {
   if (analytiquePeriode === 'hebdomadaire') {
     // 13 dernières semaines
     for (let i = 12; i >= 0; i--) {
-      const debut = new Date(now); debut.setDate(debut.getDate() - i * 7 - debut.getDay() + 1); debut.setHours(0,0,0,0)
+      const debut = new Date(now); debut.setDate(debut.getDate() - i * 7 - ((debut.getDay() + 6) % 7)); debut.setHours(0,0,0,0)
       const fin   = new Date(debut); fin.setDate(fin.getDate() + 6)
-      const debutStr = debut.toISOString().split('T')[0]
-      const finStr   = fin.toISOString().split('T')[0]
+      const debutStr = dateLocaleISO(debut)
+      const finStr   = dateLocaleISO(fin)
       const arr = toutes.filter(f => f.date_echeance && f.date_echeance >= debutStr && f.date_echeance <= finStr && !f.solde)
       const montant = arr.reduce((s,f)=>s+(parseFloat(f.montant)||0),0)
       const moisCourts = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc']
@@ -4315,10 +4368,13 @@ async function importerCSVFactures(file) {
   }
 
   // Charger clients exclus + factures existantes en parallèle
-  const [{ data: exclus }, { data: existantes }] = await Promise.all([
+  const [{ data: exclus }, { data: existantes, error: errExistantes }] = await Promise.all([
     db.from('clients_exclus').select('nom'),
-    db.from('factures').select('numero, solde, note, date_paiement')
+    toutesLesLignes(() => db.from('factures').select('id, numero, solde, note, date_paiement'))
   ])
+  // Sans la liste COMPLÈTE des factures existantes, une facture soldée à la main
+  // serait prise pour une nouvelle et repasserait « non soldée » : on arrête tout.
+  if (errExistantes || !existantes) { alert('Import annulé : impossible de lire les factures existantes. Réessaie dans un instant.'); return }
   const nomsExclus  = new Set((exclus     || []).map(e => e.nom))
   // Map numero → { solde, note } pour préserver les données manuelles
   const existantesMap = new Map((existantes || []).map(f => [f.numero, f]))
@@ -4394,7 +4450,25 @@ async function importerCSVFactures(file) {
 //  FACTURATION RÉCURRENTE (fontaines, compteurs, badges)
 // ═══════════════════════════════════════════════════════════
 
-window._anneeRecurrents = new Date().getFullYear()
+// Dernière période terminée, donc à facturer maintenant : le mois précédent et
+// le trimestre précédent — en janvier, c'est décembre (et le T4) de l'année d'avant.
+function periodeActionnable(frequence, now = new Date()) {
+  if (frequence === 'mensuelle') {
+    const d = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    return { annee: d.getFullYear(), num: d.getMonth() + 1 }
+  }
+  const t = Math.ceil((now.getMonth() + 1) / 3) - 1
+  return t > 0 ? { annee: now.getFullYear(), num: t } : { annee: now.getFullYear() - 1, num: 4 }
+}
+// Nombre de périodes déjà terminées dans l'année affichée (0 à 12 mois, 0 à 4 trimestres)
+function nbPeriodesTerminees(frequence, annee) {
+  const a = periodeActionnable(frequence)
+  if (a.annee === annee) return a.num
+  return a.annee > annee ? (frequence === 'mensuelle' ? 12 : 4) : 0
+}
+
+// En janvier, on ouvre directement l'année précédente (c'est là qu'est décembre)
+window._anneeRecurrents = periodeActionnable('mensuelle').annee
 window._recurrentsShowAll = false  // filtre : false = seulement les contrats avec actions en cours
 window._contratEditionId = null
 window._releveEnCours    = null  // { contratId, periode, contrat }
@@ -4445,32 +4519,13 @@ function contratCouvrePeriode(c, periode) {
 }
 
 function statutPeriode(periode, anneeAff) {
-  // Logique : on facture le mois/trimestre PRÉCÉDENT (le mois en cours n'est pas encore terminé)
-  // Ex: en juin → on traite mai ; en T2 (avr-juin) → on traite T1
-  const now = new Date()
-
-  if (now.getFullYear() !== anneeAff) {
-    return now.getFullYear() > anneeAff ? 'passe' : 'futur'
-  }
-
-  const moisCourant = now.getMonth() + 1  // 1-12
-  const trimCourant = Math.ceil(moisCourant / 3)  // 1-4
-
-  if (periode.includes('-Q')) {
-    const trim = parseInt(periode.split('-Q')[1])
-    const trimActionnable = trimCourant - 1  // dernier trimestre complété
-    if (trimActionnable <= 0) return 'futur'  // en Q1, rien d'actionnable cette année
-    if (trim < trimActionnable) return 'passe'
-    if (trim === trimActionnable) return 'courant'
-    return 'futur'
-  } else {
-    const mois = parseInt(periode.split('-')[1])
-    const moisActionnable = moisCourant - 1  // mois précédent
-    if (moisActionnable <= 0) return 'futur'  // en janvier, rien d'actionnable cette année
-    if (mois < moisActionnable) return 'passe'
-    if (mois === moisActionnable) return 'courant'
-    return 'futur'
-  }
+  // On facture le mois/trimestre PRÉCÉDENT (le mois en cours n'est pas encore terminé).
+  // Ex : en juin → mai ; en T2 → T1 ; en janvier → décembre de l'année d'avant.
+  const trimestriel = periode.includes('-Q')
+  const num = trimestriel ? parseInt(periode.split('-Q')[1]) : parseInt(periode.split('-')[1])
+  const a = periodeActionnable(trimestriel ? 'trimestrielle' : 'mensuelle')
+  const cle = anneeAff * 100 + num, cleA = a.annee * 100 + a.num
+  return cle < cleA ? 'passe' : cle === cleA ? 'courant' : 'futur'
 }
 
 function typeLabel(type) {
@@ -4520,15 +4575,13 @@ function changerAnneeRecurrents(delta) {
 // ── Mise à jour badge nav ─────────────────────────────────
 
 function mettreAJourBadgeRecurrents(contrats, relevesMap, annee) {
-  const now = new Date()
-  if (now.getFullYear() !== annee) {
+  if (annee !== periodeActionnable('mensuelle').annee && annee !== periodeActionnable('trimestrielle').annee) {
     const badge = document.getElementById('nav-badge-recurrents')
     if (badge) badge.style.display = 'none'
     return
   }
-  const moisCourantBadge = now.getMonth() + 1  // 1-12
-  const moisActionnable = now.getMonth()  // = moisCourant - 1 (0-indexed = nb de mois à vérifier)
-  const trimActionnable = Math.max(0, Math.ceil(moisCourantBadge / 3) - 1)  // trimestres complétés
+  const moisActionnable = periodeActionnable('mensuelle').annee === annee ? nbPeriodesTerminees('mensuelle', annee) : 0
+  const trimActionnable = periodeActionnable('trimestrielle').annee === annee ? nbPeriodesTerminees('trimestrielle', annee) : 0
   let nbRetard = 0
   for (const c of contrats) {
     const periodes = c.frequence === 'mensuelle'
@@ -4564,11 +4617,11 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
   const trimest = contrats.filter(c => c.frequence === 'trimestrielle')
 
   const moisNomsCourt = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
-  const now = new Date()
-  const anneeEnCours = now.getFullYear()
-  const moisCourant = now.getMonth() + 1  // 1-12
-  const moisActionnable = moisCourant - 1  // période mensuelle courante à traiter
-  const trimActionnable = Math.max(0, Math.ceil(moisCourant / 3) - 1)  // trimestre courant à traiter
+  // Année où se trouve la période à traiter maintenant (l'année d'avant en janvier)
+  const anneeEnCours = periodeActionnable('mensuelle').annee
+  const moisActionnable = nbPeriodesTerminees('mensuelle', annee)       // mois terminés dans l'année affichée
+  const trimActionnable = nbPeriodesTerminees('trimestrielle', annee)   // trimestres terminés dans l'année affichée
+  const trimDansAnnee   = periodeActionnable('trimestrielle').annee === annee
   const showAll = !!window._recurrentsShowAll
 
   // Cellule d'une période
@@ -4637,7 +4690,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
       : []
 
     // Contrats trimestriels non traités pour le trimestre actionnable
-    const urgentTrimest = trimActionnable > 0
+    const urgentTrimest = trimActionnable > 0 && trimDansAnnee
       ? trimest.filter(c => {
           const p = periodeTrimestrielle(annee, trimActionnable)
           const r = relevesMap[c.id]?.[p]
@@ -4669,7 +4722,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
       }
     }
     for (const c of trimest) {
-      for (let t = 1; t < trimActionnable; t++) {
+      for (let t = 1; t < (trimDansAnnee ? trimActionnable : trimActionnable + 1); t++) {
         const p = periodeTrimestrielle(annee, t)
         const r = relevesMap[c.id]?.[p]
         if (contratCouvrePeriode(c, p) && !r?.fait && !r?.en_attente) retardItems.push({ contrat: c, periode: p })
@@ -4677,7 +4730,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
     }
 
     const moisLabel = moisActionnable > 0 ? moisNomsCourt[moisActionnable - 1] : ''
-    const trimLabel = trimActionnable > 0 ? `T${trimActionnable}` : ''
+    const trimLabel = trimActionnable > 0 && trimDansAnnee ? `T${trimActionnable}` : ''
 
     const totalUrgent = urgentMensuel.length + urgentTrimest.length
     const totalRetard = retardItems.length
@@ -4800,7 +4853,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
 
   // ── Grille complète (tableau) ─────────────────────────────
   const colHighlightMois = annee === anneeEnCours && moisActionnable > 0 ? moisActionnable : -1
-  const colHighlightTrim = annee === anneeEnCours && trimActionnable > 0 ? trimActionnable : -1
+  const colHighlightTrim = trimDansAnnee && trimActionnable > 0 ? trimActionnable : -1
 
   function ligneClientHtml(c, cells) {
     const assignes = Array.isArray(c.assignes) && c.assignes.length ? c.assignes : (c.assigne_a ? [c.assigne_a] : [])
@@ -5091,7 +5144,7 @@ async function ouvrirModalReleve(contratId, periode) {
   }
 
   // Date et commentaire
-  document.getElementById('releve-date').value = releve?.date_traitement || new Date().toISOString().split('T')[0]
+  document.getElementById('releve-date').value = releve?.date_traitement || aujourdhuiISO()
   document.getElementById('releve-commentaire').value = releve?.commentaire || ''
   document.getElementById('releve-fait').checked = releve?.fait || false
   document.getElementById('releve-en-attente').checked = (releve?.en_attente && !releve?.fait) || false
@@ -5213,3 +5266,391 @@ async function restaurerContrat(id) {
   logAction('contrat', 'contrats_recurrents', id, 'Contrat restauré depuis les archives')
   chargerArchives()
 }
+// ═══════════════════════════════════════════════════════════
+//  PLANNING DES TOURNÉES
+//  Une « bulle » = un passage : un client, un opérateur, un jour de la semaine,
+//  ses machines. Adresse, mail et infos d'accès appartiennent au client (communs
+//  à toutes ses bulles). Les déplacements sont enregistrés pour tout le monde.
+// ═══════════════════════════════════════════════════════════
+
+const TR_JOURS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi']
+const TR_COULEURS = {
+  teal:   ['#E1F5EE', '#085041', '#1D9E75'],
+  purple: ['#EEEDFE', '#3C3489', '#7F77DD'],
+  coral:  ['#FAECE7', '#712B13', '#D85A30'],
+  pink:   ['#FBEAF0', '#72243E', '#D4537E'],
+  amber:  ['#FAEEDA', '#633806', '#BA7517'],
+  blue:   ['#E6F1FB', '#0C447C', '#378ADD'],
+  green:  ['#EAF3DE', '#27500A', '#639922'],
+  gray:   ['#F1EFE8', '#444441', '#888780'],
+}
+let trOperateurs = [], trClients = [], trPassages = []
+let trSemaineOffset = 0          // 0 = cette semaine, -1 = précédente…
+let trRecherche = ''
+let trSelection = null           // id de la bulle dont la fiche est ouverte
+let trPassageEdition = null      // bulle ouverte dans le formulaire (null = création)
+let trOpsMasques = new Set()
+try { trOpsMasques = new Set(JSON.parse(localStorage.getItem('tr_ops_masques') || '[]')) } catch (e) {}
+
+function trCouleur(op) { return TR_COULEURS[op?.couleur] || TR_COULEURS.gray }
+function trOp(id) { return trOperateurs.find(o => o.id === id) || null }
+function trClient(id) { return trClients.find(c => c.id === id) || null }
+function trNorm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim() }
+
+// Semaine affichée : numéro ISO, parité, lundi
+function trSemaine() {
+  const d = new Date(); d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() + trSemaineOffset * 7)
+  const lundi = new Date(d); lundi.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+  const num = getNumSemaine(lundi)
+  return { num, parite: num % 2 === 0 ? 'paire' : 'impaire', lundi }
+}
+
+async function chargerTournees() {
+  const board = document.getElementById('tr-board')
+  if (board && !trPassages.length) board.innerHTML = '<div style="color:var(--muted);padding:30px;">Chargement…</div>'
+  const [o, c, p] = await Promise.all([
+    db.from('tournee_operateurs').select('*').eq('actif', true).order('ordre'),
+    toutesLesLignes(() => db.from('tournee_clients').select('*')),
+    toutesLesLignes(() => db.from('tournee_passages').select('*')),
+  ])
+  if (o.error || c.error || p.error) {
+    console.error(o.error || c.error || p.error)
+    if (board) board.innerHTML = '<div style="color:var(--danger);padding:20px;">Impossible de charger le planning. Réessaie dans un instant.</div>'
+    return
+  }
+  trOperateurs = o.data || []; trClients = c.data || []; trPassages = p.data || []
+  afficherTournees()
+}
+
+function changerSemaineTournees(delta) {
+  trSemaineOffset = delta === 0 ? 0 : trSemaineOffset + delta
+  afficherTournees()
+}
+
+function rechercherTournees(val) {
+  trRecherche = val || ''
+  trSelection = null
+  afficherTournees()
+}
+
+function basculerOperateurTournee(id) {
+  trOpsMasques.has(id) ? trOpsMasques.delete(id) : trOpsMasques.add(id)
+  try { localStorage.setItem('tr_ops_masques', JSON.stringify([...trOpsMasques])) } catch (e) {}
+  afficherTournees()
+}
+function afficherTousOperateursTournee() {
+  trOpsMasques.clear()
+  try { localStorage.setItem('tr_ops_masques', '[]') } catch (e) {}
+  afficherTournees()
+}
+
+// Une bulle correspond-elle à la recherche ? Renvoie les machines trouvées (ou true si nom/ville/remarque)
+function trCorrespondance(p, q) {
+  const qn = trNorm(q), qc = qn.replace(/\s/g, '')
+  const machines = (p.machines || []).filter(m => trNorm(m).replace(/\s/g, '').includes(qc))
+  if (machines.length) return machines
+  const cl = trClient(p.client_id)
+  return [cl?.nom, cl?.ville, cl?.adresse, p.note].some(t => trNorm(t).includes(qn)) ? [] : null
+}
+
+function afficherTournees() {
+  const board = document.getElementById('tr-board')
+  if (!board) return
+  const sem = trSemaine()
+  const recherche = trRecherche.trim()
+  const fin = new Date(sem.lundi); fin.setDate(fin.getDate() + 4)
+  const fmtJ = d => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+  document.getElementById('tr-semaine-label').textContent = `Semaine ${sem.num} · ${sem.parite} · ${fmtJ(sem.lundi)} – ${fmtJ(fin)}`
+  document.getElementById('tr-btn-aujourdhui').style.display = trSemaineOffset === 0 ? 'none' : ''
+
+  // Filtres opérateurs
+  const nbParOp = {}
+  trPassages.forEach(p => { nbParOp[p.operateur_id] = (nbParOp[p.operateur_id] || 0) + 1 })
+  document.getElementById('tr-operateurs').innerHTML = trOperateurs.map(op => {
+    const k = trCouleur(op)
+    return `<button class="tr-chip ${trOpsMasques.has(op.id) ? 'off' : ''}" onclick="basculerOperateurTournee('${op.id}')" title="Afficher / masquer ${esc(op.nom)}">
+      <span class="tr-dot" style="background:${k[2]};"></span>${esc(op.nom)} <span style="color:var(--muted);font-size:11px;">${nbParOp[op.id] || 0}</span></button>`
+  }).join('') + (trOpsMasques.size ? `<button class="tr-chip" onclick="afficherTousOperateursTournee()" style="border-style:dashed;">Tout afficher</button>` : '')
+
+  // Bulles visibles : opérateur affiché + bonne semaine (ou, en recherche, toutes les semaines)
+  const trouvees = new Map()
+  const visibles = trPassages.filter(p => {
+    if (p.operateur_id && trOpsMasques.has(p.operateur_id)) return false
+    if (recherche) {
+      const m = trCorrespondance(p, recherche)
+      if (m === null) return false
+      trouvees.set(p.id, m)
+      return true
+    }
+    return p.semaine === 'toutes' || p.semaine === sem.parite
+  })
+  if (recherche && visibles.length === 1) trSelection = visibles[0].id
+
+  const ordreOp = id => trOp(id)?.ordre ?? 99
+  const auj = new Date(); const jourAuj = trSemaineOffset === 0 ? ((auj.getDay() + 6) % 7) + 1 : -1
+  board.innerHTML = TR_JOURS.map((nomJour, i) => {
+    const jour = i + 1
+    const duJour = visibles.filter(p => p.jour === jour).sort((a, b) =>
+      ordreOp(a.operateur_id) - ordreOp(b.operateur_id)
+      || trNorm(trClient(a.client_id)?.ville).localeCompare(trNorm(trClient(b.client_id)?.ville))
+      || trNorm(trClient(a.client_id)?.nom).localeCompare(trNorm(trClient(b.client_id)?.nom)))
+    const date = new Date(sem.lundi); date.setDate(date.getDate() + i)
+    return `<div class="tr-col ${jour === jourAuj ? 'aujourdhui' : ''}" data-jour="${jour}"
+        ondragover="trDragOver(event)" ondragleave="trDragLeave(event)" ondrop="trDrop(event)">
+      <div class="tr-col-titre"><span>${nomJour} <span style="font-weight:500;letter-spacing:0;text-transform:none;">${date.getDate()}</span></span><span>${duJour.length}</span></div>
+      ${duJour.length ? duJour.map(p => trBulleHtml(p, trouvees.get(p.id))).join('') : `<div class="tr-vide">${recherche ? 'Aucun résultat' : 'Glisser une bulle ici'}</div>`}
+    </div>`
+  }).join('')
+
+  // Statistiques
+  const statsEl = document.getElementById('tr-stats')
+  if (statsEl) statsEl.innerHTML = recherche
+    ? `<b>${visibles.length}</b> bulle${visibles.length > 1 ? 's' : ''} trouvée${visibles.length > 1 ? 's' : ''} pour « ${esc(recherche)} » (toutes semaines confondues)`
+    : `${visibles.length} passage${visibles.length > 1 ? 's' : ''} cette semaine-là · ${trClients.length} clients · ${trOperateurs.length} opérateurs`
+
+  afficherFicheTournee()
+}
+
+function trBulleHtml(p, machinesTrouvees) {
+  const op = trOp(p.operateur_id), cl = trClient(p.client_id), k = trCouleur(op)
+  const nbM = (p.machines || []).length
+  const semaineTag = p.semaine === 'toutes' ? '' : `<span class="tr-pill" style="background:var(--surface-alt);color:var(--ink-soft);border:1px solid var(--border);">sem. ${p.semaine}s</span>`
+  const machinesHtml = machinesTrouvees && machinesTrouvees.length
+    ? `<div style="margin-top:6px;">${machinesTrouvees.map(m => `<span class="tr-machine trouve">${esc(m)}</span>`).join('')}</div>` : ''
+  return `<div class="tr-bulle ${trSelection === p.id ? 'selection' : ''}" draggable="true" data-id="${p.id}"
+      ondragstart="trDragStart(event)" ondragend="trDragEnd(event)" onclick="selectionnerBulleTournee('${p.id}')"
+      title="${esc(cl?.nom)} — cliquer pour voir la fiche, glisser pour changer de jour">
+    <div class="tr-bulle-nom">${esc(cl?.nom || 'Client inconnu')}</div>
+    ${cl?.ville ? `<div class="tr-bulle-ville">${esc(cl.ville)}</div>` : ''}
+    <div class="tr-bulle-pied">
+      <span class="tr-pill" style="background:${k[0]};color:${k[1]};">${esc(op?.nom || 'Sans opérateur')}</span>
+      <span class="tr-mini" title="${nbM} machine${nbM > 1 ? 's' : ''}">☕ ${nbM}</span>
+      ${semaineTag}
+      ${cl?.infos ? `<span class="tr-mini" title="${esc(cl.infos)}">🔑</span>` : ''}
+      ${p.note ? `<span class="tr-mini" title="${esc(p.note)}">📝</span>` : ''}
+    </div>
+    ${machinesHtml}
+  </div>`
+}
+
+function selectionnerBulleTournee(id) {
+  trSelection = trSelection === id ? null : id
+  document.querySelectorAll('#tr-board .tr-bulle').forEach(b => b.classList.toggle('selection', b.dataset.id === trSelection))
+  afficherFicheTournee()
+  if (trSelection) document.getElementById('tr-fiche')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+}
+
+function afficherFicheTournee() {
+  const el = document.getElementById('tr-fiche')
+  if (!el) return
+  const p = trPassages.find(x => x.id === trSelection)
+  if (!p) { el.innerHTML = ''; return }
+  const cl = trClient(p.client_id), op = trOp(p.operateur_id), k = trCouleur(op)
+  const aCompleter = '<span style="color:var(--muted-soft);">à compléter</span>'
+  const freq = p.semaine === 'toutes' ? 'toutes les semaines' : `semaines ${p.semaine}s`
+  const autres = trPassages.filter(x => x.client_id === p.client_id && x.id !== p.id)
+    .sort((a, b) => a.jour - b.jour)
+    .map(x => `${TR_JOURS[x.jour - 1]} · ${esc(trOp(x.operateur_id)?.nom || '—')}${x.semaine !== 'toutes' ? ` (sem. ${x.semaine}s)` : ''} · ${(x.machines || []).length} machine${(x.machines || []).length > 1 ? 's' : ''}`)
+  const recherche = trRecherche.trim()
+  const trouvees = recherche ? (trCorrespondance(p, recherche) || []) : []
+  el.innerHTML = `<div class="tr-fiche">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:16px;font-weight:700;color:var(--ink);">${esc(cl?.nom)}</div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:3px;">${TR_JOURS[p.jour - 1]} · <span class="tr-pill" style="background:${k[0]};color:${k[1]};">${esc(op?.nom || 'Sans opérateur')}</span> · ${freq}</div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-secondary" onclick="ouvrirModalPassage('${p.id}')">✏️ Modifier</button>
+        <button class="btn btn-secondary" onclick="selectionnerBulleTournee('${p.id}')" title="Fermer la fiche">✕</button>
+      </div>
+    </div>
+    <table>
+      <tr><td>📍 Adresse</td><td>${cl?.adresse ? esc(cl.adresse) : aCompleter}${cl?.ville ? ` <span style="color:var(--muted);">· ${esc(cl.ville)}</span>` : ''}</td></tr>
+      <tr><td>✉️ Mail</td><td>${cl?.email ? `<a href="mailto:${esc(cl.email)}" style="color:var(--brand-deep);">${esc(cl.email)}</a>` : aCompleter}</td></tr>
+      <tr><td>🔑 Accès</td><td>${cl?.infos ? esc(cl.infos) : '<span style="color:var(--muted-soft);">aucune info</span>'}</td></tr>
+      ${p.note ? `<tr><td>📝 Remarque</td><td>${esc(p.note)}</td></tr>` : ''}
+      <tr><td>☕ Machines</td><td>${(p.machines || []).length ? p.machines.map(m => `<span class="tr-machine ${trouvees.includes(m) ? 'trouve' : ''}">${esc(m)}</span>`).join('') : aCompleter}</td></tr>
+      ${autres.length ? `<tr><td>📅 Autres passages</td><td>${autres.join('<br>')}</td></tr>` : ''}
+    </table>
+  </div>`
+}
+
+// ── Glisser-déposer d'un jour à l'autre ──
+function trDragStart(ev) {
+  ev.dataTransfer.setData('text/plain', ev.currentTarget.dataset.id)
+  ev.dataTransfer.effectAllowed = 'move'
+  const el = ev.currentTarget
+  setTimeout(() => el.classList.add('dragging'), 0)
+}
+function trDragEnd(ev) {
+  ev.currentTarget.classList.remove('dragging')
+  document.querySelectorAll('.tr-col').forEach(c => c.classList.remove('drag-over'))
+}
+function trDragOver(ev) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; ev.currentTarget.classList.add('drag-over') }
+function trDragLeave(ev) { if (!ev.currentTarget.contains(ev.relatedTarget)) ev.currentTarget.classList.remove('drag-over') }
+async function trDrop(ev) {
+  ev.preventDefault()
+  ev.currentTarget.classList.remove('drag-over')
+  const id = ev.dataTransfer.getData('text/plain')
+  const jour = parseInt(ev.currentTarget.dataset.jour)
+  const p = trPassages.find(x => x.id === id)
+  if (!p || !jour || p.jour === jour) return
+  const ancien = p.jour
+  p.jour = jour                       // affichage immédiat, annulé si l'enregistrement échoue
+  afficherTournees()
+  const { error } = await db.from('tournee_passages').update({ jour, updated_at: new Date().toISOString() }).eq('id', id)
+  if (error) {
+    console.error(error)
+    p.jour = ancien; afficherTournees()
+    afficherToast('Déplacement non enregistré, réessaie.', true)
+    return
+  }
+  const nom = trClient(p.client_id)?.nom || ''
+  afficherToast(`${nom} : ${TR_JOURS[ancien - 1]} → ${TR_JOURS[jour - 1]}`)
+  logAction('tournee', 'tournee_passages', id, `Tournée : ${nom} déplacé du ${TR_JOURS[ancien - 1].toLowerCase()} au ${TR_JOURS[jour - 1].toLowerCase()}`)
+}
+
+// ── Formulaire de bulle ──
+function remplirListeOperateursTournee(selectionId) {
+  const sel = document.getElementById('mp-operateur')
+  sel.innerHTML = `<option value="">— Choisir —</option>` +
+    trOperateurs.map(o => `<option value="${o.id}">${esc(o.nom)}</option>`).join('') +
+    `<option value="__nouveau__">+ Nouvel opérateur…</option>`
+  sel.value = selectionId || ''
+}
+
+function ouvrirModalPassage(id = null) {
+  fermerModals()
+  const p = id ? trPassages.find(x => x.id === id) : null
+  trPassageEdition = p
+  const cl = p ? trClient(p.client_id) : null
+  document.getElementById('modal-passage-titre').textContent = p ? `Modifier la bulle — ${cl?.nom || ''}` : 'Nouvelle bulle'
+  document.getElementById('mp-clients-liste').innerHTML = [...new Set(trClients.map(c => c.nom))].sort()
+    .map(n => `<option value="${esc(n)}"></option>`).join('')
+  document.getElementById('mp-client').value  = cl?.nom || ''
+  document.getElementById('mp-ville').value   = cl?.ville || ''
+  document.getElementById('mp-adresse').value = cl?.adresse || ''
+  document.getElementById('mp-email').value   = cl?.email || ''
+  document.getElementById('mp-infos').value   = cl?.infos || ''
+  remplirListeOperateursTournee(p?.operateur_id || (trOperateurs.length === 1 ? trOperateurs[0].id : ''))
+  document.getElementById('mp-jour').value     = String(p?.jour || 1)
+  document.getElementById('mp-semaine').value  = p?.semaine || 'toutes'
+  document.getElementById('mp-machines').value = (p?.machines || []).join('\n')
+  document.getElementById('mp-note').value     = p?.note || ''
+  document.getElementById('mp-erreur').style.display = 'none'
+  document.getElementById('mp-btn-supprimer').style.display = p ? '' : 'none'
+  document.getElementById('modal-passage').classList.remove('hidden')
+  setTimeout(() => document.getElementById(p ? 'mp-machines' : 'mp-client').focus(), 50)
+}
+
+// Création : si le nom tapé est un client existant, on reprend ses coordonnées
+function remplirClientExistant() {
+  if (trPassageEdition) return
+  const nom = trNorm(document.getElementById('mp-client').value)
+  const memes = trClients.filter(c => trNorm(c.nom) === nom)
+  if (memes.length !== 1) return
+  const c = memes[0]
+  const champ = (id, v) => { const el = document.getElementById(id); if (!el.value) el.value = v || '' }
+  champ('mp-ville', c.ville); champ('mp-adresse', c.adresse); champ('mp-email', c.email); champ('mp-infos', c.infos)
+}
+
+async function ajouterOperateurTournee() {
+  const sel = document.getElementById('mp-operateur')
+  const nom = (prompt('Nom du nouvel opérateur :') || '').trim()
+  if (!nom) { sel.value = ''; return }
+  const existe = trOperateurs.find(o => trNorm(o.nom) === trNorm(nom))
+  if (existe) { remplirListeOperateursTournee(existe.id); return }
+  const pris = new Set(trOperateurs.map(o => o.couleur))
+  const couleur = Object.keys(TR_COULEURS).find(c => !pris.has(c)) || 'gray'
+  const ordre = Math.max(-1, ...trOperateurs.map(o => o.ordre)) + 1
+  const { data, error } = await db.from('tournee_operateurs').insert({ nom, couleur, ordre }).select().single()
+  if (error) { alert('Impossible de créer cet opérateur : ' + error.message); sel.value = ''; return }
+  trOperateurs.push(data)
+  remplirListeOperateursTournee(data.id)
+}
+
+async function sauvegarderPassage() {
+  const err = document.getElementById('mp-erreur')
+  const montrer = m => { err.textContent = m; err.style.display = 'block' }
+  const nom     = document.getElementById('mp-client').value.trim()
+  const ville   = document.getElementById('mp-ville').value.trim() || null
+  const adresse = document.getElementById('mp-adresse').value.trim() || null
+  const email   = document.getElementById('mp-email').value.trim() || null
+  const infos   = document.getElementById('mp-infos').value.trim() || null
+  const operateur_id = document.getElementById('mp-operateur').value
+  const jour    = parseInt(document.getElementById('mp-jour').value)
+  const semaine = document.getElementById('mp-semaine').value
+  const note    = document.getElementById('mp-note').value.trim() || null
+  const machines = [...new Set(document.getElementById('mp-machines').value.split(/[\n\/;]+/).map(m => m.trim()).filter(Boolean))]
+  if (!nom) return montrer('Le nom du client est obligatoire.')
+  if (!operateur_id || operateur_id === '__nouveau__') return montrer('Choisis un opérateur.')
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return montrer('Adresse mail invalide.')
+
+  const btn = document.getElementById('mp-btn-enregistrer')
+  btn.disabled = true
+  try {
+    const maintenant = new Date().toISOString()
+    const coord = { nom, ville, adresse, email, infos, updated_at: maintenant }
+    let clientId
+    if (trPassageEdition) {
+      clientId = trPassageEdition.client_id
+      const { error } = await db.from('tournee_clients').update(coord).eq('id', clientId)
+      if (error) throw error
+    } else {
+      // Client existant (même nom et même ville) → on le réutilise, sinon on le crée
+      const existant = trClients.find(c => trNorm(c.nom) === trNorm(nom) && trNorm(c.ville) === trNorm(ville))
+      if (existant) {
+        clientId = existant.id
+        const { error } = await db.from('tournee_clients').update(coord).eq('id', clientId)
+        if (error) throw error
+      } else {
+        const { data, error } = await db.from('tournee_clients').insert(coord).select().single()
+        if (error) throw error
+        clientId = data.id
+      }
+    }
+    const passage = { client_id: clientId, operateur_id, jour, semaine, machines, note, updated_at: maintenant }
+    if (trPassageEdition) {
+      const { error } = await db.from('tournee_passages').update(passage).eq('id', trPassageEdition.id)
+      if (error) throw error
+      logAction('tournee', 'tournee_passages', trPassageEdition.id, `Tournée : bulle « ${nom} » modifiée (${TR_JOURS[jour - 1].toLowerCase()}, ${trOp(operateur_id)?.nom || ''})`)
+    } else {
+      const { data, error } = await db.from('tournee_passages').insert(passage).select().single()
+      if (error) throw error
+      trSelection = data.id
+      // On vide la recherche pour que la nouvelle bulle soit visible sur le planning
+      trRecherche = ''
+      const champ = document.getElementById('tr-recherche'); if (champ) champ.value = ''
+      logAction('tournee', 'tournee_passages', data.id, `Tournée : nouvelle bulle « ${nom} » (${TR_JOURS[jour - 1].toLowerCase()}, ${trOp(operateur_id)?.nom || ''})`)
+    }
+    btn.disabled = false
+    fermerModals()
+    afficherToast('Bulle enregistrée')
+    chargerTournees()
+  } catch (e) {
+    console.error(e)
+    btn.disabled = false
+    montrer('Enregistrement impossible, réessaie dans un instant.')
+  }
+}
+
+async function supprimerPassage() {
+  const p = trPassageEdition
+  if (!p) return
+  const nom = trClient(p.client_id)?.nom || ''
+  if (!confirm(`Supprimer la bulle « ${nom} » du ${TR_JOURS[p.jour - 1].toLowerCase()} ?`)) return
+  const { error } = await db.from('tournee_passages').delete().eq('id', p.id)
+  if (error) { alert('Suppression impossible.'); return }
+  // Client sans plus aucun passage : on le retire aussi (évite les doublons dans la liste)
+  if (!trPassages.some(x => x.client_id === p.client_id && x.id !== p.id)) {
+    await db.from('tournee_clients').delete().eq('id', p.client_id)
+  }
+  logAction('tournee', 'tournee_passages', p.id, `Tournée : bulle « ${nom} » du ${TR_JOURS[p.jour - 1].toLowerCase()} supprimée`)
+  if (trSelection === p.id) trSelection = null
+  fermerModals()
+  chargerTournees()
+}
+
+// Démarrage (en dernier : toutes les fonctions et variables existent)
+demarrerApplication()
