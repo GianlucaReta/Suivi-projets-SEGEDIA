@@ -395,6 +395,8 @@
         <h1 class="page-title">Archives</h1>
       </div>
       <div class="projets-grid" id="liste-archives"></div>
+      <h2 style="font-size:15px;font-weight:700;margin:28px 0 12px;">Contrats récurrents archivés</h2>
+      <div id="liste-contrats-archives" style="display:flex;flex-direction:column;gap:8px;max-width:720px;"></div>
     </div>
 
     <!-- FACTURES -->
@@ -573,8 +575,20 @@
         <label>Notes</label>
         <textarea id="cr-notes" rows="2" placeholder="Informations complémentaires..." style="width:100%;box-sizing:border-box;resize:vertical;"></textarea>
       </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Début du contrat <span style="font-weight:400;color:var(--muted);text-transform:none;">(facultatif)</span></label>
+          <input type="date" id="cr-date-debut" style="width:100%;box-sizing:border-box;">
+        </div>
+        <div class="form-group">
+          <label>Fin du contrat <span style="font-weight:400;color:var(--muted);text-transform:none;">(facultatif)</span></label>
+          <input type="date" id="cr-date-fin" style="width:100%;box-sizing:border-box;">
+        </div>
+      </div>
+      <p style="font-size:11.5px;color:var(--muted);margin:-4px 0 0;">Client désinstallé ? Indique la date de fin : les mois jusqu'à cette date restent à facturer, plus rien n'apparaît après.</p>
     </div>
-    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;">
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;flex-wrap:wrap;">
+      <button id="cr-btn-archiver" onclick="archiverContrat()" class="btn-secondary" style="margin-right:auto;color:var(--danger);display:none;">🗄 Archiver</button>
       <button onclick="fermerModals()" class="btn-secondary">Annuler</button>
       <button onclick="sauvegarderContratRecurrent()" class="btn-primary">Enregistrer</button>
     </div>

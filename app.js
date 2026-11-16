@@ -652,7 +652,23 @@ async function ouvrirDetailProjetId(id) {
 }
 
 // --- ARCHIVES ---
+async function chargerContratsArchives() {
+  const el = document.getElementById('liste-contrats-archives')
+  if (!el) return
+  const { data } = await db.from('contrats_recurrents').select('id,client,numero_machine,type_prestation,frequence').eq('actif', false).order('client')
+  if (!data || !data.length) { el.innerHTML = '<p style="color:var(--text-muted);">Aucun contrat récurrent archivé.</p>'; return }
+  el.innerHTML = data.map(c => `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);opacity:0.85;">
+      <div>
+        <div style="font-weight:600;font-size:13px;">${c.client}${c.numero_machine ? `<span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:6px;">#${c.numero_machine}</span>` : ''}</div>
+        <div style="font-size:11px;color:var(--muted);">${typeLabel(c.type_prestation)} · ${c.frequence}</div>
+      </div>
+      <button class="btn btn-secondary" style="font-size:0.8rem;white-space:nowrap;" onclick="restaurerContrat('${c.id}')">↩ Restaurer</button>
+    </div>`).join('')
+}
+
 async function chargerArchives() {
+  chargerContratsArchives()
   const { data } = await db.from('projets').select('*').eq('archive', true).order('created_at', { ascending: false })
   const container = document.getElementById('liste-archives')
   if (!data || !data.length) {
@@ -4404,6 +4420,29 @@ function periodeMensuelle(annee, mois) {
   return `${annee}-${String(mois).padStart(2,'0')}`
 }
 
+// Premier et dernier jour d'une période ('2026-10' ou '2026-Q4') au format AAAA-MM-JJ
+function bornesPeriode(periode) {
+  const annee = parseInt(periode.slice(0, 4))
+  let moisDebut, moisFin
+  if (periode.includes('-Q')) {
+    const t = parseInt(periode.split('-Q')[1])
+    moisDebut = (t - 1) * 3 + 1; moisFin = t * 3
+  } else {
+    moisDebut = moisFin = parseInt(periode.split('-')[1])
+  }
+  const dernierJour = new Date(annee, moisFin, 0).getDate()
+  const pad = n => String(n).padStart(2, '0')
+  return [`${annee}-${pad(moisDebut)}-01`, `${annee}-${pad(moisFin)}-${pad(dernierJour)}`]
+}
+
+// Le contrat est-il en vigueur sur cette période ? (date de début / date de fin facultatives)
+function contratCouvrePeriode(c, periode) {
+  const [debut, fin] = bornesPeriode(periode)
+  if (c.date_debut && fin < c.date_debut) return false
+  if (c.date_fin && debut > c.date_fin) return false
+  return true
+}
+
 function statutPeriode(periode, anneeAff) {
   // Logique : on facture le mois/trimestre PRÉCÉDENT (le mois en cours n'est pas encore terminé)
   // Ex: en juin → on traite mai ; en T2 (avr-juin) → on traite T1
@@ -4449,6 +4488,11 @@ async function chargerRecurrents() {
   ])
 
   if (!contrats) return
+  // Contrats terminés avant l'année affichée ou démarrant après : masqués
+  for (let i = contrats.length - 1; i >= 0; i--) {
+    const c = contrats[i]
+    if ((c.date_fin && c.date_fin < `${annee}-01-01`) || (c.date_debut && c.date_debut > `${annee}-12-31`)) contrats.splice(i, 1)
+  }
 
   // Charger les relevés de l'année
   const ids = contrats.map(c => c.id)
@@ -4490,6 +4534,7 @@ function mettreAJourBadgeRecurrents(contrats, relevesMap, annee) {
       ? Array.from({length: moisActionnable}, (_, i) => periodeMensuelle(annee, i + 1))
       : Array.from({length: trimActionnable}, (_, i) => periodeTrimestrielle(annee, i + 1))
     for (const p of periodes) {
+      if (!contratCouvrePeriode(c, p)) continue
       const releve = relevesMap[c.id]?.[p]
       if (!releve || !releve.fait) nbRetard++
     }
@@ -4536,6 +4581,9 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
     if (statut === 'futur') {
       return `<td style="padding:8px 4px;text-align:center;${colBorder}background:var(--surface-alt);min-width:44px;"></td>`
     }
+    if (!releve && !contratCouvrePeriode(contrat, periode)) {
+      return `<td style="padding:8px 4px;text-align:center;${colBorder}background:var(--surface-alt);min-width:44px;color:var(--muted);font-size:12px;" title="Hors contrat">–</td>`
+    }
     if (fait) {
       const dateStr = releve.date_traitement ? `\nTraité le ${formatDate(releve.date_traitement)}` : ''
       const commentaire = releve.commentaire ? `\n${releve.commentaire}` : ''
@@ -4569,6 +4617,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
       ? Array.from({length: moisActionnable}, (_, i) => periodeMensuelle(annee, i + 1))
       : Array.from({length: trimActionnable}, (_, i) => periodeTrimestrielle(annee, i + 1))
     return periodes.some(p => {
+      if (!contratCouvrePeriode(c, p)) return false
       const r = relevesMap[c.id]?.[p]
       return !r?.fait
     })
@@ -4582,7 +4631,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
       ? mensuel.filter(c => {
           const p = periodeMensuelle(annee, moisActionnable)
           const r = relevesMap[c.id]?.[p]
-          return !r?.fait && !r?.en_attente
+          return contratCouvrePeriode(c, p) && !r?.fait && !r?.en_attente
         })
       : []
 
@@ -4591,7 +4640,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
       ? trimest.filter(c => {
           const p = periodeTrimestrielle(annee, trimActionnable)
           const r = relevesMap[c.id]?.[p]
-          return !r?.fait && !r?.en_attente
+          return contratCouvrePeriode(c, p) && !r?.fait && !r?.en_attente
         })
       : []
 
@@ -4615,14 +4664,14 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
       for (let m = 1; m < moisActionnable; m++) {
         const p = periodeMensuelle(annee, m)
         const r = relevesMap[c.id]?.[p]
-        if (!r?.fait && !r?.en_attente) retardItems.push({ contrat: c, periode: p })
+        if (contratCouvrePeriode(c, p) && !r?.fait && !r?.en_attente) retardItems.push({ contrat: c, periode: p })
       }
     }
     for (const c of trimest) {
       for (let t = 1; t < trimActionnable; t++) {
         const p = periodeTrimestrielle(annee, t)
         const r = relevesMap[c.id]?.[p]
-        if (!r?.fait && !r?.en_attente) retardItems.push({ contrat: c, periode: p })
+        if (contratCouvrePeriode(c, p) && !r?.fait && !r?.en_attente) retardItems.push({ contrat: c, periode: p })
       }
     }
 
@@ -4759,6 +4808,8 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
       <td style="padding:8px 12px;border:1px solid var(--border-soft);white-space:nowrap;cursor:pointer;position:sticky;left:0;z-index:2;background:var(--surface);min-width:170px;" onclick="ouvrirHistoriqueContrat('${c.id}')">
         <div style="font-weight:600;font-size:13px;color:var(--brand);">${c.client}${c.numero_machine ? `<span style="font-size:10px;color:var(--muted);font-weight:400;margin-left:5px;">#${c.numero_machine}</span>` : ''}</div>
         <div style="font-size:10.5px;color:var(--muted);">${typeLabel(c.type_prestation)}</div>
+        ${c.date_fin ? `<div style="font-size:10px;color:var(--danger);font-weight:600;margin-top:2px;">⏹ Fin le ${formatDate(c.date_fin)}</div>` : ''}
+        ${c.date_debut && c.date_debut.slice(0, 4) == annee ? `<div style="font-size:10px;color:var(--success);font-weight:600;margin-top:2px;">▶ Début le ${formatDate(c.date_debut)}</div>` : ''}
         ${assigneEl}
       </td>
       ${cells}
@@ -4886,6 +4937,9 @@ async function ouvrirModalContratRecurrent(id = null) {
   document.getElementById('cr-prix-fixe').value = ''
   document.getElementById('cr-prix-unite').value= ''
   document.getElementById('cr-notes').value     = ''
+  document.getElementById('cr-date-debut').value = ''
+  document.getElementById('cr-date-fin').value   = ''
+  document.getElementById('cr-btn-archiver').style.display = id ? '' : 'none'
   document.querySelector('input[name="cr-frequence"][value="mensuelle"]').checked = true
   document.getElementById('cr-compteurs-list').innerHTML = ''
   // Décocher tous les assignés
@@ -4901,6 +4955,8 @@ async function ouvrirModalContratRecurrent(id = null) {
       document.getElementById('cr-prix-fixe').value = contrat.prix_fixe ?? ''
       document.getElementById('cr-prix-unite').value= contrat.prix_unite ?? ''
       document.getElementById('cr-notes').value     = contrat.notes || ''
+      document.getElementById('cr-date-debut').value = contrat.date_debut || ''
+      document.getElementById('cr-date-fin').value   = contrat.date_fin || ''
       const radioFreq = document.querySelector(`input[name="cr-frequence"][value="${contrat.frequence}"]`)
       if (radioFreq) radioFreq.checked = true
       ;(contrat.compteurs || []).forEach(cpt => ajouterLigneCompteur(cpt.nom, cpt.prix))
@@ -4950,7 +5006,13 @@ async function sauvegarderContratRecurrent() {
   // Récupérer les assignés cochés
   const assignes = Array.from(document.querySelectorAll('#cr-assignes-list input[type="checkbox"]:checked')).map(cb => cb.value)
 
+  const dateDebut = document.getElementById('cr-date-debut').value || null
+  const dateFin   = document.getElementById('cr-date-fin').value || null
+  if (dateDebut && dateFin && dateFin < dateDebut) { alert('La date de fin ne peut pas être avant la date de début.'); return }
+
   const payload = {
+    date_debut:       dateDebut,
+    date_fin:         dateFin,
     client,
     numero_machine:   document.getElementById('cr-machine').value.trim() || null,
     type_prestation:  document.getElementById('cr-type').value,
@@ -4971,6 +5033,8 @@ async function sauvegarderContratRecurrent() {
   }
 
   if (error) { alert('Erreur : ' + error.message); return }
+  logAction('contrat', 'contrats_recurrents', window._contratEditionId || null,
+    `${window._contratEditionId ? 'Contrat modifié' : 'Nouveau contrat'} : ${client}${dateFin ? ` (fin le ${formatDate(dateFin)})` : ''}`)
   fermerModals()
   chargerRecurrents()
 }
@@ -5133,8 +5197,18 @@ async function ouvrirHistoriqueContrat(id) {
 // ── Archiver un contrat ───────────────────────────────────
 
 async function archiverContrat(id) {
-  if (!confirm('Archiver ce contrat ? Il n\'apparaîtra plus dans la grille.')) return
+  id = id || window._contratEditionId
+  if (!id) return
+  if (!confirm('Archiver ce contrat ? Il disparaît tout de suite de la grille (récupérable dans Archives).\n\nPour un client qui s\'arrête normalement, préfère plutôt une date de fin : les derniers mois restent à facturer.')) return
+  const { data: c } = await db.from('contrats_recurrents').select('client').eq('id', id).single()
   await db.from('contrats_recurrents').update({ actif: false }).eq('id', id)
+  logAction('contrat', 'contrats_recurrents', id, `Contrat archivé : ${c?.client || ''}`)
   fermerModals()
   chargerRecurrents()
+}
+
+async function restaurerContrat(id) {
+  await db.from('contrats_recurrents').update({ actif: true }).eq('id', id)
+  logAction('contrat', 'contrats_recurrents', id, 'Contrat restauré depuis les archives')
+  chargerArchives()
 }
