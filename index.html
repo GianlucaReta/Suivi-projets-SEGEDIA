@@ -26,6 +26,23 @@
   </div>
 </div>
 
+<!-- ── Choix du code personnel ─────────────────────────── -->
+<style>#choix-code-screen input::placeholder{letter-spacing:normal;font-family:Inter,system-ui,sans-serif;font-size:14px;}</style>
+<div id="choix-code-screen" style="display:none;position:fixed;inset:0;background:rgba(245,244,241,0.97);z-index:10000;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:16px;padding:36px 32px;box-shadow:0 4px 32px rgba(0,0,0,0.10);width:320px;max-width:calc(100vw - 32px);box-sizing:border-box;text-align:center;">
+    <div style="font-weight:700;font-size:18px;color:#1a1a1a;margin-bottom:6px;">Choisis ton code</div>
+    <div id="choix-code-intro" style="font-size:13px;color:#6b7280;margin-bottom:22px;line-height:1.5;">6 chiffres, que tu taperas à chaque connexion.</div>
+    <input id="choix-code-1" type="password" inputmode="numeric" maxlength="6" placeholder="Nouveau code" autocomplete="new-password"
+      style="width:100%;box-sizing:border-box;text-align:center;font-size:18px;letter-spacing:0.25em;padding:11px;border:2px solid #e5e7eb;border-radius:10px;outline:none;font-family:monospace;margin-bottom:10px;" />
+    <input id="choix-code-2" type="password" inputmode="numeric" maxlength="6" placeholder="Confirme le code" autocomplete="new-password"
+      style="width:100%;box-sizing:border-box;text-align:center;font-size:18px;letter-spacing:0.25em;padding:11px;border:2px solid #e5e7eb;border-radius:10px;outline:none;font-family:monospace;"
+      onkeydown="if(event.key==='Enter')enregistrerNouveauCode()" />
+    <div id="choix-code-erreur" style="color:#ef4444;font-size:13px;margin-top:12px;display:none;"></div>
+    <button onclick="enregistrerNouveauCode()" id="choix-code-btn" style="margin-top:18px;width:100%;padding:11px;background:#EE7E24;color:#fff;border:none;border-radius:10px;font-weight:600;font-size:14px;cursor:pointer;font-family:inherit;">Enregistrer mon code</button>
+    <button onclick="fermerChoixCode()" id="choix-code-annuler" style="margin-top:8px;width:100%;padding:9px;background:none;color:#6b7280;border:none;font-size:13px;cursor:pointer;font-family:inherit;">Annuler</button>
+  </div>
+</div>
+
 <script>
 (function() {
   // Code de secours admin (Gianluca, hash de 030621). Permet la connexion même si BDD pas migrée.
@@ -38,6 +55,54 @@
     return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
   }
 
+  // ── Choix / changement du code personnel ──
+  window.ouvrirChoixCode = function(obligatoire) {
+    document.getElementById('choix-code-1').value = '';
+    document.getElementById('choix-code-2').value = '';
+    document.getElementById('choix-code-erreur').style.display = 'none';
+    document.getElementById('choix-code-annuler').style.display = obligatoire ? 'none' : '';
+    document.getElementById('choix-code-intro').textContent = obligatoire
+      ? 'Bienvenue ! Ton code actuel est provisoire : choisis ton propre code à 6 chiffres.'
+      : '6 chiffres, que tu taperas à chaque connexion.';
+    document.getElementById('choix-code-screen').style.display = 'flex';
+    setTimeout(() => document.getElementById('choix-code-1').focus(), 50);
+  };
+  window.fermerChoixCode = function() {
+    document.getElementById('choix-code-screen').style.display = 'none';
+  };
+  window.enregistrerNouveauCode = async function() {
+    const c1 = document.getElementById('choix-code-1').value.trim();
+    const c2 = document.getElementById('choix-code-2').value.trim();
+    const err = document.getElementById('choix-code-erreur');
+    const montrer = m => { err.textContent = m; err.style.display = 'block'; };
+    const userId = localStorage.getItem('suivi_user_id');
+    if (!userId) return montrer('Reconnecte-toi d\'abord avec ton code actuel.');
+    if (!/^\d{6}$/.test(c1)) return montrer('Le code doit faire exactement 6 chiffres.');
+    if (c1 !== c2) return montrer('Les deux codes ne sont pas identiques.');
+    if (/^(\d)\1{5}$/.test(c1) || '0123456789'.includes(c1) || '9876543210'.includes(c1)) return montrer('Code trop simple, choisis-en un autre.');
+    if (await sha256(c1) === FALLBACK_HASH) return montrer('Ce code n\'est pas disponible, choisis-en un autre.');
+    const btn = document.getElementById('choix-code-btn');
+    btn.disabled = true;
+    try {
+      const h = { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' };
+      const dejaPris = await (await fetch(`${SB_URL}/rest/v1/employes?code_pin=eq.${c1}&id=neq.${encodeURIComponent(userId)}&select=id`, { headers: h })).json();
+      if (Array.isArray(dejaPris) && dejaPris.length) { btn.disabled = false; return montrer('Ce code n\'est pas disponible, choisis-en un autre.'); }
+      const r = await fetch(`${SB_URL}/rest/v1/employes?id=eq.${encodeURIComponent(userId)}`, {
+        method: 'PATCH', headers: { ...h, 'Prefer': 'return=representation' },
+        body: JSON.stringify({ code_pin: c1, pin_a_changer: false })
+      });
+      const rows = await r.json();
+      if (!r.ok || !Array.isArray(rows) || rows.length !== 1) throw new Error('maj');
+      localStorage.removeItem('suivi_pin_a_changer');
+      document.getElementById('choix-code-screen').style.display = 'none';
+      alert('Ton code a été enregistré. Utilise-le à ta prochaine connexion.');
+      if (window._rechargerApresCode) window.location.reload();
+    } catch (e) {
+      montrer('Enregistrement impossible, réessaie dans un instant.');
+    }
+    btn.disabled = false;
+  };
+
   window.verifierCode = async function() {
     const val = document.getElementById('login-code').value;
     if (val.length !== 6) return;
@@ -48,7 +113,7 @@
 
     // 1. Chercher un employé avec ce code PIN dans la base
     try {
-      const r = await fetch(`${SB_URL}/rest/v1/employes?code_pin=eq.${encodeURIComponent(val)}&select=id,nom,equipe,role,acces_factures`, {
+      const r = await fetch(`${SB_URL}/rest/v1/employes?code_pin=eq.${encodeURIComponent(val)}&select=id,nom,equipe,role,acces_factures,pin_a_changer`, {
         headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
       });
       const users = await r.json();
@@ -62,6 +127,12 @@
         localStorage.setItem('suivi_acces_factures', u.acces_factures ? '1' : '0');
         welEl.textContent = `Bonjour ${u.nom}`;
         welEl.style.display = 'block';
+        if (u.pin_a_changer) {
+          localStorage.setItem('suivi_pin_a_changer', '1');
+          window._rechargerApresCode = true;
+          setTimeout(() => ouvrirChoixCode(true), 500);
+          return;
+        }
         setTimeout(() => { document.getElementById('login-screen').style.display = 'none'; window.location.reload(); }, 600);
         return;
       }
@@ -83,6 +154,8 @@
 
   if (localStorage.getItem('sp_auth') !== '1') {
     document.getElementById('login-screen').style.display = 'flex';
+  } else if (localStorage.getItem('suivi_pin_a_changer') === '1') {
+    ouvrirChoixCode(true);
   }
 })();
 </script>
@@ -181,6 +254,7 @@
       </div>
       <div id="menu-utilisateur" style="display:none;position:absolute;bottom:calc(100% + 4px);left:12px;right:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.12);overflow:hidden;z-index:50;">
         <button onclick="ouvrirSelecteurUtilisateur();fermerMenuUtilisateur()" style="width:100%;text-align:left;padding:10px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--ink);font-family:inherit;border-bottom:1px solid var(--border-soft);">Changer de profil</button>
+        <button onclick="fermerMenuUtilisateur();ouvrirChoixCode(false)" style="width:100%;text-align:left;padding:10px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--ink);font-family:inherit;border-bottom:1px solid var(--border-soft);">Changer mon code</button>
         <button onclick="if(confirm('Se déconnecter ?'))deconnexion()" style="width:100%;text-align:left;padding:10px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--danger);font-family:inherit;">Se déconnecter</button>
       </div>
     </div>

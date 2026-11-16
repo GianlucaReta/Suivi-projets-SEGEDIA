@@ -136,6 +136,7 @@ function deconnexion() {
   localStorage.removeItem('suivi_user_equipe')
   localStorage.removeItem('suivi_user_role')
   localStorage.removeItem('suivi_acces_factures')
+  localStorage.removeItem('suivi_pin_a_changer')
   window.location.reload()
 }
 
