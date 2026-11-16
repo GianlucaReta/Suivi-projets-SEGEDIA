@@ -1,9 +1,14 @@
 const SUPABASE_URL = 'https://guzbikygjwsvztlthmnr.supabase.co'
 const SUPABASE_KEY = 'sb_publishable_BqknWAgxurkaidzDdyQ60g_GnlnIcYk'
-const SUPABASE_ANON_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd1emJpa3lnandzdnp0bHRobW5yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA3MzUsImV4cCI6MjA5Mjk2NjczNX0.U7y7458ZAoDBbuVjSbYuDg7zmt77mbLvc1gxEtq9MK8'
+// Client créé dans index.html (il porte la session de connexion)
+const db = window.db || supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
 
-const { createClient } = supabase
-const db = createClient(SUPABASE_URL, SUPABASE_KEY)
+// En-têtes pour appeler une fonction serveur au nom de la personne connectée
+async function enteteSession() {
+  const { data } = await db.auth.getSession()
+  const jeton = data.session?.access_token
+  return { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, ...(jeton ? { 'Authorization': `Bearer ${jeton}` } : {}) }
+}
 
 // ── OUTILS COMMUNS ───────────────────────────────────────
 // Date du jour au format AAAA-MM-JJ, à l'heure française (toISOString donne
@@ -162,14 +167,9 @@ function estAdmin()        { return utilisateurRole === 'admin' }
 function estCommercial()   { return utilisateurRole === 'commercial' || utilisateurRole === 'admin' }
 function estOperationnel() { return utilisateurRole === 'operationnel' || estCommercial() }
 
-function deconnexion() {
-  localStorage.removeItem('sp_auth')
-  localStorage.removeItem('suivi_user_id')
-  localStorage.removeItem('suivi_user_nom')
-  localStorage.removeItem('suivi_user_equipe')
-  localStorage.removeItem('suivi_user_role')
-  localStorage.removeItem('suivi_acces_factures')
-  localStorage.removeItem('suivi_pin_a_changer')
+async function deconnexion() {
+  try { await db.auth.signOut() } catch (e) { console.error(e) }
+  if (window.effacerProfilLocal) window.effacerProfilLocal()
   window.location.reload()
 }
 
@@ -283,7 +283,7 @@ async function ouvrirSelecteurUtilisateur() {
   // à n'importe qui : réservé aux administrateurs depuis l'arrivée des codes personnels.
   if (!estAdmin()) { alert('Pour utiliser un autre profil, déconnecte-toi puis entre le code de cette personne.'); return }
   document.getElementById('modal-selecteur-user').classList.remove('hidden')
-  const { data } = await db.from('employes').select('*').order('nom')
+  const { data } = await db.from('employes').select('id,nom,equipe,email,telephone,role,acces_factures,pin_a_changer,a_un_code').order('nom')
   const container = document.getElementById('liste-selecteur-users')
   if (!container || !data) return
   container.innerHTML = data.map(e => {
@@ -1592,7 +1592,7 @@ function afficherKanbanGlobal(taches, aujourd_hui) {
 
 // --- EMPLOYES ---
 async function chargerEmployes() {
-  const { data } = await db.from('employes').select('*').order('nom')
+  const { data } = await db.from('employes').select('id,nom,equipe,email,telephone,role,acces_factures,pin_a_changer,a_un_code').order('nom')
   tousLesEmployes = data || []
   const container = document.getElementById('liste-employes')
   if (container) {
@@ -1616,7 +1616,7 @@ async function chargerEmployes() {
           <div class="employe-equipe">${e.equipe}</div>
           ${e.email ? `<div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px;">${e.email}</div>` : ''}
           ${e.telephone ? `<div style="font-size:0.72rem; color:var(--text-muted);">${e.telephone}</div>` : ''}
-          ${estAdmin() && e.code_pin ? `<div style="font-size:0.7rem;color:var(--success);margin-top:4px;font-family:monospace;">🔑 PIN configuré</div>` : ''}
+          ${estAdmin() ? (e.a_un_code ? `<div style="font-size:0.7rem;color:var(--success);margin-top:4px;">🔑 Code configuré${e.pin_a_changer ? ' (provisoire)' : ''}</div>` : `<div style="font-size:0.7rem;color:var(--danger);margin-top:4px;">Pas de code : ne peut pas se connecter</div>`) : ''}
         </div>
       `).join('')
     }
@@ -1650,7 +1650,11 @@ function ouvrirFicheEmploye(id) {
   const inputRole = document.getElementById('input-employe-role')
   const inputPin  = document.getElementById('input-employe-pin')
   if (inputRole) inputRole.value = e.role || 'operationnel'
-  if (inputPin)  inputPin.value  = e.code_pin || ''
+  if (inputPin)  inputPin.value  = ''
+  const etatPin = document.getElementById('employe-pin-etat')
+  if (etatPin) etatPin.textContent = e.a_un_code
+    ? (e.pin_a_changer ? 'Code provisoire en place : la personne choisira le sien à la connexion.' : 'La personne a son propre code (il n\'est jamais affiché).')
+    : 'Aucun code : cette personne ne peut pas se connecter.'
 
   document.getElementById('modal-employe').classList.remove('hidden')
 }
@@ -1739,6 +1743,8 @@ function ouvrirModalEmploye() {
   const inputPin  = document.getElementById('input-employe-pin')
   if (inputRole) inputRole.value = 'operationnel'
   if (inputPin)  inputPin.value  = ''
+  const etatPinN = document.getElementById('employe-pin-etat')
+  if (etatPinN) etatPinN.textContent = 'Donne un code provisoire : la personne choisira le sien à sa première connexion.'
   document.getElementById('btn-supprimer-employe').style.display = 'none'
   document.getElementById('modal-employe').classList.remove('hidden')
 }
@@ -1886,7 +1892,7 @@ async function notifierChangement(type, action, titre, contexte, destinataires) 
   try {
     await fetch(`${SUPABASE_URL}/functions/v1/notifier-equipe`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_JWT}` },
+      headers: await enteteSession(),
       body: JSON.stringify({ to: emails, subject, html })
     })
   } catch (e) { console.error('notifierChangement email error', e) }
@@ -2004,22 +2010,26 @@ async function sauvegarderEmploye() {
       // acces_factures s'ajuste automatiquement selon le rôle
       payload.acces_factures = (role === 'admin' || role === 'commercial')
     }
-    if (pin !== undefined) {
-      if (pin && !/^\d{6}$/.test(pin)) { alert('Le code PIN doit faire exactement 6 chiffres.'); return }
-      payload.code_pin = pin || null
-    }
+    if (pin && !/^\d{6}$/.test(pin)) { alert('Le code doit faire exactement 6 chiffres.'); return }
   }
+  const pin = estAdmin() ? (document.getElementById('input-employe-pin')?.value.trim() || '') : ''
 
   let res
   if (id) {
-    res = await db.from('employes').update(payload).eq('id', id)
+    res = await db.from('employes').update(payload).eq('id', id).select('id').single()
   } else {
-    res = await db.from('employes').insert(payload)
+    res = await db.from('employes').insert(payload).select('id').single()
   }
   if (res.error) {
-    if (res.error.code === '23505') alert('Ce code PIN est déjà utilisé par un autre utilisateur.')
-    else alert('Erreur : ' + res.error.message)
+    alert(res.error.code === '42501' || /row-level security/i.test(res.error.message)
+      ? 'Seul un administrateur peut modifier l\'équipe.'
+      : 'Erreur : ' + res.error.message)
     return
+  }
+  // Code provisoire : chiffré et vérifié par le serveur (jamais stocké en clair)
+  if (pin) {
+    const { error } = await db.rpc('definir_code_employe', { p_employe: res.data.id, p_code: pin })
+    if (error) { alert('Membre enregistré, mais le code n\'a pas été accepté : ' + error.message); chargerEmployes(); return }
   }
   fermerModals()
   chargerEmployes()
@@ -3162,10 +3172,7 @@ async function envoyerRelanceEmail() {
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/envoyer-relance`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_JWT}`,
-      },
+      headers: await enteteSession(),
       body: JSON.stringify({ to: email, subject: sujet, html, ids, type: window._relanceData?.type || 'r1' }),
     })
     const data = await res.json()
@@ -5651,6 +5658,33 @@ async function supprimerPassage() {
   fermerModals()
   chargerTournees()
 }
+
+// ── MISE À JOUR AUTOMATIQUE ────────────────────────────────
+// Chaque publication change le numéro de version de app.js dans index.html.
+// Toutes les 5 minutes, on compare avec la version chargée : si elle a changé,
+// un bandeau propose de recharger (fini le Cmd+Maj+R).
+function versionChargee() {
+  const src = document.getElementById('script-app')?.getAttribute('src') || ''
+  return (src.match(/[?&]v=([^&]+)/) || [])[1] || null
+}
+async function verifierNouvelleVersion() {
+  const actuelle = versionChargee()
+  if (!actuelle || document.getElementById('bandeau-maj')) return
+  try {
+    const html = await (await fetch(`index.html?t=${Date.now()}`, { cache: 'no-store' })).text()
+    const enLigne = (html.match(/app\.js\?v=([^"&]+)/) || [])[1]
+    if (enLigne && enLigne !== actuelle) {
+      const b = document.createElement('div')
+      b.id = 'bandeau-maj'
+      b.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:9997;background:var(--ink);color:#fff;padding:10px 14px 10px 18px;border-radius:10px;font-size:13px;display:flex;align-items:center;gap:12px;box-shadow:0 6px 24px rgba(0,0,0,0.2);'
+      b.innerHTML = `Une nouvelle version de SuiviPro est disponible.
+        <button onclick="location.reload()" style="background:var(--brand);color:#fff;border:none;border-radius:6px;padding:6px 12px;font-weight:600;cursor:pointer;font-family:inherit;">Mettre à jour</button>`
+      document.body.appendChild(b)
+    }
+  } catch (e) { /* hors ligne : on réessaiera */ }
+}
+setInterval(verifierNouvelleVersion, 5 * 60 * 1000)
+document.addEventListener('visibilitychange', () => { if (!document.hidden) verifierNouvelleVersion() })
 
 // Démarrage (en dernier : toutes les fonctions et variables existent)
 demarrerApplication()

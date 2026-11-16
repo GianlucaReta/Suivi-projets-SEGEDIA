@@ -7,8 +7,8 @@
   <link rel="icon" type="image/jpeg" href="segedia-logo.jpeg" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js"></script>
+  <link rel="stylesheet" href="style.css?v=20261117a" />
 </head>
 <body>
 
@@ -45,14 +45,17 @@
 
 <script>
 (function() {
-  // Code de secours admin (Gianluca, hash de 030621). Permet la connexion même si BDD pas migrée.
-  const FALLBACK_HASH = 'a2a29b811cff839c6d3e337bb3ccd9e04b25d2561315154216b9b4cb5ae1603b';
   const SB_URL = 'https://guzbikygjwsvztlthmnr.supabase.co';
   const SB_KEY = 'sb_publishable_BqknWAgxurkaidzDdyQ60g_GnlnIcYk';
+  // Client unique pour tout le site : la session de connexion y est conservée
+  // (sans session, la base ne renvoie plus aucune donnée).
+  const db = window.db = supabase.createClient(SB_URL, SB_KEY);
 
-  async function sha256(msg) {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg));
-    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  const PROFIL = ['sp_auth','suivi_user_id','suivi_user_nom','suivi_user_equipe','suivi_user_role','suivi_acces_factures','suivi_pin_a_changer'];
+  window.effacerProfilLocal = () => PROFIL.forEach(k => localStorage.removeItem(k));
+  function afficherConnexion() {
+    document.getElementById('login-screen').style.display = 'flex';
+    setTimeout(() => document.getElementById('login-code').focus(), 50);
   }
 
   // ── Choix / changement du code personnel ──
@@ -75,87 +78,75 @@
     const c2 = document.getElementById('choix-code-2').value.trim();
     const err = document.getElementById('choix-code-erreur');
     const montrer = m => { err.textContent = m; err.style.display = 'block'; };
-    const userId = localStorage.getItem('suivi_user_id');
-    if (!userId) return montrer('Reconnecte-toi d\'abord avec ton code actuel.');
     if (!/^\d{6}$/.test(c1)) return montrer('Le code doit faire exactement 6 chiffres.');
     if (c1 !== c2) return montrer('Les deux codes ne sont pas identiques.');
     if (/^(\d)\1{5}$/.test(c1) || '0123456789'.includes(c1) || '9876543210'.includes(c1)) return montrer('Code trop simple, choisis-en un autre.');
-    if (await sha256(c1) === FALLBACK_HASH) return montrer('Ce code n\'est pas disponible, choisis-en un autre.');
     const btn = document.getElementById('choix-code-btn');
     btn.disabled = true;
-    try {
-      const h = { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' };
-      const dejaPris = await (await fetch(`${SB_URL}/rest/v1/employes?code_pin=eq.${c1}&id=neq.${encodeURIComponent(userId)}&select=id`, { headers: h })).json();
-      if (Array.isArray(dejaPris) && dejaPris.length) { btn.disabled = false; return montrer('Ce code n\'est pas disponible, choisis-en un autre.'); }
-      const r = await fetch(`${SB_URL}/rest/v1/employes?id=eq.${encodeURIComponent(userId)}`, {
-        method: 'PATCH', headers: { ...h, 'Prefer': 'return=representation' },
-        body: JSON.stringify({ code_pin: c1, pin_a_changer: false })
-      });
-      const rows = await r.json();
-      if (!r.ok || !Array.isArray(rows) || rows.length !== 1) throw new Error('maj');
-      localStorage.removeItem('suivi_pin_a_changer');
-      document.getElementById('choix-code-screen').style.display = 'none';
-      alert('Ton code a été enregistré. Utilise-le à ta prochaine connexion.');
-      if (window._rechargerApresCode) window.location.reload();
-    } catch (e) {
-      montrer('Enregistrement impossible, réessaie dans un instant.');
-    }
+    // Vérification et enregistrement faits par le serveur (code chiffré, jamais lisible)
+    const { error } = await db.rpc('changer_mon_code', { p_code: c1 });
     btn.disabled = false;
+    if (error) {
+      const m = error.message || '';
+      return montrer(/6 chiffres|simple|disponible|Reconnecte/.test(m) ? m : 'Enregistrement impossible, réessaie dans un instant.');
+    }
+    localStorage.removeItem('suivi_pin_a_changer');
+    document.getElementById('choix-code-screen').style.display = 'none';
+    alert('Ton code a été enregistré. Utilise-le à ta prochaine connexion.');
+    if (window._rechargerApresCode) window.location.reload();
   };
 
   window.verifierCode = async function() {
-    const val = document.getElementById('login-code').value;
-    if (val.length !== 6) return;
-
+    const champ = document.getElementById('login-code');
+    const val = champ.value;
+    if (val.length !== 6 || window._connexionEnCours) return;
+    window._connexionEnCours = true;
     const errEl = document.getElementById('login-error');
     const welEl = document.getElementById('login-welcome');
     errEl.style.display = 'none';
-
-    // 1. Chercher un employé avec ce code PIN dans la base
     try {
-      const r = await fetch(`${SB_URL}/rest/v1/employes?code_pin=eq.${encodeURIComponent(val)}&select=id,nom,equipe,role,acces_factures,pin_a_changer`, {
-        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+      // Le code est vérifié côté serveur, qui renvoie un jeton à usage unique
+      const r = await fetch(`${SB_URL}/functions/v1/connexion`, {
+        method: 'POST', headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: val })
       });
-      const users = await r.json();
-      if (Array.isArray(users) && users.length === 1) {
-        const u = users[0];
-        localStorage.setItem('sp_auth', '1');
-        localStorage.setItem('suivi_user_id', u.id);
-        localStorage.setItem('suivi_user_nom', u.nom);
-        localStorage.setItem('suivi_user_equipe', u.equipe || '');
-        localStorage.setItem('suivi_user_role', u.role || 'operationnel');
-        localStorage.setItem('suivi_acces_factures', u.acces_factures ? '1' : '0');
-        welEl.textContent = `Bonjour ${u.nom}`;
-        welEl.style.display = 'block';
-        if (u.pin_a_changer) {
-          localStorage.setItem('suivi_pin_a_changer', '1');
-          window._rechargerApresCode = true;
-          setTimeout(() => ouvrirChoixCode(true), 500);
-          return;
-        }
-        setTimeout(() => { document.getElementById('login-screen').style.display = 'none'; window.location.reload(); }, 600);
+      const rep = await r.json().catch(() => ({}));
+      if (!r.ok || !rep.token_hash) throw new Error(rep.error || 'Code incorrect');
+      const { error } = await db.auth.verifyOtp({ token_hash: rep.token_hash, type: 'magiclink' });
+      if (error) throw new Error('Connexion impossible pour le moment');
+      const u = rep.profil;
+      localStorage.setItem('sp_auth', '1');
+      localStorage.setItem('suivi_user_id', u.id);
+      localStorage.setItem('suivi_user_nom', u.nom);
+      localStorage.setItem('suivi_user_equipe', u.equipe || '');
+      localStorage.setItem('suivi_user_role', u.role || 'operationnel');
+      localStorage.setItem('suivi_acces_factures', u.acces_factures ? '1' : '0');
+      welEl.textContent = `Bonjour ${u.nom}`;
+      welEl.style.display = 'block';
+      if (u.pin_a_changer) {
+        localStorage.setItem('suivi_pin_a_changer', '1');
+        window._rechargerApresCode = true;
+        setTimeout(() => ouvrirChoixCode(true), 500);
         return;
       }
-    } catch (e) { console.warn('lookup error', e); }
-
-    // 2. Fallback : hash legacy (admin Gianluca pré-migration)
-    const hash = await sha256(val);
-    if (hash === FALLBACK_HASH) {
-      localStorage.setItem('sp_auth', '1');
-      localStorage.setItem('suivi_user_role', 'admin');
-      localStorage.setItem('suivi_acces_factures', '1');
-      document.getElementById('login-screen').style.display = 'none';
-      return;
+      setTimeout(() => { document.getElementById('login-screen').style.display = 'none'; window.location.reload(); }, 600);
+    } catch (e) {
+      errEl.textContent = e.message || 'Code incorrect';
+      errEl.style.display = 'block';
+      champ.value = '';
+    } finally {
+      window._connexionEnCours = false;
     }
-
-    errEl.style.display = 'block';
-    document.getElementById('login-code').value = '';
   };
 
+  // Au chargement : sans session valide, on redemande le code
   if (localStorage.getItem('sp_auth') !== '1') {
-    document.getElementById('login-screen').style.display = 'flex';
-  } else if (localStorage.getItem('suivi_pin_a_changer') === '1') {
-    ouvrirChoixCode(true);
+    afficherConnexion();
+  } else {
+    db.auth.getSession().then(({ data }) => {
+      if (!data.session) { window.effacerProfilLocal(); afficherConnexion(); }
+      else if (localStorage.getItem('suivi_pin_a_changer') === '1') ouvrirChoixCode(true);
+    });
   }
 })();
 </script>
@@ -975,8 +966,9 @@
         </select>
       </div>
       <div class="form-group">
-        <label>Code PIN d'accès (6 chiffres) <span style="color:var(--muted);font-size:11px;font-weight:400;">— laisser vide pour ne pas donner accès</span></label>
-        <input type="text" id="input-employe-pin" inputmode="numeric" maxlength="6" placeholder="123456" style="font-family:monospace;letter-spacing:0.15em;" />
+        <label>Code provisoire (6 chiffres) <span style="color:var(--muted);font-size:11px;font-weight:400;text-transform:none;letter-spacing:normal;">— laisser vide pour ne rien changer</span></label>
+        <input type="text" id="input-employe-pin" inputmode="numeric" maxlength="6" placeholder="Nouveau code" autocomplete="off" style="font-family:monospace;letter-spacing:0.15em;" />
+        <div id="employe-pin-etat" style="font-size:11.5px;color:var(--muted);margin-top:4px;"></div>
       </div>
     </div>
 
@@ -1090,6 +1082,6 @@
   <div id="popup-notifications-liste"></div>
 </div>
 
-<script src="app.js"></script>
+<script src="app.js?v=20261117a" id="script-app"></script>
 </body>
 </html>

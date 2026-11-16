@@ -10,9 +10,26 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// Seule une personne connectée au site (session valide) peut déclencher un envoi
+async function utilisateurConnecte(req: Request) {
+  const jeton = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!jeton) return null;
+  const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+  const { data } = await admin.auth.getUser(jeton);
+  if (!data?.user) return null;
+  const { data: e } = await admin.from("employes").select("id, nom, acces_factures").eq("auth_id", data.user.id).maybeSingle();
+  return e;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS });
+  }
+
+  const moi = await utilisateurConnecte(req);
+  if (!moi || !moi.acces_factures) {
+    return new Response(JSON.stringify({ error: "Connexion requise" }),
+      { status: 401, headers: { ...CORS, "Content-Type": "application/json" } });
   }
 
   try {
