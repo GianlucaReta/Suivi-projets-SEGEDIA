@@ -1162,3 +1162,18 @@ body {
 .ico-pin { --i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2210%22%20r%3D%223%22/%3E%3Cpath%20d%3D%22M12%2021s-7-6.5-7-11a7%207%200%200%201%2014%200c0%204.5-7%2011-7%2011z%22/%3E%3C/svg%3E"); }
 .ico-paperclip { --i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M15%207l-6.5%206.5a1.5%201.5%200%200%200%203%203L18%2010a3%203%200%200%200-6-6l-6.5%206.5a4.5%204.5%200%200%200%209%209L21%2013%22/%3E%3C/svg%3E"); }
 .ico-bell { --i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M10%205a2%202%200%201%201%204%200%207%207%200%200%201%204%206v3l2%203H4l2-3v-3a7%207%200%200%201%204-6M9%2017v1a3%203%200%200%200%206%200v-1%22/%3E%3C/svg%3E"); }
+
+/* ─── CLOCHE DES NOUVEAUTÉS ─── */
+.sidebar-logo { position: relative; }
+.cloche { margin-left:auto; position:relative; background:none; border:1px solid transparent; border-radius:8px; width:30px; height:30px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--muted); font-size:16px; }
+.cloche:hover { background:var(--surface-alt); border-color:var(--border); color:var(--ink); }
+.cloche-compteur { position:absolute; top:-3px; right:-4px; min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:var(--brand); color:#fff; font-size:9.5px; font-weight:700; line-height:16px; text-align:center; box-sizing:border-box; }
+.panneau-notifs { position:fixed; top:14px; left:244px; width:340px; max-width:calc(100vw - 24px); background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,0.14); z-index:9000; overflow:hidden; }
+.notif-ligne { display:flex; gap:10px; padding:10px 14px; border-bottom:1px solid var(--border-soft); }
+.notif-ligne.non-lue { background:var(--brand-soft); }
+.notif-ligne:last-child { border-bottom:none; }
+
+/* ─── SQUELETTES DE CHARGEMENT ─── */
+.sq { background:linear-gradient(90deg, var(--surface-alt) 25%, #ebe8e1 37%, var(--surface-alt) 63%); background-size:400% 100%; animation:sq-brille 1.4s ease infinite; border-radius:6px; }
+@keyframes sq-brille { 0% { background-position:100% 50%; } 100% { background-position:0 50%; } }
+@media (prefers-reduced-motion: reduce) { .sq { animation:none; } }

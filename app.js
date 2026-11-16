@@ -79,6 +79,22 @@ function demander(message, valeur = '', options = {}) {
 // Les messages simples (alert) utilisent aussi la fenêtre du site
 window.alert = message => { boiteDialogue({ message: String(message ?? ''), annuler: null }) }
 
+// ── SQUELETTES DE CHARGEMENT ──
+// Blocs gris animés pendant le premier chargement d'une page (au lieu de « Chargement… »)
+function squelette(type = 'liste', n = 6) {
+  const b = (w, h = 12, extra = '') => `<div class="sq" style="width:${w};height:${h}px;${extra}"></div>`
+  if (type === 'cartes') return `<div style="grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">${
+    Array.from({ length: n }, () => `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;">${b('40%', 10)}${b('70%', 22)}${b('55%', 10)}</div>`).join('')}</div>`
+  if (type === 'colonnes') return Array.from({ length: 5 }, (_, i) => `<div class="tr-col">${b('50%', 10, 'margin:4px 4px 12px;')}${
+    Array.from({ length: 3 + (i % 2) }, () => `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:6px;display:flex;flex-direction:column;gap:7px;">${b('80%')}${b('45%', 9)}${b('35%', 14)}</div>`).join('')}</div>`).join('')
+  return `<div style="grid-column:1/-1;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px 16px;">${
+    Array.from({ length: n }, (_, i) => `<div style="display:flex;gap:14px;align-items:center;padding:13px 0;${i < n - 1 ? 'border-bottom:1px solid var(--border-soft);' : ''}">${b('18%')}${b((40 + (i * 13) % 30) + '%')}<div style="flex:1;"></div>${b('70px')}</div>`).join('')}</div>`
+}
+function afficherSquelette(el, type, n) {
+  if (typeof el === 'string') el = document.getElementById(el)
+  if (el && !el.innerHTML.trim()) el.innerHTML = squelette(type, n)
+}
+
 // Échappe un texte avant de l'insérer dans du HTML
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
@@ -368,6 +384,8 @@ async function ouvrirSelecteurUtilisateur() {
 
 // --- DASHBOARD ---
 async function chargerDashboard() {
+  afficherSquelette('dashboard-projets-prioritaires', 'liste', 5)
+  afficherSquelette('dashboard-mes-taches', 'liste', 5)
   const aujourd_hui = aujourdhuiISO()
 
   // Greeting
@@ -666,6 +684,7 @@ function statutBadge(statut) {
 }
 
 async function chargerProjets() {
+  afficherSquelette('liste-projets', 'liste', 6)
   const { data } = await db.from('projets').select('*').eq('archive', false).order('created_at', { ascending: false })
   const filterEl = document.getElementById('filtres-projets')
   const container = document.getElementById('liste-projets')
@@ -1537,6 +1556,7 @@ function setVueTachesGlobal(vue) {
 }
 
 async function chargerTachesGlobal() {
+  afficherSquelette('liste-taches-global', 'liste', 8)
   const aujourd_hui = aujourdhuiISO()
 
   // Filtre visible uniquement en vue liste
@@ -1667,6 +1687,7 @@ function afficherKanbanGlobal(taches, aujourd_hui) {
 
 // --- EMPLOYES ---
 async function chargerEmployes() {
+  afficherSquelette('liste-employes', 'cartes', 4)
   const { data } = await db.from('employes').select('id,nom,equipe,email,telephone,role,acces_factures,pin_a_changer,a_un_code').order('nom')
   tousLesEmployes = data || []
   const container = document.getElementById('liste-employes')
@@ -2140,49 +2161,63 @@ function initiales(nom) {
 // --- POP-UP NOUVEAUTÉS ---
 const CLE_NOTIFS_VUES = 'suivi_dernieres_notifs_vues'
 
+// La cloche du menu montre le nombre de nouveautés (tâches/projets créés ou
+// modifiés par les autres) depuis la dernière ouverture du panneau.
+let _notifs = []
+function notifsNonLues() {
+  const vue = localStorage.getItem(CLE_NOTIFS_VUES) || ''
+  return _notifs.filter(n => n.created_at > vue && n.auteur !== utilisateurActifNom)
+}
 async function verifierNouvellesNotifications() {
-  const { data: notifs } = await db.from('notifications_activite')
-    .select('*').order('created_at', { ascending: false }).limit(15)
-  if (!notifs || !notifs.length) return
-
-  const derniereVue = localStorage.getItem(CLE_NOTIFS_VUES)
-  if (!derniereVue) {
-    // Première utilisation de la fonctionnalité sur cet appareil : pas de
-    // rattrapage rétroactif, on part du principe que tout est déjà connu.
-    localStorage.setItem(CLE_NOTIFS_VUES, notifs[0].created_at)
-    return
-  }
-
-  const nouvelles = notifs.filter(n => n.created_at > derniereVue)
-  if (nouvelles.length) afficherPopupNotifications(nouvelles)
+  const { data, error } = await db.from('notifications_activite').select('*').order('created_at', { ascending: false }).limit(30)
+  if (error || !data) return
+  _notifs = data
+  // Première utilisation sur cet appareil : pas de rattrapage, tout est considéré comme vu
+  if (!localStorage.getItem(CLE_NOTIFS_VUES) && data.length) localStorage.setItem(CLE_NOTIFS_VUES, data[0].created_at)
+  majCompteurNotifs()
+  if (document.getElementById('panneau-notifs')?.style.display === 'block') afficherPanneauNotifs(false)
 }
-
-function afficherPopupNotifications(notifs) {
-  const el = document.getElementById('popup-notifications')
-  const liste = document.getElementById('popup-notifications-liste')
-  if (!el || !liste) return
-  liste.innerHTML = notifs.map(n => {
-    const emoji = n.action === 'creation' ? '<i class="ico ico-plus"></i>' : '<i class="ico ico-pencil"></i>'
-    const typeLabel = n.type === 'tache' ? 'Tâche' : 'Projet'
-    const masculin = n.type === 'projet'
-    const actionLabel = n.action === 'creation' ? (masculin ? 'créé' : 'créée') : (masculin ? 'modifié' : 'modifiée')
-    const dateH = new Date(n.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
-    return `<div style="padding:8px 0;border-bottom:1px solid var(--border-soft);">
-      <div style="font-size:12px;font-weight:600;color:var(--ink);">${emoji} ${typeLabel} ${actionLabel}</div>
-      <div style="font-size:12px;color:var(--muted);margin-top:1px;">${n.titre}${n.contexte ? ` · ${n.contexte}` : ''}</div>
-      <div style="font-size:10.5px;color:var(--muted);margin-top:2px;">${[n.auteur, dateH].filter(Boolean).join(' · ')}</div>
+function majCompteurNotifs() {
+  const n = notifsNonLues().length
+  const c = document.getElementById('cloche-compteur')
+  if (!c) return
+  c.textContent = n > 9 ? '9+' : n
+  c.style.display = n ? 'block' : 'none'
+  document.getElementById('cloche-notifs').title = n ? `${n} nouveauté${n > 1 ? 's' : ''}` : 'Nouveautés'
+}
+function afficherPanneauNotifs(marquerLues = true) {
+  const liste = document.getElementById('panneau-notifs-liste')
+  const nonLues = new Set(notifsNonLues().map(n => n.id))
+  document.getElementById('panneau-notifs-info').textContent = nonLues.size ? `${nonLues.size} nouvelle${nonLues.size > 1 ? 's' : ''}` : 'À jour'
+  liste.innerHTML = _notifs.length ? _notifs.map(n => {
+    const masc = n.type === 'projet'
+    const action = n.action === 'creation' ? (masc ? 'créé' : 'créée') : (masc ? 'modifié' : 'modifiée')
+    const quand = new Date(n.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    return `<div class="notif-ligne ${nonLues.has(n.id) ? 'non-lue' : ''}">
+      <span style="color:var(--muted);font-size:14px;margin-top:1px;"><i class="ico ico-${n.action === 'creation' ? 'plus' : 'pencil'}"></i></span>
+      <div style="min-width:0;">
+        <div style="font-size:12px;font-weight:600;color:var(--ink);">${n.type === 'tache' ? 'Tâche' : 'Projet'} ${action}</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:1px;">${esc(n.titre)}${n.contexte ? ` <span style="color:var(--muted);">· ${esc(n.contexte)}</span>` : ''}</div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:2px;">${esc([n.auteur, quand].filter(Boolean).join(' · '))}</div>
+      </div>
     </div>`
-  }).join('')
-  el.dataset.derniere = notifs[0].created_at
-  el.classList.remove('hidden')
+  }).join('') : '<div style="padding:24px 14px;text-align:center;color:var(--muted);font-size:12.5px;">Aucune nouveauté pour l\'instant.</div>'
+  if (marquerLues && _notifs.length) { localStorage.setItem(CLE_NOTIFS_VUES, _notifs[0].created_at); majCompteurNotifs() }
 }
-
-function fermerPopupNotifications() {
-  const el = document.getElementById('popup-notifications')
-  if (!el) return
-  if (el.dataset.derniere) localStorage.setItem(CLE_NOTIFS_VUES, el.dataset.derniere)
-  el.classList.add('hidden')
+function basculerPanneauNotifs(e) {
+  e?.stopPropagation()
+  const p = document.getElementById('panneau-notifs')
+  if (p.style.display === 'block') { p.style.display = 'none'; return }
+  afficherPanneauNotifs(true)
+  p.style.display = 'block'
 }
+document.addEventListener('click', e => {
+  const p = document.getElementById('panneau-notifs')
+  if (p && p.style.display === 'block' && !e.target.closest('#panneau-notifs') && !e.target.closest('#cloche-notifs')) p.style.display = 'none'
+})
+// Vérification légère toutes les 2 minutes et au retour sur l'onglet
+setInterval(() => { if (!document.hidden) verifierNouvellesNotifications() }, 2 * 60 * 1000)
+document.addEventListener('visibilitychange', () => { if (!document.hidden) verifierNouvellesNotifications() })
 
 // --- INIT --- (lancé tout en bas du fichier, une fois toutes les variables déclarées)
 function demarrerApplication() {
@@ -2571,6 +2606,7 @@ function setOngletFactures(onglet) {
 }
 
 async function chargerFactures() {
+  afficherSquelette('liste-factures', 'liste', 10)
   if (!utilisateurAccesFactures) {
     document.getElementById('liste-factures').innerHTML = '<p style="color:var(--muted);">Accès restreint.</p>'
     return
@@ -2935,7 +2971,7 @@ async function ouvrirFicheClient(nomClient) {
     modal.onclick = e => { if (e.target === modal) modal.remove() }
     document.body.appendChild(modal)
   }
-  modal.innerHTML = `<div style="background:var(--surface);border-radius:14px;padding:28px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.2);"><div style="text-align:center;color:var(--muted);padding:40px;">Chargement…</div></div>`
+  modal.innerHTML = `<div style="background:var(--surface);border-radius:14px;padding:28px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.2);">${squelette('liste', 6)}</div>`
 
   const { data: factures } = await db.from('factures').select('*').eq('client', nomClient).order('date_emission', { ascending: false })
   const facs = factures || []
@@ -3607,7 +3643,7 @@ async function chargerRecouvrement() {
   const kpis  = document.getElementById('recouvrement-kpis')
   const stats = document.getElementById('recouvrement-stats-bar')
   if (!liste) return
-  liste.innerHTML = `<div style="color:var(--muted);text-align:center;padding:40px 0;font-size:13px;">Chargement…</div>`
+  afficherSquelette(liste, 'liste', 6)
 
   const [{ data: exclusData }, { data: factures }] = await Promise.all([
     db.from('clients_exclus').select('nom'),
@@ -3857,6 +3893,7 @@ async function chargerRecouvrement() {
 async function chargerEncaissements() {
   const container = document.getElementById('contenu-encaissements')
   if (!container) return
+  afficherSquelette(container, 'cartes', 4)
 
   const { data: exclusData } = await db.from('clients_exclus').select('nom')
   const { data: factures }   = await toutesLesLignes(() => db.from('factures').select('*').eq('solde', false).order('date_echeance', { ascending: true }))
@@ -4056,7 +4093,7 @@ async function chargerAnalytique() {
   const container = document.getElementById('contenu-analytique')
   if (!container) return
 
-  container.innerHTML = `<div style="text-align:center;color:var(--muted);padding:40px;">Chargement…</div>`
+  afficherSquelette(container, 'cartes', 8)
 
   try {
 
@@ -4949,6 +4986,7 @@ function typeLabel(type) {
 // ── Chargement principal ──────────────────────────────────
 
 async function chargerRecurrents() {
+  afficherSquelette('recurrents-liste', 'liste', 8)
   const annee = window._anneeRecurrents
   document.getElementById('recurrents-annee-label').textContent = annee
 
@@ -5722,7 +5760,7 @@ function trSemaine() {
 
 async function chargerTournees() {
   const board = document.getElementById('tr-board')
-  if (board && !trPassages.length) board.innerHTML = '<div style="color:var(--muted);padding:30px;">Chargement…</div>'
+  if (board && !trPassages.length) board.innerHTML = squelette('colonnes')
   const [o, c, p] = await Promise.all([
     db.from('tournee_operateurs').select('*').eq('actif', true).order('ordre'),
     toutesLesLignes(() => db.from('tournee_clients').select('*')),

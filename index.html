@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=20261117h" />
+  <link rel="stylesheet" href="style.css?v=20261117j" />
 </head>
 <body>
 
@@ -170,6 +170,9 @@
         <span class="logo-name">SuiviPro</span>
         <span class="logo-sub">SEGEDIA SERVICES</span>
       </div>
+      <button id="cloche-notifs" class="cloche" onclick="basculerPanneauNotifs(event)" title="Nouveautés">
+        <i class="ico ico-bell"></i><span id="cloche-compteur" class="cloche-compteur" style="display:none;"></span>
+      </button>
     </div>
 
     <!-- RECHERCHE GLOBALE -->
@@ -1075,15 +1078,15 @@
   </div>
 </div>
 
-<!-- POP-UP NOUVEAUTÉS (tâches/projets créés ou modifiés) -->
-<div id="popup-notifications" class="hidden" style="position:fixed;bottom:20px;right:20px;width:320px;max-height:70vh;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.16);z-index:9998;padding:14px 16px;">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-    <span style="font-size:13px;font-weight:700;color:var(--ink);"><i class="ico ico-bell"></i> Nouveautés</span>
-    <button onclick="fermerPopupNotifications()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:0;">×</button>
+<!-- PANNEAU DES NOUVEAUTÉS (ouvert par la cloche du menu) -->
+<div id="panneau-notifs" class="panneau-notifs" style="display:none;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border-soft);">
+    <span style="font-size:13px;font-weight:700;color:var(--ink);">Nouveautés</span>
+    <span id="panneau-notifs-info" style="font-size:11px;color:var(--muted);"></span>
   </div>
-  <div id="popup-notifications-liste"></div>
+  <div id="panneau-notifs-liste" style="max-height:60vh;overflow-y:auto;"></div>
 </div>
 
-<script src="app.js?v=20261117h" id="script-app"></script>
+<script src="app.js?v=20261117j" id="script-app"></script>
 </body>
 </html>
