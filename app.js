@@ -4344,9 +4344,11 @@ function contientAvoir(texte) {
 // au lieu d'indices fixes — l'ordre des colonnes DISTRILOG varie selon
 // le type d'export (ex: "T.associées" en position 3 ou 8 selon le fichier).
 function resoudreColonnesCSV(header) {
-  const norm = (s) => (s || '').toLowerCase().trim().replace(/[°.]/g, '')
+  // Comparaison sans accents ni ponctuation (« Val. réf. » = « val ref »)
+  const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().replace(/[°.]/g, '').replace(/\s+/g, ' ')
   const h = header.map(norm)
-  const trouve = (...noms) => {
+  const trouve = (...nomsBruts) => {
+    const noms = nomsBruts.map(norm)
     for (const nom of noms) {
       const i = h.findIndex(x => x === nom)
       if (i !== -1) return i
@@ -4370,103 +4372,269 @@ function resoudreColonnesCSV(header) {
   }
 }
 
+// ── IMPORT CSV EN 2 TEMPS : APERÇU, PUIS VALIDATION ─────────
+// 1. On lit le fichier et on calcule ce qui changerait, SANS rien enregistrer.
+// 2. Une fenêtre montre les changements ; rien n'est écrit tant qu'on n'a pas validé.
+// 3. L'import est consigné (valeurs d'avant comprises) : il peut être annulé.
+const CHAMPS_IMPORT = ['client', 'montant', 'date_emission', 'date_echeance', 'solde', 'ville', 'commentaire', 'date_paiement']
+let _importEnAttente = null
+
+function valeursEgales(champ, a, b) {
+  if (champ === 'montant') return Math.abs((parseFloat(a) || 0) - (parseFloat(b) || 0)) < 0.005
+  return (a ?? null) === (b ?? null) || (a ?? '') === (b ?? '')
+}
+
 async function importerCSVFactures(file) {
   if (!file) return
+  const input = document.getElementById('input-csv-factures')
+  if (input) input.value = ''   // permet de re-choisir le même fichier
   const text = await file.text()
   const rows = parseCSVDISTRILOG(text)
-  if (!rows.length) { alert('Fichier vide ou format invalide.'); return }
+  if (rows.length < 2) { alert('Fichier vide ou format invalide.'); return }
 
-  // Résoudre les colonnes par nom d'en-tête (avec repli sur les positions
-  // historiques si l'en-tête ne correspond pas à un format connu)
+  // Colonnes repérées par leur nom ; sinon, position habituelle de l'export DISTRILOG
+  // (signalé dans l'aperçu pour qu'on vérifie les montants avant de valider)
   const col = resoudreColonnesCSV(rows[0])
+  const parPosition = [['numero', 'N° pièce'], ['client', 'Tiers'], ['montant', 'Val. réf.']].filter(([k]) => col[k] === -1).map(([, l]) => l)
   const idx = {
     client:          col.client          !== -1 ? col.client          : 0,
-    dateEmission:    col.dateEmission     !== -1 ? col.dateEmission     : 1,
-    montant:         col.montant          !== -1 ? col.montant          : 4,
-    numero:          col.numero           !== -1 ? col.numero           : 5,
-    solde:           col.solde            !== -1 ? col.solde            : 6,
-    ville:           col.ville            !== -1 ? col.ville            : 7,
-    tachesAssociees: col.tachesAssociees  !== -1 ? col.tachesAssociees  : 3,
-    dateEcheance:    col.dateEcheance     !== -1 ? col.dateEcheance     : 11,
-    datePaiement:    col.datePaiement     !== -1 ? col.datePaiement     : 12,
+    montant:         col.montant         !== -1 ? col.montant         : 4,
+    numero:          col.numero          !== -1 ? col.numero          : 5,
+    dateEmission:    col.dateEmission    !== -1 ? col.dateEmission    : 1,
+    solde:           col.solde           !== -1 ? col.solde           : 6,
+    ville:           col.ville           !== -1 ? col.ville           : 7,
+    tachesAssociees: col.tachesAssociees !== -1 ? col.tachesAssociees : 3,
+    dateEcheance:    col.dateEcheance    !== -1 ? col.dateEcheance    : 11,
+    datePaiement:    col.datePaiement    !== -1 ? col.datePaiement    : 12,
   }
 
-  // Charger clients exclus + factures existantes en parallèle
+  afficherToast('Analyse du fichier…')
   const [{ data: exclus }, { data: existantes, error: errExistantes }] = await Promise.all([
     db.from('clients_exclus').select('nom'),
-    toutesLesLignes(() => db.from('factures').select('id, numero, solde, note, date_paiement'))
+    toutesLesLignes(() => db.from('factures').select('id, numero, ' + CHAMPS_IMPORT.join(', ')))
   ])
   // Sans la liste COMPLÈTE des factures existantes, une facture soldée à la main
   // serait prise pour une nouvelle et repasserait « non soldée » : on arrête tout.
   if (errExistantes || !existantes) { alert('Import annulé : impossible de lire les factures existantes. Réessaie dans un instant.'); return }
-  const nomsExclus  = new Set((exclus     || []).map(e => e.nom))
-  // Map numero → { solde, note } pour préserver les données manuelles
-  const existantesMap = new Map((existantes || []).map(f => [f.numero, f]))
+  const nomsExclus = new Set((exclus || []).map(e => e.nom))
+  const existantesMap = new Map(existantes.map(f => [f.numero, f]))
 
-  // Ignorer la ligne header
   const dataRows = rows.slice(1).filter(r => r[idx.numero] && r[idx.numero].trim())
+  const a = { nouvelles: [], soldees: [], montants: [], echeances: [], autres: [], conservees: [], ignoresExclus: 0, ignoresZero: 0, inchangees: 0, doublons: 0, avoirs: 0 }
+  const vus = new Set(), aEcrire = [], avant = []
 
-  let nbExclus = 0, nbNouveaux = 0, nbMisAJour = 0, nbAvoirs = 0, nbZeroEuro = 0
-  const factures = dataRows.map(cols => {
-    const numero  = cols[idx.numero]?.trim() || null
-    const client  = cols[idx.client]?.trim() || 'Client inconnu'
-
-    // 1. Exclure les clients de la liste (comparaison exacte)
-    if (nomsExclus.has(client)) { nbExclus++; return null }
-    if (!numero) return null
-
-    const montantStr    = (cols[idx.montant] || '0').trim().replace(',', '.')
-    const montant       = parseFloat(montantStr) || 0
-    // Les factures à 0 € n'ont aucune valeur à suivre (rien à encaisser,
-    // rien à relancer) — on ne les importe jamais, ni en création ni en MàJ.
-    if (montant === 0) { nbZeroEuro++; return null }
-    const date_emission = parseDateEmissionDL(cols[idx.dateEmission])
-    const date_echeance = parseDateEcheanceDL(cols[idx.dateEcheance])
-    const soldeCSV      = (cols[idx.solde] || '').trim() === 'Oui'
-    const ville         = cols[idx.ville]?.trim() || null
-    const commentaire   = cols[idx.tachesAssociees]?.trim().slice(0, 500) || null
-    const date_paiement_csv = parseDateEcheanceDL(cols[idx.datePaiement]?.trim() || null)
+  for (const cols of dataRows) {
+    const numero = cols[idx.numero]?.trim()
+    const client = cols[idx.client]?.trim() || 'Client inconnu'
+    if (nomsExclus.has(client)) { a.ignoresExclus++; continue }
+    if (vus.has(numero)) { a.doublons++; continue }
+    vus.add(numero)
+    const montant = parseFloat((cols[idx.montant] || '0').trim().replace(/\s/g, '').replace(',', '.')) || 0
+    // Les factures à 0 € n'ont rien à encaisser ni à relancer : jamais importées
+    if (montant === 0) { a.ignoresZero++; continue }
+    const commentaire = cols[idx.tachesAssociees]?.trim().slice(0, 500) || null
+    const soldeCSV = (cols[idx.solde] || '').trim() === 'Oui'
     // Un avoir dans les tâches associées solde la facture, même sans paiement
     const avoirDetecte = contientAvoir(commentaire)
-    if (avoirDetecte) nbAvoirs++
-
-    const existant = existantesMap.get(numero)
-    if (existant) {
-      nbMisAJour++
-      // Règle anti-régression : le statut soldé ne peut jamais reculer.
-      // Si marqué manuellement "soldé" dans l'app → on garde true même si le CSV dit non.
-      // Si DISTRILOG dit soldé (ou qu'un avoir a été détecté) → on met true.
-      const solde = existant.solde || soldeCSV || avoirDetecte
-      // La note manuelle n'est jamais écrasée par le CSV
-      const note = existant.note ?? null
-      // date_paiement : priorité à la valeur existante, sinon celle du CSV
-      const date_paiement = existant.date_paiement ?? date_paiement_csv
-      return { numero, client, montant, date_emission, date_echeance, solde, ville, commentaire, note, date_paiement }
-    } else {
-      nbNouveaux++
-      return { numero, client, montant, date_emission, date_echeance, solde: soldeCSV || avoirDetecte, ville, commentaire, date_paiement: date_paiement_csv }
+    if (avoirDetecte) a.avoirs++
+    const csv = {
+      numero, client, montant,
+      date_emission: parseDateEmissionDL(cols[idx.dateEmission]),
+      date_echeance: parseDateEcheanceDL(cols[idx.dateEcheance]),
+      ville: cols[idx.ville]?.trim() || null,
+      commentaire,
+      date_paiement: parseDateEcheanceDL(cols[idx.datePaiement]?.trim() || null),
     }
-  }).filter(Boolean)
-
-  if (!factures.length) {
-    alert(`Aucune facture valide trouvée.${nbExclus > 0 ? `\n(${nbExclus} ligne${nbExclus>1?'s':''} ignorée${nbExclus>1?'s':''} — clients exclus)` : ''}${nbZeroEuro > 0 ? `\n(${nbZeroEuro} ligne${nbZeroEuro>1?'s':''} ignorée${nbZeroEuro>1?'s':''} — montant à 0 €)` : ''}`)
-    return
+    const ex = existantesMap.get(numero)
+    if (!ex) {
+      const ligne = { ...csv, solde: soldeCSV || avoirDetecte }
+      aEcrire.push(ligne); a.nouvelles.push(ligne)
+      continue
+    }
+    // Règles inchangées : le statut soldé ne recule jamais, la date de paiement saisie à la main est gardée
+    const cible = { ...csv, solde: ex.solde || soldeCSV || avoirDetecte, date_paiement: ex.date_paiement ?? csv.date_paiement }
+    if (ex.solde && !soldeCSV && !avoirDetecte) a.conservees.push(ex)
+    const changes = CHAMPS_IMPORT.filter(c => !valeursEgales(c, ex[c], cible[c]))
+    if (!changes.length) { a.inchangees++; continue }
+    const ligne = { numero, ...Object.fromEntries(changes.map(c => [c, cible[c]])) }
+    aEcrire.push(ligne)
+    avant.push({ numero, ...Object.fromEntries(changes.map(c => [c, ex[c]])) })
+    const info = { numero, client, avant: ex, apres: cible }
+    if (changes.includes('solde') && cible.solde) a.soldees.push(info)
+    else if (changes.includes('montant')) a.montants.push(info)
+    else if (changes.includes('date_echeance')) a.echeances.push(info)
+    else a.autres.push(info)
+    if (changes.includes('montant') && !a.montants.includes(info)) a.montants.push(info)
   }
 
-  // Upsert garanti sans doublon (clé unique : numero)
-  const { error } = await db.from('factures').upsert(factures, { onConflict: 'numero', ignoreDuplicates: false })
-  if (error) { console.error(error); alert('Erreur import : ' + error.message); return }
+  _importEnAttente = { fichier: file.name, nbLignes: dataRows.length, aEcrire, avant, analyse: a, parPosition }
+  afficherApercuImport()
+}
 
-  // Réinitialiser l'input file
-  document.getElementById('input-csv-factures').value = ''
-  const lignes = [
-    nbNouveaux  > 0 ? `${nbNouveaux} nouvelle${nbNouveaux>1?'s':''} facture${nbNouveaux>1?'s':''}` : null,
-    nbMisAJour  > 0 ? `${nbMisAJour} mise${nbMisAJour>1?'s':''} à jour` : null,
-    nbAvoirs    > 0 ? `${nbAvoirs} avoir${nbAvoirs>1?'s':''} détecté${nbAvoirs>1?'s':''} → soldée${nbAvoirs>1?'s':''} automatiquement` : null,
-    nbZeroEuro  > 0 ? `${nbZeroEuro} ignorée${nbZeroEuro>1?'s':''} (montant à 0 €)` : null,
-    nbExclus    > 0 ? `${nbExclus} ignorée${nbExclus>1?'s':''} (clients exclus)` : null,
-  ].filter(Boolean)
-  alert('✓ Import terminé\n' + lignes.join(' · '))
+function afficherApercuImport() {
+  const { fichier, nbLignes, aEcrire, analyse: a, parPosition } = _importEnAttente
+  const fmt = v => (parseFloat(v) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
+  const total = arr => arr.reduce((s, x) => s + (parseFloat(x.montant ?? x.apres?.montant) || 0), 0)
+  const liste = (arr, rendu, max = 50) => `<div style="max-height:220px;overflow-y:auto;margin-top:6px;border:1px solid var(--border-soft);border-radius:8px;">
+      ${arr.slice(0, max).map(x => `<div style="display:flex;gap:10px;padding:6px 10px;border-bottom:1px solid var(--border-soft);font-size:12px;">${rendu(x)}</div>`).join('')}
+      ${arr.length > max ? `<div style="padding:6px 10px;font-size:11.5px;color:var(--muted);">… et ${arr.length - max} autre${arr.length - max > 1 ? 's' : ''}</div>` : ''}
+    </div>`
+  const num = n => `<span style="font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);min-width:84px;">${esc(n)}</span>`
+  const bloc = (icone, titre, arr, couleur, rendu, ouvert = false) => !arr.length ? '' : `
+    <details ${ouvert ? 'open' : ''} style="margin-bottom:10px;border:1px solid var(--border);border-radius:10px;padding:10px 14px;background:var(--surface);">
+      <summary style="cursor:pointer;font-size:13px;font-weight:600;color:${couleur};">${icone} ${titre}</summary>
+      ${liste(arr, rendu)}
+    </details>`
+
+  const alertes = []
+  if (parPosition?.length) alertes.push(`Colonne${parPosition.length > 1 ? 's' : ''} ${parPosition.join(', ')} non trouvée${parPosition.length > 1 ? 's' : ''} par son nom : prise${parPosition.length > 1 ? 's' : ''} à la position habituelle. Vérifie quelques montants et numéros ci-dessous avant de valider.`)
+  if (a.montants.length > 20) alertes.push(`${a.montants.length} montants changent : c'est inhabituel. Vérifie que c'est bien le bon export.`)
+  if (a.nouvelles.length > 300) alertes.push(`${a.nouvelles.length} nouvelles factures d'un coup : vérifie que ce n'est pas un export d'une autre société ou d'une autre période.`)
+  if (a.doublons) alertes.push(`${a.doublons} ligne${a.doublons > 1 ? 's' : ''} en double dans le fichier (même n°) : seule la première est prise.`)
+  const rien = !aEcrire.length
+
+  const html = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:6px;">
+      <div>
+        <h2 style="margin:0;">Aperçu de l'import</h2>
+        <div style="font-size:12px;color:var(--muted);margin-top:3px;">« ${esc(fichier)} » · ${nbLignes} lignes lues · <b>rien n'est encore enregistré</b></div>
+      </div>
+      <button onclick="annulerApercuImport()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">×</button>
+    </div>
+    ${alertes.map(m => `<div style="background:#fef3c7;border:1px solid #fcd34d;color:#78350f;border-radius:8px;padding:9px 12px;font-size:12.5px;margin:10px 0;">⚠️ ${esc(m)}</div>`).join('')}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:14px 0;">
+      ${[['Nouvelles', a.nouvelles.length, 'var(--success)'], ['Passent soldées', a.soldees.length, 'var(--brand-deep)'], ['Montants modifiés', a.montants.length, a.montants.length ? 'var(--danger)' : 'var(--muted)'], ['Autres mises à jour', a.echeances.length + a.autres.length, 'var(--ink-soft)'], ['Inchangées', a.inchangees, 'var(--muted)']]
+        .map(([l, n, c]) => `<div style="background:var(--surface-alt);border-radius:8px;padding:10px 12px;"><div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">${l}</div><div style="font-size:22px;font-weight:700;color:${c};">${n}</div></div>`).join('')}
+    </div>
+    ${bloc('✅', `${a.nouvelles.length} nouvelle${a.nouvelles.length > 1 ? 's' : ''} facture${a.nouvelles.length > 1 ? 's' : ''} · ${fmt(total(a.nouvelles))} €`, a.nouvelles, 'var(--success)',
+      f => `${num(f.numero)}<span style="flex:1;">${esc(f.client)}</span><span style="color:var(--muted);">${f.date_echeance ? formatDate(f.date_echeance) : ''}</span><b style="font-family:'IBM Plex Mono',monospace;">${fmt(f.montant)} €</b>${f.solde ? '<span style="color:var(--success);font-size:11px;">soldée</span>' : ''}`, a.nouvelles.length <= 15)}
+    ${bloc('💰', `${a.soldees.length} facture${a.soldees.length > 1 ? 's' : ''} passe${a.soldees.length > 1 ? 'nt' : ''} « soldée »`, a.soldees, 'var(--brand-deep)',
+      x => `${num(x.numero)}<span style="flex:1;">${esc(x.client)}</span><b style="font-family:'IBM Plex Mono',monospace;">${fmt(x.apres.montant)} €</b>`)}
+    ${bloc('✏️', `${a.montants.length} montant${a.montants.length > 1 ? 's' : ''} modifié${a.montants.length > 1 ? 's' : ''}`, a.montants, 'var(--danger)',
+      x => `${num(x.numero)}<span style="flex:1;">${esc(x.client)}</span><span style="font-family:'IBM Plex Mono',monospace;">${fmt(x.avant.montant)} € → <b>${fmt(x.apres.montant)} €</b></span>`, true)}
+    ${bloc('📅', `${a.echeances.length} date${a.echeances.length > 1 ? 's' : ''} d'échéance modifiée${a.echeances.length > 1 ? 's' : ''}`, a.echeances, 'var(--ink-soft)',
+      x => `${num(x.numero)}<span style="flex:1;">${esc(x.client)}</span><span>${x.avant.date_echeance ? formatDate(x.avant.date_echeance) : '—'} → <b>${x.apres.date_echeance ? formatDate(x.apres.date_echeance) : '—'}</b></span>`)}
+    ${bloc('🔄', `${a.autres.length} autre${a.autres.length > 1 ? 's' : ''} mise${a.autres.length > 1 ? 's' : ''} à jour (ville, commentaire, date…)`, a.autres, 'var(--ink-soft)',
+      x => `${num(x.numero)}<span style="flex:1;">${esc(x.client)}</span>`)}
+    ${bloc('🛡️', `${a.conservees.length} facture${a.conservees.length > 1 ? 's' : ''} soldée${a.conservees.length > 1 ? 's' : ''} dans le site mais pas dans DISTRILOG : elle${a.conservees.length > 1 ? 's restent' : ' reste'} soldée${a.conservees.length > 1 ? 's' : ''}`, a.conservees, 'var(--muted)',
+      f => `${num(f.numero)}<span style="flex:1;">${esc(f.client)}</span><b style="font-family:'IBM Plex Mono',monospace;">${fmt(f.montant)} €</b>`)}
+    ${(a.ignoresZero || a.ignoresExclus) ? `<div style="font-size:12px;color:var(--muted);margin:6px 2px 0;">⏭️ Ignorées : ${[a.ignoresZero ? `${a.ignoresZero} à 0 €` : '', a.ignoresExclus ? `${a.ignoresExclus} de clients exclus` : ''].filter(Boolean).join(' · ')}</div>` : ''}
+    ${a.avoirs ? `<div style="font-size:12px;color:var(--muted);margin:4px 2px 0;">🧾 ${a.avoirs} avoir${a.avoirs > 1 ? 's' : ''} détecté${a.avoirs > 1 ? 's' : ''} dans les tâches associées (facture soldée automatiquement).</div>` : ''}
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="annulerApercuImport()">Annuler</button>
+      <button class="btn btn-primary" id="btn-valider-import" onclick="validerImport()" ${rien ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''}>${rien ? 'Rien à importer' : `✓ Valider l'import (${aEcrire.length} facture${aEcrire.length > 1 ? 's' : ''})`}</button>
+    </div>`
+
+  let modal = document.getElementById('modal-apercu-import')
+  if (!modal) {
+    modal = document.createElement('div')
+    modal.id = 'modal-apercu-import'
+    modal.className = 'modal-overlay'
+    modal.innerHTML = '<div class="modal-box" style="max-width:720px;"></div>'
+    document.body.appendChild(modal)
+  }
+  modal.querySelector('.modal-box').innerHTML = html
+  modal.classList.remove('hidden')
+}
+
+function annulerApercuImport() {
+  _importEnAttente = null
+  document.getElementById('modal-apercu-import')?.classList.add('hidden')
+}
+
+async function validerImport() {
+  const imp = _importEnAttente
+  if (!imp || !imp.aEcrire.length) return
+  const btn = document.getElementById('btn-valider-import')
+  if (btn) { btn.disabled = true; btn.textContent = 'Import en cours…' }
+  const a = imp.analyse
+  // On note d'abord ce qui va changer (pour pouvoir annuler), puis on écrit par paquets
+  const { data: journal, error: errJ } = await db.from('imports_factures').insert({
+    auteur: utilisateurActifNom || null, fichier: imp.fichier, nb_lignes: imp.nbLignes,
+    nb_nouvelles: a.nouvelles.length, nb_modifiees: imp.avant.length, nb_soldees: a.soldees.length,
+    details: { nouvelles: a.nouvelles.map(f => f.numero), avant: imp.avant },
+  }).select('id').single()
+  if (errJ) { alert('Import annulé : impossible de créer le journal (' + errJ.message + ').'); if (btn) { btn.disabled = false; btn.textContent = 'Réessayer' }; return }
+
+  const modifiees = new Set(imp.avant.map(av => av.numero))
+  for (let k = 0; k < imp.aEcrire.length; k += 500) {
+    const paquet = imp.aEcrire.slice(k, k + 500)
+    // Nouvelles factures et factures modifiées n'ont pas les mêmes colonnes : deux envois séparés
+    const nouvelles = paquet.filter(l => !modifiees.has(l.numero))
+    const maj = paquet.filter(l => !nouvelles.includes(l))
+    if (nouvelles.length) {
+      const { error } = await db.from('factures').insert(nouvelles)
+      if (error) return echecImport(error, journal.id)
+    }
+    for (const l of maj) {
+      const { numero, ...champs } = l
+      const { error } = await db.from('factures').update(champs).eq('numero', numero)
+      if (error) return echecImport(error, journal.id)
+    }
+  }
+  annulerApercuImport()
+  logAction('import_factures', 'factures', null, `Import « ${imp.fichier} » : ${a.nouvelles.length} nouvelle(s), ${imp.avant.length} mise(s) à jour, ${a.soldees.length} soldée(s)`)
+  afficherToast(`Import terminé : ${a.nouvelles.length} nouvelle${a.nouvelles.length > 1 ? 's' : ''}, ${imp.avant.length} mise${imp.avant.length > 1 ? 's' : ''} à jour`)
+  chargerFactures()
+}
+
+async function echecImport(error, journalId) {
+  console.error(error)
+  alert(`L'import s'est interrompu (${error.message}).\nUne partie a pu être enregistrée : ouvre « Historique des imports » pour l'annuler proprement.`)
+  annulerApercuImport()
+  chargerFactures()
+}
+
+// ── Historique des imports et annulation ──
+async function ouvrirHistoriqueImports() {
+  const { data, error } = await db.from('imports_factures').select('id,created_at,auteur,fichier,nb_lignes,nb_nouvelles,nb_modifiees,nb_soldees,annule,annule_le,annule_par').order('created_at', { ascending: false }).limit(15)
+  if (error) { alert('Historique indisponible : ' + error.message); return }
+  const dernierActif = (data || []).find(i => !i.annule)
+  let modal = document.getElementById('modal-historique-imports')
+  if (!modal) {
+    modal = document.createElement('div')
+    modal.id = 'modal-historique-imports'
+    modal.className = 'modal-overlay'
+    modal.innerHTML = '<div class="modal-box" style="max-width:640px;"></div>'
+    modal.addEventListener('click', e => { if (e.target === modal) modal.classList.add('hidden') })
+    document.body.appendChild(modal)
+  }
+  modal.querySelector('.modal-box').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h2 style="margin:0;">Historique des imports</h2>
+      <button onclick="document.getElementById('modal-historique-imports').classList.add('hidden')" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">×</button>
+    </div>
+    ${(data || []).length ? data.map(i => `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-soft);${i.annule ? 'opacity:0.55;' : ''}">
+        <div style="min-width:0;">
+          <div style="font-size:13px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(i.fichier || 'Import')}</div>
+          <div style="font-size:11.5px;color:var(--muted);">${new Date(i.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · ${esc(i.auteur || '—')} · ${i.nb_nouvelles} nouvelle(s), ${i.nb_modifiees} mise(s) à jour</div>
+          ${i.annule ? `<div style="font-size:11.5px;color:var(--danger);">Annulé le ${new Date(i.annule_le).toLocaleDateString('fr-FR')} par ${esc(i.annule_par || '—')}</div>` : ''}
+        </div>
+        ${dernierActif && i.id === dernierActif.id ? `<button class="btn btn-danger" style="font-size:12px;white-space:nowrap;" onclick="annulerImport(${i.id})">↩ Annuler cet import</button>` : ''}
+      </div>`).join('') : '<p style="color:var(--muted);">Aucun import enregistré pour l\'instant.</p>'}
+    <p style="font-size:11.5px;color:var(--muted);margin-top:12px;">Seul le dernier import peut être annulé : les nouvelles factures sont retirées et les factures modifiées retrouvent leurs valeurs d'avant.</p>`
+  modal.classList.remove('hidden')
+}
+
+async function annulerImport(id) {
+  const { data: imp, error } = await db.from('imports_factures').select('*').eq('id', id).single()
+  if (error || !imp || imp.annule) return
+  const nouvelles = imp.details?.nouvelles || [], avant = imp.details?.avant || []
+  if (!confirm(`Annuler l'import « ${imp.fichier} » ?\n\n· ${nouvelles.length} facture(s) ajoutée(s) seront supprimées\n· ${avant.length} facture(s) retrouveront leurs valeurs d'avant\n\nLes relances, notes et acomptes saisis depuis sur ces factures seront perdus pour les factures supprimées.`)) return
+  for (let k = 0; k < nouvelles.length; k += 200) {
+    const { error: e } = await db.from('factures').delete().in('numero', nouvelles.slice(k, k + 200))
+    if (e) { alert('Annulation interrompue : ' + e.message); return }
+  }
+  for (const av of avant) {
+    const { numero, ...champs } = av
+    const { error: e } = await db.from('factures').update(champs).eq('numero', numero)
+    if (e) { alert('Annulation interrompue : ' + e.message); return }
+  }
+  await db.from('imports_factures').update({ annule: true, annule_le: new Date().toISOString(), annule_par: utilisateurActifNom || null }).eq('id', id)
+  logAction('import_factures', 'factures', null, `Import « ${imp.fichier} » annulé`)
+  afficherToast('Import annulé')
+  ouvrirHistoriqueImports()
   chargerFactures()
 }
 
