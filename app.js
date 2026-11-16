@@ -1490,8 +1490,8 @@ function renderFiltresTache() {
     { val: 'en cours',   label: 'En cours' },
     { val: 'en attente', label: 'En attente' },
     { val: 'fait',       label: 'Fait' },
-    { val: 'urgent',     label: '🔴 Urgent' },
-    { val: 'retard',     label: '⚠ Retard' }
+    { val: 'urgent',     label: 'Urgentes' },
+    { val: 'retard',     label: 'En retard' }
   ]
   const equipes = [
     { val: 'tous',           label: 'Toutes' },
@@ -1503,7 +1503,7 @@ function renderFiltresTache() {
   const actifE = v => v === 'tous' ? filtresTacheEquipe.size === 0 : filtresTacheEquipe.has(v)
   return `
     <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-bottom:0.5rem; align-items:center;">
-      ${statuts.map(s => `<button class="btn ${actifS(s.val) ? 'btn-primary' : 'btn-secondary'}" style="padding:3px 12px; font-size:0.78rem;" onclick="toggleFiltreTacheStatut('${s.val}')">${s.label}</button>`).join('')}
+      ${statuts.map(s => `<button onclick="toggleFiltreTacheStatut('${s.val}')" style="background:${actifS(s.val) ? 'var(--ink)' : 'var(--surface)'};color:${actifS(s.val) ? '#fff' : 'var(--muted)'};border:1px solid ${actifS(s.val) ? 'var(--ink)' : 'var(--border)'};cursor:pointer;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:${actifS(s.val) ? '600' : '400'};font-family:inherit;white-space:nowrap;">${s.label}</button>`).join('')}
     </div>
     <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:1rem; align-items:center;">
       ${equipes.map(e => `<button style="background:${actifE(e.val)?'var(--ink)':'var(--surface)'};color:${actifE(e.val)?'#fff':'var(--muted)'};border:1px solid ${actifE(e.val)?'var(--ink)':'var(--border)'};cursor:pointer;padding:3px 11px;border-radius:20px;font-size:11.5px;font-weight:${actifE(e.val)?'600':'400'};font-family:inherit;white-space:nowrap;" onclick="toggleFiltreTacheEquipe('${e.val}')">${e.label}</button>`).join('')}
@@ -2203,13 +2203,13 @@ let calVue = 'mensuelle' // mensuelle ou timeline
 
 function toggleCalType() {
   calType = calType === 'projets' ? 'taches' : 'projets'
-  document.getElementById('toggle-cal-type').textContent = calType === 'projets' ? '📁 Projets' : '✅ Tâches'
+  document.getElementById('toggle-cal-type').textContent = calType === 'projets' ? 'Afficher : projets' : 'Afficher : tâches'
   afficherCalendrier()
 }
 
 function toggleCalVue() {
   calVue = calVue === 'mensuelle' ? 'timeline' : 'mensuelle'
-  document.getElementById('toggle-cal-vue').textContent = calVue === 'mensuelle' ? '📊 Timeline' : '📅 Mensuelle'
+  document.getElementById('toggle-cal-vue').textContent = calVue === 'mensuelle' ? 'Vue chronologique' : 'Vue mensuelle'
   afficherCalendrier()
 }
 

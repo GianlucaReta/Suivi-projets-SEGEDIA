@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=20261117f" />
+  <link rel="stylesheet" href="style.css?v=20261117g" />
 </head>
 <body>
 
@@ -324,15 +324,15 @@
         <button class="back-btn" onclick="showPage('projets')">← Retour</button>
         <h1 class="page-title" id="detail-titre"></h1>
         <span id="detail-badge"></span>
-        <button class="btn btn-secondary" id="btn-editer-projet" onclick="ouvrirEditionProjet()">✏️ Modifier</button>
-        <button class="btn btn-secondary" id="btn-archiver" onclick="archiverProjet()">🗄️ Archiver</button>
+        <button class="btn btn-secondary" id="btn-editer-projet" onclick="ouvrirEditionProjet()">Modifier</button>
+        <button class="btn btn-secondary" id="btn-archiver" onclick="archiverProjet()">Archiver</button>
       </div>
       <p id="detail-client" style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1.5rem;"></p>
 
       <div class="page-header" style="margin-top:0;">
         <div class="section-title" style="margin-top:0; margin-bottom:0;">Tâches</div>
         <div style="display:flex; gap:0.5rem;">
-          <button class="btn btn-secondary" id="btn-vue-projet" onclick="basculerVueProjet()">🗂️ Vue Kanban</button>
+          <button class="btn btn-secondary" id="btn-vue-projet" onclick="basculerVueProjet()">Vue Kanban</button>
           <button class="btn btn-primary" onclick="ouvrirModalTache()">+ Ajouter tâche</button>
         </div>
       </div>
@@ -344,21 +344,21 @@
         <div class="kanban-board">
           <div class="kanban-col" data-statut="en attente" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragleave="onDragLeave(event)">
             <div class="kanban-col-header attente">
-              <span>⏳ En attente</span>
+              <span>En attente</span>
               <span class="kanban-count" id="count-en-attente">0</span>
             </div>
             <div class="kanban-col-body" id="body-en-attente"></div>
           </div>
           <div class="kanban-col" data-statut="en cours" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragleave="onDragLeave(event)">
             <div class="kanban-col-header cours">
-              <span>🔵 En cours</span>
+              <span>En cours</span>
               <span class="kanban-count" id="count-en-cours">0</span>
             </div>
             <div class="kanban-col-body" id="body-en-cours"></div>
           </div>
           <div class="kanban-col" data-statut="fait" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragleave="onDragLeave(event)">
             <div class="kanban-col-header fait">
-              <span>✅ Fait</span>
+              <span>Terminées</span>
               <span class="kanban-count" id="count-fait">0</span>
             </div>
             <div class="kanban-col-body" id="body-fait"></div>
@@ -445,8 +445,8 @@
       <div class="page-header">
         <h1 class="page-title">Calendrier</h1>
         <div style="display:flex; gap:0.5rem;">
-          <button class="btn btn-secondary" id="toggle-cal-type" onclick="toggleCalType()">📁 Projets</button>
-          <button class="btn btn-secondary" id="toggle-cal-vue" onclick="toggleCalVue()">📊 Timeline</button>
+          <button class="btn btn-secondary" id="toggle-cal-type" onclick="toggleCalType()">Afficher : projets</button>
+          <button class="btn btn-secondary" id="toggle-cal-vue" onclick="toggleCalVue()">Vue chronologique</button>
         </div>
       </div>
       <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:1.5rem;">
@@ -480,7 +480,7 @@
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.93 2.93l1.06 1.06M10.01 10.01l1.06 1.06M2.93 11.07l1.06-1.06M10.01 3.99l1.06-1.06" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
             Clients exclus
           </button>
-          <button onclick="ouvrirHistoriqueImports()" class="btn btn-secondary" style="font-size:12px;">🕘 Historique des imports</button>
+          <button onclick="ouvrirHistoriqueImports()" class="btn btn-secondary">Historique des imports</button>
           <label class="btn btn-secondary" style="cursor:pointer;">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="margin-right:5px;"><path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Importer CSV
@@ -557,7 +557,7 @@
             <option value="anciennete">Trier : ancienneté du retard ↓</option>
           </select>
           <div style="position:relative;">
-            <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;pointer-events:none;">🔍</span>
+            <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none;" width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="5.5" cy="5.5" r="4" stroke="#9ca3af" stroke-width="1.3"/><path d="M8.5 8.5L11 11" stroke="#9ca3af" stroke-width="1.3" stroke-linecap="round"/></svg>
             <input type="text" id="recouvrement-search" placeholder="Rechercher un client…" oninput="filtrerRecouvrement(this.value)"
               style="padding:7px 12px 7px 32px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink);width:220px;outline:none;">
           </div>
@@ -577,11 +577,11 @@
         </div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <div style="display:flex;align-items:center;gap:6px;">
-            <button onclick="changerAnneeRecurrents(-1)" style="background:var(--surface-alt);border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-family:inherit;font-size:14px;color:var(--ink);">‹</button>
+            <button onclick="changerAnneeRecurrents(-1)" class="btn btn-secondary" style="padding:4px 10px;font-size:14px;">‹</button>
             <span id="recurrents-annee-label" style="font-size:14px;font-weight:700;color:var(--ink);min-width:40px;text-align:center;"></span>
-            <button onclick="changerAnneeRecurrents(1)" style="background:var(--surface-alt);border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-family:inherit;font-size:14px;color:var(--ink);">›</button>
+            <button onclick="changerAnneeRecurrents(1)" class="btn btn-secondary" style="padding:4px 10px;font-size:14px;">›</button>
           </div>
-          <button onclick="ouvrirModalContratRecurrent()" style="background:var(--brand);color:#fff;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;">+ Nouveau contrat</button>
+          <button class="btn btn-primary" onclick="ouvrirModalContratRecurrent()">+ Nouveau contrat</button>
         </div>
       </div>
       <div id="recurrents-alerte-mois" style="margin-bottom:16px;"></div>
@@ -685,9 +685,9 @@
       <p style="font-size:11.5px;color:var(--muted);margin:-4px 0 0;">Client désinstallé ? Indique la date de fin : les mois jusqu'à cette date restent à facturer, plus rien n'apparaît après.</p>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;flex-wrap:wrap;">
-      <button id="cr-btn-archiver" onclick="archiverContrat()" class="btn-secondary" style="margin-right:auto;color:var(--danger);display:none;">🗄 Archiver</button>
-      <button onclick="fermerModals()" class="btn-secondary">Annuler</button>
-      <button onclick="sauvegarderContratRecurrent()" class="btn-primary">Enregistrer</button>
+      <button id="cr-btn-archiver" onclick="archiverContrat()" class="btn btn-secondary" style="margin-right:auto;color:var(--danger);display:none;">Archiver</button>
+      <button onclick="fermerModals()" class="btn btn-secondary">Annuler</button>
+      <button onclick="sauvegarderContratRecurrent()" class="btn btn-primary">Enregistrer</button>
     </div>
   </div>
 </div>
@@ -720,8 +720,8 @@
       </div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;">
-      <button onclick="fermerModals()" class="btn-secondary">Annuler</button>
-      <button onclick="sauvegarderReleve()" class="btn-primary">Enregistrer</button>
+      <button onclick="fermerModals()" class="btn btn-secondary">Annuler</button>
+      <button onclick="sauvegarderReleve()" class="btn btn-primary">Enregistrer</button>
     </div>
   </div>
 </div>
@@ -788,9 +788,9 @@
     </div>
     <p id="mp-erreur" style="display:none;color:var(--danger);font-size:12.5px;margin:4px 0 0;"></p>
     <div class="modal-actions">
-      <button class="btn btn-danger" id="mp-btn-supprimer" onclick="supprimerPassage()" style="display:none;margin-right:auto;">🗑️ Supprimer</button>
+      <button class="btn btn-danger" id="mp-btn-supprimer" onclick="supprimerPassage()" style="display:none;margin-right:auto;">Supprimer</button>
       <button class="btn btn-secondary" onclick="fermerModals()">Annuler</button>
-      <button class="btn btn-primary" id="mp-btn-enregistrer" onclick="sauvegarderPassage()">✓ Enregistrer</button>
+      <button class="btn btn-primary" id="mp-btn-enregistrer" onclick="sauvegarderPassage()">Enregistrer</button>
     </div>
   </div>
 </div>
@@ -805,8 +805,8 @@
     <div id="historique-contrat-infos" style="background:var(--surface-alt);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px;"></div>
     <div id="historique-contrat-liste"></div>
     <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end;">
-      <button onclick="window._historiqueContratId && ouvrirModalContratRecurrent(window._historiqueContratId)" style="font-size:13px;padding:7px 16px;background:var(--surface-alt);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-family:inherit;color:var(--ink);">✏️ Modifier</button>
-      <button onclick="fermerModals()" class="btn-secondary">Fermer</button>
+      <button class="btn btn-secondary" onclick="window._historiqueContratId && ouvrirModalContratRecurrent(window._historiqueContratId)">Modifier</button>
+      <button onclick="fermerModals()" class="btn btn-secondary">Fermer</button>
     </div>
   </div>
 </div>
@@ -852,7 +852,7 @@
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="fermerModals()">Annuler</button>
-      <button class="btn btn-primary" onclick="sauvegarderProjet()">✓ Enregistrer</button>
+      <button class="btn btn-primary" onclick="sauvegarderProjet()">Enregistrer</button>
     </div>
   </div>
 </div>
@@ -912,8 +912,8 @@
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="fermerModals()">Annuler</button>
-      <button class="btn btn-danger" id="btn-supprimer-tache" onclick="supprimerTache()" style="display:none;">🗑️ Supprimer</button>
-      <button class="btn btn-primary" onclick="sauvegarderTache()">✓ Enregistrer</button>
+      <button class="btn btn-danger" id="btn-supprimer-tache" onclick="supprimerTache()" style="display:none;">Supprimer</button>
+      <button class="btn btn-primary" onclick="sauvegarderTache()">Enregistrer</button>
     </div>
 
     <!-- Commentaires (visible seulement en édition) -->
@@ -977,7 +977,7 @@
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="fermerModals()">Annuler</button>
       <button class="btn btn-danger" id="btn-supprimer-employe" onclick="supprimerEmploye()" style="display:none;">Supprimer</button>
-      <button class="btn btn-primary" onclick="sauvegarderEmploye()">✓ Enregistrer</button>
+      <button class="btn btn-primary" onclick="sauvegarderEmploye()">Enregistrer</button>
     </div>
   </div>
 </div>
@@ -1004,7 +1004,7 @@
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="fermerModals()">Annuler</button>
-      <button class="btn btn-primary" onclick="sauvegarderNoteModalFacture(document.getElementById('modal-note-facture-id').value)">✓ Enregistrer</button>
+      <button class="btn btn-primary" onclick="sauvegarderNoteModalFacture(document.getElementById('modal-note-facture-id').value)">Enregistrer</button>
     </div>
   </div>
 </div>
@@ -1045,7 +1045,7 @@
 
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="fermerModals()">Annuler</button>
-      <button id="btn-envoyer-relance" class="btn btn-primary" onclick="envoyerRelanceEmail()" style="background:var(--brand);border-color:var(--brand);">📤 Envoyer</button>
+      <button id="btn-envoyer-relance" class="btn btn-primary" onclick="envoyerRelanceEmail()" style="background:var(--brand);border-color:var(--brand);">Envoyer</button>
     </div>
   </div>
 </div>
@@ -1070,7 +1070,7 @@
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="fermerModals()">Annuler</button>
-      <button class="btn btn-primary" onclick="enregistrerAppel()" style="background:#7c3aed;border-color:#7c3aed;">📞 Enregistrer</button>
+      <button class="btn btn-primary" onclick="enregistrerAppel()" >Enregistrer l'appel</button>
     </div>
   </div>
 </div>
@@ -1084,6 +1084,6 @@
   <div id="popup-notifications-liste"></div>
 </div>
 
-<script src="app.js?v=20261117f" id="script-app"></script>
+<script src="app.js?v=20261117g" id="script-app"></script>
 </body>
 </html>
