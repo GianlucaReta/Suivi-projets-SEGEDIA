@@ -2448,6 +2448,58 @@ async function chargerHistorique() {
 // ═══════════════════════════════════════════════════════
 
 let filtreFacturesClient = ''
+// Tableau des factures : tri, période et colonnes affichées (mémorisés sur cet appareil)
+const FAC_COLONNES_OPTION = { contact: 'Contact', emission: 'Émission', paye: 'Payé le', relance: 'Relance', note: 'Note' }
+let triFactures = { col: 'echeance', sens: -1 }
+let periodeFactures = { type: 'toutes', du: '', au: '' }
+let colonnesMasqueesFactures = new Set()
+try {
+  const pref = JSON.parse(localStorage.getItem('fac_prefs') || '{}')
+  if (pref.tri) triFactures = pref.tri
+  if (pref.periode) periodeFactures = pref.periode
+  if (pref.masquees) colonnesMasqueesFactures = new Set(pref.masquees)
+} catch (e) {}
+function sauverPrefsFactures() {
+  try { localStorage.setItem('fac_prefs', JSON.stringify({ tri: triFactures, periode: periodeFactures, masquees: [...colonnesMasqueesFactures] })) } catch (e) {}
+}
+function trierFactures(col) {
+  triFactures = triFactures.col === col ? { col, sens: -triFactures.sens } : { col, sens: ['client', 'numero'].includes(col) ? 1 : -1 }
+  sauverPrefsFactures(); facturesPage = 1; chargerFactures()
+}
+function changerPeriodeFactures(type) {
+  periodeFactures.type = type
+  if (type !== 'perso') { periodeFactures.du = ''; periodeFactures.au = '' }
+  sauverPrefsFactures(); facturesPage = 1; chargerFactures()
+}
+function changerDatesPeriodeFactures(champ, valeur) {
+  periodeFactures[champ] = valeur; periodeFactures.type = 'perso'
+  sauverPrefsFactures(); facturesPage = 1; chargerFactures()
+}
+function basculerColonneFactures(col) {
+  colonnesMasqueesFactures.has(col) ? colonnesMasqueesFactures.delete(col) : colonnesMasqueesFactures.add(col)
+  sauverPrefsFactures()
+  appliquerColonnesFactures()
+}
+function appliquerColonnesFactures() {
+  let st = document.getElementById('style-colonnes-factures')
+  if (!st) { st = document.createElement('style'); st.id = 'style-colonnes-factures'; document.head.appendChild(st) }
+  st.textContent = [...colonnesMasqueesFactures].map(c => `#table-factures [data-col="${c}"]{display:none}`).join('')
+  document.querySelectorAll('#menu-colonnes-factures input[data-col]').forEach(cb => { cb.checked = !colonnesMasqueesFactures.has(cb.dataset.col) })
+}
+// Bornes (AAAA-MM-JJ) de la période choisie, sur la date d'émission
+function bornesPeriodeFactures() {
+  const now = new Date(), y = now.getFullYear(), m = now.getMonth()
+  const d = (a, mo, j) => dateLocaleISO(new Date(a, mo, j))
+  switch (periodeFactures.type) {
+    case 'mois':         return [d(y, m, 1), d(y, m + 1, 0)]
+    case 'mois_dernier': return [d(y, m - 1, 1), d(y, m, 0)]
+    case '3mois':        return [d(y, m - 2, 1), d(y, m + 1, 0)]
+    case 'annee':        return [`${y}-01-01`, `${y}-12-31`]
+    case 'annee_derniere': return [`${y - 1}-01-01`, `${y - 1}-12-31`]
+    case 'perso':        return [periodeFactures.du || '0000-01-01', periodeFactures.au || '9999-12-31']
+    default:             return null
+  }
+}
 let ongletFactures = 'liste'
 let calEncMois = new Date()
 let analytiquePeriode = 'mensuel'
@@ -2472,6 +2524,9 @@ function filtrerClientSuggestions(val) {
   el.style.display = 'block'
 }
 document.addEventListener('click', e => {
+  if (!e.target.closest('#menu-colonnes-factures') && !e.target.closest('[onclick*="menu-colonnes-factures"]')) {
+    const m = document.getElementById('menu-colonnes-factures'); if (m) m.style.display = 'none'
+  }
   if (!e.target.closest('#client-search-wrapper')) {
     const el = document.getElementById('client-suggestions')
     if (el) el.style.display = 'none'
@@ -2586,6 +2641,18 @@ async function chargerFactures() {
           cursor:pointer;padding:4px 14px;border-radius:20px;font-size:12px;
           font-weight:${actifF(f.val) ? '600' : '400'};font-family:inherit;white-space:nowrap;
         ">${f.label}</button>`).join('')}
+      <select onchange="changerPeriodeFactures(this.value)" title="Filtrer par date d'émission"
+        style="padding:5px 10px;border:1px solid ${periodeFactures.type !== 'toutes' ? 'var(--brand)' : 'var(--border)'};border-radius:20px;font-size:12px;font-family:inherit;background:var(--surface);color:var(--ink);cursor:pointer;">
+        ${[['toutes', 'Émises : toutes dates'], ['mois', 'Émises ce mois-ci'], ['mois_dernier', 'Émises le mois dernier'], ['3mois', 'Émises ces 3 derniers mois'], ['annee', 'Émises cette année'], ['annee_derniere', "Émises l'année dernière"], ['perso', 'Émises entre deux dates…']]
+          .map(([v, l]) => `<option value="${v}" ${periodeFactures.type === v ? 'selected' : ''}>${l}</option>`).join('')}
+      </select>
+      ${periodeFactures.type === 'perso' ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);">du <input type="date" value="${periodeFactures.du}" onchange="changerDatesPeriodeFactures('du', this.value)" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;font-family:inherit;"> au <input type="date" value="${periodeFactures.au}" onchange="changerDatesPeriodeFactures('au', this.value)" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;font-family:inherit;"></span>` : ''}
+      <div style="position:relative;">
+        <button onclick="const m=document.getElementById('menu-colonnes-factures');m.style.display=m.style.display==='block'?'none':'block'" style="padding:5px 12px;border:1px solid var(--border);border-radius:20px;font-size:12px;font-family:inherit;background:var(--surface);color:var(--muted);cursor:pointer;">☰ Colonnes</button>
+        <div id="menu-colonnes-factures" style="display:none;position:absolute;left:0;top:calc(100% + 4px);background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.1);z-index:100;padding:8px 12px;min-width:170px;">
+          ${Object.entries(FAC_COLONNES_OPTION).map(([c, l]) => `<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12.5px;cursor:pointer;"><input type="checkbox" data-col="${c}" ${colonnesMasqueesFactures.has(c) ? '' : 'checked'} onchange="basculerColonneFactures('${c}')"> ${l}</label>`).join('')}
+        </div>
+      </div>
       <div id="client-search-wrapper" style="position:relative;margin-left:auto;">
         <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none;" width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="5" cy="5" r="3.5" stroke="#9ca3af" stroke-width="1.3"/><path d="M8 8l2.5 2.5" stroke="#9ca3af" stroke-width="1.3" stroke-linecap="round"/></svg>
         <input id="search-client-factures" type="text" placeholder="Rechercher un client…"
@@ -2598,7 +2665,8 @@ async function chargerFactures() {
       </div>
     </div>`
 
-  // Filtrer (statut multi-select + client)
+  // Filtrer (statut multi-select + client + période d'émission)
+  const bornesP = bornesPeriodeFactures()
   const filtered = toutes.filter(f => {
     const retard = !f.solde && f.date_echeance && f.date_echeance < aujourd_hui
     const okStatut = filtresFact.size === 0 || [...filtresFact].some(v =>
@@ -2609,7 +2677,19 @@ async function chargerFactures() {
       true
     )
     const okClient = !filtreFacturesClient || f.client === filtreFacturesClient
-    return okStatut && okClient
+    const okPeriode = !bornesP || (f.date_emission && f.date_emission >= bornesP[0] && f.date_emission <= bornesP[1])
+    return okStatut && okClient && okPeriode
+  })
+  // Tri (clic sur un en-tête de colonne) ; à égalité, échéance la plus récente d'abord
+  const joursRetardF = f => (!f.solde && f.date_echeance && f.date_echeance < aujourd_hui) ? Math.floor((new Date(aujourd_hui) - new Date(f.date_echeance)) / 86400000) : -1
+  const cleTri = {
+    numero: f => f.numero || '', client: f => (f.client || '').toLowerCase(), montant: f => parseFloat(f.montant) || 0,
+    emission: f => f.date_emission || '', echeance: f => f.date_echeance || '', statut: joursRetardF, paye: f => f.date_paiement || '',
+  }[triFactures.col] || (f => f.date_echeance || '')
+  filtered.sort((a, b) => {
+    const x = cleTri(a), y = cleTri(b)
+    const c = typeof x === 'number' ? x - y : String(x).localeCompare(String(y), 'fr')
+    return c !== 0 ? c * triFactures.sens : String(b.date_echeance || '').localeCompare(String(a.date_echeance || ''))
   })
 
   const listeEl = document.getElementById('liste-factures')
@@ -2644,22 +2724,23 @@ async function chargerFactures() {
       <button onclick="bulkExporterFactures()" style="font-size:12px;padding:5px 12px;border-radius:6px;background:var(--surface);color:var(--ink);border:none;cursor:pointer;font-family:inherit;font-weight:600;">Exporter CSV</button>
       <button onclick="bulkClearSelection()" style="font-size:12px;padding:5px 10px;border-radius:6px;background:transparent;color:#fff;border:1px solid #fff;cursor:pointer;font-family:inherit;">Annuler</button>
     </div>
-    <div style="background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; overflow-x:auto;">
-      <table style="width:100%; border-collapse:collapse; font-size:12.5px; min-width:1100px;">
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:auto; max-height:calc(100vh - 230px);">
+      <table id="table-factures" style="width:100%; border-collapse:separate; border-spacing:0; font-size:12.5px; min-width:1100px;">
         <thead>
-          <tr style="background:var(--surface-alt); border-bottom:1px solid var(--border);">
-            <th style="padding:10px 8px 10px 16px;width:32px;"><input type="checkbox" id="bulk-checkall" onchange="bulkToggleAll(this.checked)" style="cursor:pointer;" /></th>
-            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600; white-space:nowrap;">N° Facture</th>
-            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Client</th>
-            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Contact</th>
-            <th style="padding:10px 16px; text-align:right; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Montant</th>
-            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Émission</th>
-            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Échéance</th>
-            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Statut</th>
-            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600; white-space:nowrap;">Payé le</th>
-            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Relance</th>
-            <th style="padding:10px 16px; text-align:left; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Note</th>
-            <th style="padding:10px 16px; text-align:center; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; font-weight:600;">Action</th>
+          <tr>
+            ${(() => {
+              const th = 'position:sticky;top:0;z-index:2;background:var(--surface-alt);border-bottom:1px solid var(--border);padding:10px 16px;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;font-weight:600;white-space:nowrap;'
+              const triable = (col, libelle, align = 'left', dataCol = '') => {
+                const actif = triFactures.col === col
+                return `<th ${dataCol ? `data-col="${dataCol}"` : ''} onclick="trierFactures('${col}')" title="Trier par ${libelle.toLowerCase()}" style="${th}text-align:${align};cursor:pointer;user-select:none;${actif ? 'color:var(--brand-deep);' : ''}">${libelle} <span style="opacity:${actif ? 1 : 0.3};">${actif ? (triFactures.sens > 0 ? '▲' : '▼') : '↕'}</span></th>`
+              }
+              const simple = (libelle, align = 'left', dataCol = '') => `<th ${dataCol ? `data-col="${dataCol}"` : ''} style="${th}text-align:${align};">${libelle}</th>`
+              return `<th style="${th}padding:10px 8px 10px 16px;width:32px;"><input type="checkbox" id="bulk-checkall" onchange="bulkToggleAll(this.checked)" style="cursor:pointer;" /></th>`
+                + triable('numero', 'N° Facture') + triable('client', 'Client') + simple('Contact', 'left', 'contact')
+                + triable('montant', 'Montant', 'right') + triable('emission', 'Émission', 'left', 'emission') + triable('echeance', 'Échéance')
+                + triable('statut', 'Statut') + triable('paye', 'Payé le', 'left', 'paye') + simple('Relance', 'left', 'relance')
+                + simple('Note', 'left', 'note') + simple('Action', 'center')
+            })()}
           </tr>
         </thead>
         <tbody>
@@ -2757,15 +2838,15 @@ async function chargerFactures() {
                 <td style="padding:10px 8px 10px 16px;width:32px;"><input type="checkbox" class="bulk-fac" value="${f.id}" data-solde="${f.solde}" onchange="bulkUpdateCounter()" style="cursor:pointer;" onclick="event.stopPropagation()" /></td>
                 <td style="padding:10px 16px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-soft); white-space:nowrap;">${f.numero}</td>
                 <td style="padding:10px 16px; font-weight:600; color:var(--ink);"><span onclick="ouvrirFicheClient('${f.client.replace(/'/g,"\\'")}')" style="cursor:pointer;border-bottom:1px dotted var(--muted);" title="Voir la fiche client 360°">${f.client}</span></td>
-                <td style="padding:8px 16px; min-width:150px; max-width:180px;">
+                <td data-col="contact" style="padding:8px 16px; min-width:150px; max-width:180px;">
                   <div onclick="editerContactFacture('${f.id}','telephone','${(f.telephone||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}',this)" title="Cliquer pour modifier" style="cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:${f.telephone ? 'var(--ink)' : 'var(--muted)'};padding:2px 0;">${f.telephone ? '📞 ' + formatPhone(f.telephone) : '<span style="font-size:11px;">+ Tél.</span>'}</div>
                   <div onclick="editerContactFacture('${f.id}','email_client','${(f.email_client||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}',this)" title="Cliquer pour modifier" style="cursor:pointer;font-size:11px;color:${f.email_client ? 'var(--ink-soft)' : 'var(--muted)'};padding:2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;">${f.email_client ? '✉ ' + f.email_client : '<span>+ Email</span>'}</div>
                 </td>
                 <td style="padding:10px 16px; text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:600; color:${enRetard ? 'var(--danger)' : 'var(--ink)'}; white-space:nowrap;">${parseFloat(f.montant).toLocaleString('fr-FR', {minimumFractionDigits:2})} €</td>
-                <td style="padding:10px 16px; color:var(--ink-soft); font-size:12px; white-space:nowrap;">${f.date_emission ? formatDate(f.date_emission) : '—'}</td>
+                <td data-col="emission" style="padding:10px 16px; color:var(--ink-soft); font-size:12px; white-space:nowrap;">${f.date_emission ? formatDate(f.date_emission) : '—'}</td>
                 <td style="padding:10px 16px; color:${enRetard ? 'var(--danger)' : 'var(--ink-soft)'}; font-weight:${enRetard ? '600' : '400'}; font-size:12px; white-space:nowrap;">${f.date_echeance ? formatDate(f.date_echeance) : '—'}</td>
                 <td style="padding:10px 16px;">${statutHtml}</td>
-                <td style="padding:10px 16px; white-space:nowrap;">
+                <td data-col="paye" style="padding:10px 16px; white-space:nowrap;">
                   ${payeLe}
                   <span id="paye-${f.id}-edit" style="display:none;">
                     <input type="date" id="paye-${f.id}-input" value="${f.date_paiement || ''}" style="font-size:11.5px;padding:3px 6px;border:1px solid var(--brand);border-radius:5px;font-family:inherit;"
@@ -2773,8 +2854,8 @@ async function chargerFactures() {
                       onchange="sauvegarderDatePaiement('${f.id}',this.value)" />
                   </span>
                 </td>
-                <td style="padding:10px 16px;">${relanceHtml}</td>
-                <td style="padding:6px 20px 6px 16px; width:160px; max-width:160px;">
+                <td data-col="relance" style="padding:10px 16px;">${relanceHtml}</td>
+                <td data-col="note" style="padding:6px 20px 6px 16px; width:160px; max-width:160px;">
                   <button onclick="ouvrirNoteFacture('${f.id}', \`${(f.note || '').replace(/`/g,'\\`').replace(/\n/g,' ')}\`)" style="font-size:11px;padding:3px 10px;border-radius:5px;border:1px solid var(--border);background:var(--surface-alt);cursor:pointer;color:${f.note ? 'var(--ink-soft)' : 'var(--muted)'};font-family:inherit;width:100%;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;text-align:left;" title="${(f.note||'').replace(/"/g,'&quot;')}">${f.note ? '📝 ' + f.note.slice(0,22) + (f.note.length > 22 ? '…' : '') : '+ Note'}</button>
                 </td>
                 <td style="padding:10px 16px; text-align:center; white-space:nowrap;">${actionBtns}</td>
@@ -2782,9 +2863,10 @@ async function chargerFactures() {
           }).join('')}
         </tbody>
       </table>
-      ${paginationHtml}
     </div>
+    ${paginationHtml}
   `
+  appliquerColonnesFactures()
 }
 
 function toggleFiltreFactures(val) {

@@ -1116,3 +1116,7 @@ body {
   .tr-board { grid-template-columns:repeat(5, 78vw); scroll-snap-type:x mandatory; }
   .tr-col { scroll-snap-align:start; }
 }
+
+/* Tableau des factures : bordures de lignes (en-tête collant = bordures séparées) */
+#table-factures tbody td { border-bottom: 1px solid var(--border-soft); }
+#table-factures tbody tr:last-child td { border-bottom: none; }
