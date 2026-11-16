@@ -173,6 +173,21 @@ async function deconnexion() {
   window.location.reload()
 }
 
+// Sauvegarde automatique du dimanche (8 dernières gardées) : téléchargement par un admin
+async function telechargerSauvegarde() {
+  afficherToast('Préparation de la sauvegarde…')
+  const { data, error } = await db.from('sauvegardes').select('created_at, nb_lignes, contenu').order('created_at', { ascending: false }).limit(1)
+  if (error || !data?.length) { afficherToast('Aucune sauvegarde disponible.', true); return }
+  const s = data[0]
+  const blob = new Blob([JSON.stringify(s.contenu)], { type: 'application/json' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `sauvegarde-suivipro-${dateLocaleISO(new Date(s.created_at))}.json`
+  document.body.appendChild(a); a.click()
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(a.href) }, 200)
+  afficherToast(`Sauvegarde du ${new Date(s.created_at).toLocaleDateString('fr-FR')} téléchargée (${s.nb_lignes} lignes)`)
+}
+
 function ouvrirMenuUtilisateur() {
   const m = document.getElementById('menu-utilisateur')
   if (!m) return
@@ -270,6 +285,8 @@ function mettreAJourSidebarUser() {
     if (nomEl)    nomEl.textContent    = utilisateurActifNom
     if (roleEl)   roleEl.textContent   = utilisateurActifEquipe || 'Utilisateur'
   }
+  const btnSauv = document.getElementById('menu-sauvegarde')
+  if (btnSauv) btnSauv.style.display = estAdmin() ? 'block' : 'none'
   // Afficher/masquer l'onglet Factures selon les droits
   const navFinance  = document.getElementById('nav-finance')
   const navSectionF = document.getElementById('nav-section-finance')

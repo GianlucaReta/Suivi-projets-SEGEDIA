@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=20261117a" />
+  <link rel="stylesheet" href="style.css?v=20261117b" />
 </head>
 <body>
 
@@ -248,6 +248,7 @@
       </div>
       <div id="menu-utilisateur" style="display:none;position:absolute;bottom:calc(100% + 4px);left:12px;right:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.12);overflow:hidden;z-index:50;">
         <button onclick="ouvrirSelecteurUtilisateur();fermerMenuUtilisateur()" style="width:100%;text-align:left;padding:10px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--ink);font-family:inherit;border-bottom:1px solid var(--border-soft);">Changer de profil</button>
+        <button id="menu-sauvegarde" onclick="fermerMenuUtilisateur();telechargerSauvegarde()" style="display:none;width:100%;text-align:left;padding:10px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--ink);font-family:inherit;border-bottom:1px solid var(--border-soft);">Télécharger la sauvegarde</button>
         <button onclick="fermerMenuUtilisateur();ouvrirChoixCode(false)" style="width:100%;text-align:left;padding:10px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--ink);font-family:inherit;border-bottom:1px solid var(--border-soft);">Changer mon code</button>
         <button onclick="if(confirm('Se déconnecter ?'))deconnexion()" style="width:100%;text-align:left;padding:10px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--danger);font-family:inherit;">Se déconnecter</button>
       </div>
@@ -1082,6 +1083,6 @@
   <div id="popup-notifications-liste"></div>
 </div>
 
-<script src="app.js?v=20261117a" id="script-app"></script>
+<script src="app.js?v=20261117b" id="script-app"></script>
 </body>
 </html>
