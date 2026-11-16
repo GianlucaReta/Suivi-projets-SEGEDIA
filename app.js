@@ -779,6 +779,47 @@ async function ouvrirDetailProjetId(id) {
   if (data) ouvrirDetailProjet(data)
 }
 
+// --- CORBEILLE (30 jours) ---
+// La suppression et la restauration sont faites par le serveur, en une seule opération,
+// avec tout ce qui dépend de l'élément (tâches d'un projet, assignés, commentaires, pièces jointes).
+async function mettreALaCorbeille(type, id, message, rafraichir) {
+  const { data: cid, error } = await db.rpc('mettre_a_la_corbeille', { p_type: type, p_id: id })
+  if (error) { alert('Suppression impossible : ' + error.message); return false }
+  afficherToast(message, false, async () => {
+    const { error: e } = await db.rpc('restaurer_corbeille', { p_id: cid })
+    if (e) throw e
+    afficherToast('Élément restauré')
+    if (rafraichir) rafraichir()
+  })
+  return true
+}
+
+async function chargerCorbeille() {
+  const el = document.getElementById('liste-corbeille')
+  if (!el) return
+  const { data, error } = await db.from('corbeille').select('id,type,libelle,supprime_par,created_at').order('created_at', { ascending: false })
+  if (error) { el.innerHTML = `<p style="color:var(--danger);">Corbeille indisponible : ${esc(error.message)}</p>`; return }
+  if (!data.length) { el.innerHTML = '<p style="color:var(--text-muted);">La corbeille est vide.</p>'; return }
+  const icone = { tache: 'check', projet: 'folder', employe: 'user', passage: 'truck' }
+  el.innerHTML = data.map(c => {
+    const restant = Math.max(0, 30 - Math.floor((Date.now() - new Date(c.created_at).getTime()) / 86400000))
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);">
+      <div style="min-width:0;">
+        <div style="font-weight:600;font-size:13px;color:var(--ink);"><i class="ico ico-${icone[c.type] || 'trash'}" style="color:var(--muted);"></i> ${esc(c.libelle)}</div>
+        <div style="font-size:11px;color:var(--muted);">Supprimé le ${new Date(c.created_at).toLocaleDateString('fr-FR')}${c.supprime_par ? ` par ${esc(c.supprime_par)}` : ''} · ${restant > 0 ? `effacé définitivement dans ${restant} jour${restant > 1 ? 's' : ''}` : 'effacé cette nuit'}</div>
+      </div>
+      <button class="btn btn-secondary" style="font-size:12px;white-space:nowrap;" onclick="restaurerDepuisCorbeille(${c.id})">Restaurer</button>
+    </div>`
+  }).join('')
+}
+
+async function restaurerDepuisCorbeille(id) {
+  const { data: libelle, error } = await db.rpc('restaurer_corbeille', { p_id: id })
+  if (error) { alert('Restauration impossible : ' + error.message); return }
+  afficherToast(`${libelle} restauré`)
+  chargerArchives()
+}
+
 // --- ARCHIVES ---
 async function chargerContratsArchives() {
   const el = document.getElementById('liste-contrats-archives')
@@ -797,6 +838,7 @@ async function chargerContratsArchives() {
 
 async function chargerArchives() {
   chargerContratsArchives()
+  chargerCorbeille()
   const { data } = await db.from('projets').select('*').eq('archive', true).order('created_at', { ascending: false })
   const container = document.getElementById('liste-archives')
   if (!data || !data.length) {
@@ -835,22 +877,9 @@ async function archiverProjet() {
 }
 
 async function supprimerProjetDefinitif(id, nom) {
-  const confirmation = await confirmer(`Supprimer définitivement "${nom}" ?\n\nCette action est irréversible : le projet et toutes ses tâches seront effacés définitivement.`)
-  if (!confirmation) return
-  // Double confirmation pour une suppression définitive
-  const double = await confirmer(`Dernière confirmation : supprimer "${nom}" et toutes ses tâches de façon permanente ?`)
-  if (!double) return
-  // Supprimer dans l'ordre : assignations → commentaires → tâches → projet
-  const { data: taches } = await db.from('taches').select('id').eq('projet_id', id)
-  const tacheIds = (taches || []).map(t => t.id)
-  if (tacheIds.length) {
-    await supprimerPiecesJointesDeTaches(tacheIds)
-    await db.from('tache_assignations').delete().in('tache_id', tacheIds)
-    await db.from('commentaires_taches').delete().in('tache_id', tacheIds)
-  }
-  await db.from('taches').delete().eq('projet_id', id)
-  await db.from('projets').delete().eq('id', id)
-  chargerArchives()
+  if (!await confirmer(`Supprimer le projet « ${nom} » et toutes ses tâches ?\nIls restent récupérables 30 jours dans la Corbeille (ci-dessous).`)) return
+  const ok = await mettreALaCorbeille('projet', id, 'Projet supprimé', chargerArchives)
+  if (ok) chargerArchives()
 }
 
 async function desarchiverProjet(id) {
@@ -1262,10 +1291,10 @@ async function changerStatutTacheVers(id, ancien, nouveau) {
 
 async function supprimerTache() {
   if (!tacheEnEdition) return
-  if (!await confirmer('Supprimer cette tâche définitivement ?')) return
-  await supprimerPiecesJointesDeTaches([tacheEnEdition.id])
-  await db.from('tache_assignations').delete().eq('tache_id', tacheEnEdition.id)
-  await db.from('taches').delete().eq('id', tacheEnEdition.id)
+  if (!await confirmer('Supprimer cette tâche ?\nElle reste récupérable 30 jours dans Archives → Corbeille.')) return
+  const id = tacheEnEdition.id
+  const ok = await mettreALaCorbeille('tache', id, 'Tâche supprimée', () => projetActif ? chargerTachesDetail() : chargerTachesGlobal())
+  if (!ok) return
   fermerModals()
   if (projetActif) chargerTachesDetail()
   else chargerTachesGlobal()
@@ -1758,8 +1787,9 @@ function ouvrirFicheEmploye(id) {
 async function supprimerEmploye() {
   const id = document.getElementById('input-employe-id').value
   const nom = document.getElementById('input-employe-nom').value
-  if (!await confirmer(`Supprimer ${nom} ?`)) return
-  await db.from('employes').delete().eq('id', id)
+  if (!await confirmer(`Supprimer ${nom} de l'équipe ?\nRécupérable 30 jours dans Archives → Corbeille (il faudra lui redonner un code).`)) return
+  const ok = await mettreALaCorbeille('employe', id, `${nom} retiré de l'équipe`, chargerEmployes)
+  if (!ok) return
   fermerModals()
   chargerEmployes()
 }
@@ -6097,13 +6127,9 @@ async function supprimerPassage() {
   const p = trPassageEdition
   if (!p) return
   const nom = trClient(p.client_id)?.nom || ''
-  if (!await confirmer(`Supprimer la bulle « ${nom} » du ${TR_JOURS[p.jour - 1].toLowerCase()} ?`)) return
-  const { error } = await db.from('tournee_passages').delete().eq('id', p.id)
-  if (error) { alert('Suppression impossible.'); return }
-  // Client sans plus aucun passage : on le retire aussi (évite les doublons dans la liste)
-  if (!trPassages.some(x => x.client_id === p.client_id && x.id !== p.id)) {
-    await db.from('tournee_clients').delete().eq('id', p.client_id)
-  }
+  if (!await confirmer(`Supprimer la bulle « ${nom} » du ${TR_JOURS[p.jour - 1].toLowerCase()} ?\nRécupérable 30 jours dans Archives → Corbeille.`)) return
+  const ok = await mettreALaCorbeille('passage', p.id, 'Bulle supprimée', chargerTournees)
+  if (!ok) return
   logAction('tournee', 'tournee_passages', p.id, `Tournée : bulle « ${nom} » du ${TR_JOURS[p.jour - 1].toLowerCase()} supprimée`)
   if (trSelection === p.id) trSelection = null
   fermerModals()
