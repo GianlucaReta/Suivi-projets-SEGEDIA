@@ -32,6 +32,53 @@ async function toutesLesLignes(construireRequete, taillePage = 1000) {
   }
 }
 
+// ── FENÊTRES AU STYLE DU SITE (remplacent les boîtes grises du navigateur) ──
+// confirmer('…') → Promise<true|false> ; demander('…', valeur) → Promise<texte|null>
+function boiteDialogue({ titre = '', message = '', champ = null, ok = 'OK', annuler = 'Annuler', danger = false }) {
+  return new Promise(resolve => {
+    const fond = document.createElement('div')
+    fond.className = 'modal-overlay'
+    fond.style.zIndex = '10001'
+    const boite = document.createElement('div')
+    boite.className = 'modal-box'
+    boite.style.maxWidth = '420px'
+    boite.innerHTML = `
+      ${titre ? `<h2 style="margin-bottom:8px;">${esc(titre)}</h2>` : ''}
+      <div style="font-size:13.5px;color:var(--ink-soft);line-height:1.55;white-space:pre-line;">${esc(message)}</div>
+      ${champ ? `<input class="dlg-champ" type="${champ.type || 'text'}" inputmode="${champ.inputmode || ''}" value="${esc(champ.valeur ?? '')}" placeholder="${esc(champ.placeholder || '')}"
+        style="margin-top:12px;width:100%;padding:9px 11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;" />` : ''}
+      <div class="modal-actions">
+        ${annuler ? `<button class="btn btn-secondary dlg-non">${esc(annuler)}</button>` : ''}
+        <button class="btn ${danger ? 'btn-danger' : 'btn-primary'} dlg-oui">${esc(ok)}</button>
+      </div>`
+    fond.appendChild(boite)
+    document.body.appendChild(fond)
+    const input = boite.querySelector('.dlg-champ')
+    const fermer = v => { fond.remove(); document.removeEventListener('keydown', clavier, true); resolve(v) }
+    const valider = () => fermer(champ ? input.value : true)
+    const refuser = () => fermer(champ ? null : false)
+    const clavier = e => {
+      if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); annuler ? refuser() : valider() }
+      if (e.key === 'Enter' && (!input || document.activeElement === input || document.activeElement === document.body)) { e.preventDefault(); valider() }
+    }
+    document.addEventListener('keydown', clavier, true)
+    boite.querySelector('.dlg-oui').onclick = valider
+    boite.querySelector('.dlg-non')?.addEventListener('click', refuser)
+    fond.addEventListener('click', e => { if (e.target === fond) refuser() })
+    setTimeout(() => (input || boite.querySelector('.dlg-oui')).focus(), 30)
+    if (input) input.select()
+  })
+}
+function confirmer(message, options = {}) {
+  const danger = options.danger ?? /^(⚠️ )?(Supprimer|Retirer|Archiver|Annuler l'import|Dernière confirmation)/.test(message)
+  return boiteDialogue({ message, ok: options.ok || (danger ? 'Confirmer' : 'OK'), danger, titre: options.titre })
+}
+function demander(message, valeur = '', options = {}) {
+  return boiteDialogue({ message, champ: { valeur, ...options }, ok: options.ok || 'Valider' })
+}
+// Les messages simples (alert) utilisent aussi la fenêtre du site
+window.alert = message => { boiteDialogue({ message: String(message ?? ''), annuler: null }) }
+
 // Échappe un texte avant de l'insérer dans du HTML
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
@@ -762,17 +809,17 @@ async function chargerArchives() {
 
 async function archiverProjet() {
   if (!projetActif) return
-  if (!confirm(`Archiver le projet "${projetActif.nom}" et toutes ses tâches ?`)) return
+  if (!await confirmer(`Archiver le projet "${projetActif.nom}" et toutes ses tâches ?`)) return
   await db.from('projets').update({ archive: true }).eq('id', projetActif.id)
   await db.from('taches').update({ archive: true }).eq('projet_id', projetActif.id)
   showPage('projets')
 }
 
 async function supprimerProjetDefinitif(id, nom) {
-  const confirmation = confirm(`⚠️ Supprimer définitivement "${nom}" ?\n\nCette action est irréversible : le projet et toutes ses tâches seront effacés définitivement.`)
+  const confirmation = await confirmer(`⚠️ Supprimer définitivement "${nom}" ?\n\nCette action est irréversible : le projet et toutes ses tâches seront effacés définitivement.`)
   if (!confirmation) return
   // Double confirmation pour une suppression définitive
-  const double = confirm(`Dernière confirmation : supprimer "${nom}" et toutes ses tâches de façon permanente ?`)
+  const double = await confirmer(`Dernière confirmation : supprimer "${nom}" et toutes ses tâches de façon permanente ?`)
   if (!double) return
   // Supprimer dans l'ordre : assignations → commentaires → tâches → projet
   const { data: taches } = await db.from('taches').select('id').eq('projet_id', id)
@@ -986,9 +1033,9 @@ async function onDrop(event) {
   const tacheId = event.dataTransfer.getData('tacheId')
   const nouveauStatut = event.currentTarget.dataset.statut
   if (!tacheId || !nouveauStatut) return
-  await db.from('taches').update({ statut: nouveauStatut }).eq('id', tacheId)
-  if (projetActif) chargerTachesDetail()
-  else chargerTachesGlobal()
+  const ancien = document.querySelector(`.kanban-card[data-id="${tacheId}"]`)?.dataset.statut
+  if (ancien === nouveauStatut) return
+  await changerStatutTacheVers(tacheId, ancien, nouveauStatut)
 }
 
 // --- GANTT ---
@@ -1176,16 +1223,27 @@ async function changerStatutTache(id, statutActuel, event) {
   event.stopPropagation()
   const ordre = ['en attente', 'en cours', 'fait']
   const nouveauStatut = ordre[(ordre.indexOf(statutActuel) + 1) % ordre.length]
+  await changerStatutTacheVers(id, statutActuel, nouveauStatut)
+}
+
+// Change le statut d'une tâche, signale une erreur, et propose d'annuler
+async function changerStatutTacheVers(id, ancien, nouveau) {
+  const recharger = () => projetActif ? chargerTachesDetail() : chargerTachesGlobal()
   const { data: t } = await db.from('taches').select('description').eq('id', id).single()
-  await db.from('taches').update({ statut: nouveauStatut }).eq('id', id)
-  if (t) logAction('tache_statut', 'taches', id, `"${t.description}" → ${nouveauStatut}`)
-  if (projetActif) chargerTachesDetail()
-  else chargerTachesGlobal()
+  const { error } = await db.from('taches').update({ statut: nouveau }).eq('id', id)
+  if (error) { console.error(error); afficherToast('Statut non enregistré, réessaie.', true); recharger(); return }
+  if (t) logAction('tache_statut', 'taches', id, `"${t.description}" → ${nouveau}`)
+  if (ancien && ancien !== nouveau) afficherToast(`Tâche passée « ${nouveau} »`, false, async () => {
+    const { error: e } = await db.from('taches').update({ statut: ancien }).eq('id', id)
+    if (e) throw e
+    afficherToast('Statut rétabli'); recharger()
+  })
+  recharger()
 }
 
 async function supprimerTache() {
   if (!tacheEnEdition) return
-  if (!confirm('Supprimer cette tâche définitivement ?')) return
+  if (!await confirmer('Supprimer cette tâche définitivement ?')) return
   await supprimerPiecesJointesDeTaches([tacheEnEdition.id])
   await db.from('tache_assignations').delete().eq('tache_id', tacheEnEdition.id)
   await db.from('taches').delete().eq('id', tacheEnEdition.id)
@@ -1389,7 +1447,7 @@ function retirerPieceEnAttente(i) {
 }
 
 async function supprimerPieceJointe(id) {
-  if (!confirm('Supprimer cette pièce jointe ?')) return
+  if (!await confirmer('Supprimer cette pièce jointe ?')) return
   const { data: pj } = await db.from('taches_pieces_jointes').select('chemin,nom').eq('id', id).single()
   if (!pj) return
   const { error } = await db.from('taches_pieces_jointes').delete().eq('id', id)
@@ -1679,7 +1737,7 @@ function ouvrirFicheEmploye(id) {
 async function supprimerEmploye() {
   const id = document.getElementById('input-employe-id').value
   const nom = document.getElementById('input-employe-nom').value
-  if (!confirm(`Supprimer ${nom} ?`)) return
+  if (!await confirmer(`Supprimer ${nom} ?`)) return
   await db.from('employes').delete().eq('id', id)
   fermerModals()
   chargerEmployes()
@@ -2432,7 +2490,11 @@ function editerContactFacture(id, champ, valActuelle, el) {
 }
 async function sauvegarderContactFacture(id, champ, valeur) {
   const val = valeur.trim() || null
-  await db.from('factures').update({ [champ]: val }).eq('id', id)
+  const avant = (window._toutesFactures || []).find(f => f.id === id)?.[champ] ?? null
+  if (val === avant) { chargerFactures(); return }
+  const { error } = await db.from('factures').update({ [champ]: val }).eq('id', id)
+  if (error) { afficherToast('Contact non enregistré, réessaie.', true); return }
+  journalFactures([id], 'facture_contact', `${champ === 'email_client' ? 'Mail' : 'Téléphone'} : ${avant || '—'} → ${val || '—'}`)
   chargerFactures()
 }
 
@@ -2686,6 +2748,7 @@ async function chargerFactures() {
                       ? `<button onclick="annulerLitige('${f.id}')" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:#ede9fe;color:#5b21b6;border:none;cursor:pointer;font-family:inherit;white-space:nowrap;">Clore litige</button>`
                       : `<button onclick="marquerLitige('${f.id}')" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;white-space:nowrap;">⚠ Litige</button>`)
                   : ''}
+                <button onclick="ouvrirHistoriqueFacture('${f.id}')" title="Historique de la facture" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;white-space:nowrap;">🕘 Historique</button>
                 <button onclick="editerMontantPaye('${f.id}',${montantPaye})" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:${montantPaye > 0 ? '#fee2e2' : 'var(--surface-alt)'};color:${montantPaye > 0 ? '#991b1b' : 'var(--muted)'};border:1px solid ${montantPaye > 0 ? '#fca5a5' : 'var(--border)'};cursor:pointer;font-family:inherit;white-space:nowrap;font-weight:${montantPaye > 0 ? '700' : '400'};">${montantPaye > 0 ? '💰 Acompte' : '+ Acompte'}</button>
               </div>`
 
@@ -2773,7 +2836,7 @@ async function ajouterClientExclu() {
 }
 
 async function supprimerClientExclu(id, nom) {
-  if (!confirm(`Retirer "${nom}" de la liste d'exclusion ?\nSes factures réapparaîtront dans le tableau.`)) return
+  if (!await confirmer(`Retirer "${nom}" de la liste d'exclusion ?\nSes factures réapparaîtront dans le tableau.`)) return
   await db.from('clients_exclus').delete().eq('id', id)
   chargerFactures()
   chargerAnalytique()
@@ -2951,12 +3014,12 @@ async function bulkSolderFactures() {
   const ids = Array.from(document.querySelectorAll('.bulk-fac:checked'))
     .filter(cb => cb.dataset.solde !== 'true')
     .map(cb => cb.value)
-  if (!ids.length) { alert('Aucune facture non-soldée dans la sélection.'); return }
-  if (!confirm(`Marquer ${ids.length} facture${ids.length>1?'s':''} comme soldée${ids.length>1?'s':''} ?`)) return
-  const date_paiement = aujourdhuiISO()
-  await db.from('factures').update({ solde: true, date_paiement }).in('id', ids)
-  afficherToast(`${ids.length} facture${ids.length>1?'s':''} soldée${ids.length>1?'s':''}`)
-  chargerFactures()
+  if (!ids.length) { alert('Aucune facture non soldée dans la sélection.'); return }
+  if (!await confirmer(`Marquer ${ids.length} facture${ids.length>1?'s':''} comme soldée${ids.length>1?'s':''} ?`)) return
+  const avant = (window._toutesFactures || []).filter(f => ids.includes(f.id)).map(f => ({ id: f.id, solde: f.solde, date_paiement: f.date_paiement }))
+  const ok = await majFactureAvecAnnulation(ids, { solde: true, date_paiement: aujourdhuiISO() },
+    `${ids.length} facture${ids.length>1?'s':''} soldée${ids.length>1?'s':''}`, avant)
+  if (ok) journalFactures(ids, 'facture_soldee', `Facture soldée (sélection de ${ids.length} facture${ids.length > 1 ? 's' : ''})`)
 }
 
 function bulkExporterFactures() {
@@ -2982,21 +3045,19 @@ function bulkExporterFactures() {
 }
 
 async function marquerFactureSoldee(id) {
-  const date_paiement = aujourdhuiISO()
-  const { data: f } = await db.from('factures').select('numero,client,montant').eq('id', id).single()
-  await db.from('factures').update({ solde: true, date_paiement }).eq('id', id)
-  if (f) {
-    const montantFmt = parseFloat(f.montant).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
-    logAction('facture_soldee', 'factures', id, `Facture ${f.numero} soldée — ${f.client} — ${montantFmt} €`)
-  }
-  chargerFactures()
+  const { data: f } = await db.from('factures').select('id,numero,client,montant,solde,date_paiement').eq('id', id).single()
+  if (!f) { afficherToast('Facture introuvable', true); return }
+  const ok = await majFactureAvecAnnulation([id], { solde: true, date_paiement: f.date_paiement || aujourdhuiISO() },
+    `Facture ${f.numero} soldée`, [{ id, solde: f.solde, date_paiement: f.date_paiement }])
+  if (ok) logAction('facture_soldee', 'factures', id, `Facture ${f.numero} soldée — ${f.client} — ${parseFloat(f.montant).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €`)
 }
 
 async function marquerFactureNonSoldee(id) {
-  const { data: f } = await db.from('factures').select('numero,client').eq('id', id).single()
-  await db.from('factures').update({ solde: false, date_paiement: null }).eq('id', id)
-  if (f) logAction('facture_annulee', 'factures', id, `Facture ${f.numero} remise en attente — ${f.client}`)
-  chargerFactures()
+  const { data: f } = await db.from('factures').select('id,numero,client,solde,date_paiement').eq('id', id).single()
+  if (!f) { afficherToast('Facture introuvable', true); return }
+  const ok = await majFactureAvecAnnulation([id], { solde: false, date_paiement: null },
+    `Facture ${f.numero} remise en attente`, [{ id, solde: f.solde, date_paiement: f.date_paiement }])
+  if (ok) logAction('facture_annulee', 'factures', id, `Facture ${f.numero} remise en attente — ${f.client}`)
 }
 
 function ouvrirNoteFacture(id, noteActuelle) {
@@ -3008,7 +3069,9 @@ function ouvrirNoteFacture(id, noteActuelle) {
 
 async function sauvegarderNoteModalFacture(id) {
   const note = document.getElementById('modal-note-facture-textarea')?.value?.trim() || null
-  await db.from('factures').update({ note }).eq('id', id)
+  const { error } = await db.from('factures').update({ note }).eq('id', id)
+  if (error) { afficherToast('Note non enregistrée, réessaie.', true); return }
+  journalFactures([id], 'facture_note', note ? `Note : ${note.slice(0, 120)}` : 'Note supprimée')
   fermerModals()
   chargerFactures()
 }
@@ -3034,36 +3097,44 @@ async function sauvegarderDatePaiement(id, valeur) {
   const editEl = document.getElementById(`paye-${id}-edit`)
   if (editEl) editEl.style.display = 'none'
   const date_paiement = valeur || null
-  await db.from('factures').update({ date_paiement }).eq('id', id)
+  const facture = (window._toutesFactures || []).find(f => f.id === id)
+  if (facture && (facture.date_paiement || null) === date_paiement) { chargerFactures(); return }   // appelé 2 fois (change + sortie du champ)
+  if (facture) facture.date_paiement = date_paiement
+  const { error } = await db.from('factures').update({ date_paiement }).eq('id', id)
+  if (error) { afficherToast('Date non enregistrée, réessaie.', true); chargerFactures(); return }
+  journalFactures([id], 'facture_paiement', date_paiement ? `Date de paiement : ${formatDate(date_paiement)}` : 'Date de paiement effacée')
   chargerFactures()
 }
 
 // ── Acompte / paiement partiel ──────────────────────────
 async function editerMontantPaye(id, montantActuel) {
-  const val = prompt(`Montant réglé (€) :`, montantActuel || '0')
+  const val = await demander('Montant déjà réglé (acompte ou avoir), en € :', montantActuel || '0', { inputmode: 'decimal' })
   if (val === null) return
   const montantPaye = parseFloat(val.replace(',', '.')) || 0
   // Récupérer le montant total pour vérifier si soldée
-  const { data: f } = await db.from('factures').select('montant').eq('id', id).single()
-  const montantTotal = parseFloat(f?.montant) || 0
+  if (montantPaye < 0) { alert('Le montant ne peut pas être négatif.'); return }
+  const { data: f } = await db.from('factures').select('id,numero,montant,montant_paye,solde,date_paiement').eq('id', id).single()
+  if (!f) { afficherToast('Facture introuvable', true); return }
+  const montantTotal = parseFloat(f.montant) || 0
   const updates = { montant_paye: montantPaye }
-  if (montantPaye >= montantTotal && montantTotal > 0) {
-    updates.solde = true
-    updates.date_paiement = aujourdhuiISO()
-  }
-  await db.from('factures').update(updates).eq('id', id)
-  chargerFactures()
+  const devientSoldee = montantPaye >= montantTotal && montantTotal > 0 && !f.solde
+  if (devientSoldee) { updates.solde = true; updates.date_paiement = f.date_paiement || aujourdhuiISO() }
+  const fmt = v => (parseFloat(v) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
+  const ok = await majFactureAvecAnnulation([id], updates,
+    devientSoldee ? `Acompte de ${fmt(montantPaye)} € : facture soldée` : `Acompte enregistré : ${fmt(montantPaye)} €`,
+    [{ id, montant_paye: f.montant_paye, solde: f.solde, date_paiement: f.date_paiement }])
+  if (ok) journalFactures([id], 'facture_acompte', `Acompte / avoir : ${fmt(f.montant_paye)} € → ${fmt(montantPaye)} €${devientSoldee ? ' (facture soldée)' : ''}`)
 }
 
 // ── Litige ──────────────────────────────────────────────
 async function marquerLitige(id) {
-  await db.from('factures').update({ litige: true }).eq('id', id)
-  chargerFactures()
+  const ok = await majFactureAvecAnnulation([id], { litige: true }, 'Facture passée en litige', [{ id, litige: false }])
+  if (ok) logAction('facture_litige', 'factures', id, `Facture ${(window._toutesFactures || []).find(f => f.id === id)?.numero || ''} en litige`)
 }
 
 async function annulerLitige(id) {
-  await db.from('factures').update({ litige: false }).eq('id', id)
-  chargerFactures()
+  const ok = await majFactureAvecAnnulation([id], { litige: false }, 'Litige clos', [{ id, litige: true }])
+  if (ok) logAction('facture_litige', 'factures', id, `Litige clos sur la facture ${(window._toutesFactures || []).find(f => f.id === id)?.numero || ''}`)
 }
 
 // ── Relance ─────────────────────────────────────────────
@@ -3195,6 +3266,7 @@ async function envoyerRelanceEmail() {
     const data = await res.json()
     if (!res.ok || data.error) throw new Error(data.error || 'Erreur serveur')
 
+    journalFactures(ids, 'facture_relance', `Relance ${(window._relanceData?.type || 'r1').toUpperCase()} envoyée à ${email}`)
     fermerModals()
     afficherToast(`Mail envoyé à ${email}`)
     const pageRec = document.getElementById('page-recouvrement')
@@ -3208,12 +3280,50 @@ async function envoyerRelanceEmail() {
   }
 }
 
-function afficherToast(msg, erreur = false) {
+// Message en bas à droite. Avec « annulation » (fonction), un bouton Annuler reste 7 s.
+function afficherToast(msg, erreur = false, annulation = null) {
+  document.querySelectorAll('.toast-suivipro').forEach(x => x.remove())
   const t = document.createElement('div')
-  t.textContent = msg
-  t.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:600;font-family:inherit;box-shadow:0 4px 16px rgba(0,0,0,0.15);transition:opacity 0.4s;background:${erreur ? '#fee2e2' : '#d1fae5'};color:${erreur ? '#991b1b' : '#166534'};border:1px solid ${erreur ? '#fca5a5' : '#6ee7b7'};`
+  t.className = 'toast-suivipro'
+  t.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;padding:11px 14px 11px 18px;border-radius:10px;font-size:13px;font-weight:600;font-family:inherit;box-shadow:0 4px 16px rgba(0,0,0,0.15);transition:opacity 0.4s;display:flex;align-items:center;gap:14px;background:${erreur ? '#fee2e2' : '#d1fae5'};color:${erreur ? '#991b1b' : '#166534'};border:1px solid ${erreur ? '#fca5a5' : '#6ee7b7'};`
+  const texte = document.createElement('span'); texte.textContent = msg; t.appendChild(texte)
+  if (annulation) {
+    const b = document.createElement('button')
+    b.textContent = 'Annuler'
+    b.style.cssText = 'background:#fff;border:1px solid currentColor;color:inherit;border-radius:6px;padding:4px 10px;font-weight:700;cursor:pointer;font-family:inherit;font-size:12px;'
+    b.onclick = async () => { t.remove(); try { await annulation() } catch (e) { console.error(e); afficherToast('Annulation impossible', true) } }
+    t.appendChild(b)
+  }
   document.body.appendChild(t)
-  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 400) }, 3500)
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 400) }, annulation ? 7000 : 3500)
+}
+
+// Historique par facture : une ligne par facture concernée (table historique_actions)
+async function journalFactures(ids, type, description) {
+  const lignes = (ids || []).filter(Boolean).map(id => ({ type, entite: 'factures', entite_id: id, description, auteur: utilisateurActifNom || 'Anonyme' }))
+  if (lignes.length) await db.from('historique_actions').insert(lignes)
+}
+
+// Enregistre un changement de facture, affiche l'erreur s'il échoue, et propose de l'annuler
+async function majFactureAvecAnnulation(ids, changements, message, anciennes) {
+  const { error } = await db.from('factures').update(changements).in('id', ids)
+  if (error) { console.error(error); afficherToast('Enregistrement impossible, réessaie.', true); return false }
+  afficherToast(message, false, async () => {
+    for (const a of anciennes) {
+      const { id, ...valeurs } = a
+      const { error: e } = await db.from('factures').update(valeurs).eq('id', id)
+      if (e) throw e
+    }
+    afficherToast('Modification annulée')
+    rafraichirVueFactures()
+  })
+  rafraichirVueFactures()
+  return true
+}
+function rafraichirVueFactures() {
+  const rec = document.getElementById('page-recouvrement')
+  if (rec?.classList.contains('active')) chargerRecouvrement(); else chargerFactures()
+  mettreAJourBadgeRecouvrement()
 }
 
 // ── Relance R2 ──────────────────────────────────────────
@@ -3338,7 +3448,9 @@ async function enregistrerAppel() {
 
   if (!date_appel) { alert('Veuillez saisir une date.'); return }
 
-  await db.from('factures').update({ date_appel, note_appel }).in('id', ids)
+  const { error } = await db.from('factures').update({ date_appel, note_appel }).in('id', ids)
+  if (error) { afficherToast('Appel non enregistré, réessaie.', true); return }
+  journalFactures(ids, 'facture_appel', `Appel du ${formatDate(date_appel)}${note_appel ? ` : ${note_appel}` : ''}`)
   fermerModals()
   afficherToast(`Appel enregistré pour ${client}`)
   const pageRecouv = document.getElementById('page-recouvrement')
@@ -4585,6 +4697,34 @@ async function echecImport(error, journalId) {
   chargerFactures()
 }
 
+// ── Historique d'une facture ──
+async function ouvrirHistoriqueFacture(id) {
+  const f = (window._toutesFactures || []).find(x => x.id === id)
+  const numero = f?.numero || ''
+  const [{ data: actions }, { data: imports }] = await Promise.all([
+    db.from('historique_actions').select('description,auteur,created_at').eq('entite', 'factures').eq('entite_id', id).order('created_at', { ascending: false }).limit(100),
+    numero ? db.from('imports_factures').select('fichier,auteur,created_at,annule,details')
+      .or(`details->nouvelles.cs.${JSON.stringify([numero])},details->avant.cs.${JSON.stringify([{ numero }])}`).order('created_at', { ascending: false }).limit(20)
+      : Promise.resolve({ data: [] }),
+  ])
+  const lignes = [
+    ...(actions || []).map(a => ({ date: a.created_at, qui: a.auteur, quoi: a.description })),
+    ...(imports || []).map(i => {
+      const nouvelle = (i.details?.nouvelles || []).includes(numero)
+      const av = (i.details?.avant || []).find(x => x.numero === numero)
+      const champs = av ? Object.keys(av).filter(k => k !== 'numero').join(', ') : ''
+      return { date: i.created_at, qui: i.auteur, quoi: `${nouvelle ? 'Créée' : `Mise à jour (${champs})`} par l'import « ${i.fichier} »${i.annule ? ' — import annulé depuis' : ''}` }
+    }),
+  ].sort((a, b) => b.date.localeCompare(a.date))
+  await boiteDialogue({
+    titre: `Historique · facture ${numero}`,
+    message: lignes.length
+      ? lignes.map(l => `${new Date(l.date).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · ${l.qui || '—'}\n   ${l.quoi}`).join('\n\n')
+      : 'Aucune action enregistrée sur cette facture pour l\'instant (l\'historique démarre aujourd\'hui).',
+    ok: 'Fermer', annuler: null,
+  })
+}
+
 // ── Historique des imports et annulation ──
 async function ouvrirHistoriqueImports() {
   const { data, error } = await db.from('imports_factures').select('id,created_at,auteur,fichier,nb_lignes,nb_nouvelles,nb_modifiees,nb_soldees,annule,annule_le,annule_par').order('created_at', { ascending: false }).limit(15)
@@ -4621,7 +4761,7 @@ async function annulerImport(id) {
   const { data: imp, error } = await db.from('imports_factures').select('*').eq('id', id).single()
   if (error || !imp || imp.annule) return
   const nouvelles = imp.details?.nouvelles || [], avant = imp.details?.avant || []
-  if (!confirm(`Annuler l'import « ${imp.fichier} » ?\n\n· ${nouvelles.length} facture(s) ajoutée(s) seront supprimées\n· ${avant.length} facture(s) retrouveront leurs valeurs d'avant\n\nLes relances, notes et acomptes saisis depuis sur ces factures seront perdus pour les factures supprimées.`)) return
+  if (!await confirmer(`Annuler l'import « ${imp.fichier} » ?\n\n· ${nouvelles.length} facture(s) ajoutée(s) seront supprimées\n· ${avant.length} facture(s) retrouveront leurs valeurs d'avant\n\nLes relances, notes et acomptes saisis depuis sur ces factures seront perdus pour les factures supprimées.`)) return
   for (let k = 0; k < nouvelles.length; k += 200) {
     const { error: e } = await db.from('factures').delete().in('numero', nouvelles.slice(k, k + 200))
     if (e) { alert('Annulation interrompue : ' + e.message); return }
@@ -5445,7 +5585,7 @@ async function ouvrirHistoriqueContrat(id) {
 async function archiverContrat(id) {
   id = id || window._contratEditionId
   if (!id) return
-  if (!confirm('Archiver ce contrat ? Il disparaît tout de suite de la grille (récupérable dans Archives).\n\nPour un client qui s\'arrête normalement, préfère plutôt une date de fin : les derniers mois restent à facturer.')) return
+  if (!await confirmer('Archiver ce contrat ? Il disparaît tout de suite de la grille (récupérable dans Archives).\n\nPour un client qui s\'arrête normalement, préfère plutôt une date de fin : les derniers mois restent à facturer.')) return
   const { data: c } = await db.from('contrats_recurrents').select('client').eq('id', id).single()
   await db.from('contrats_recurrents').update({ actif: false }).eq('id', id)
   logAction('contrat', 'contrats_recurrents', id, `Contrat archivé : ${c?.client || ''}`)
@@ -5699,7 +5839,13 @@ async function trDrop(ev) {
     return
   }
   const nom = trClient(p.client_id)?.nom || ''
-  afficherToast(`${nom} : ${TR_JOURS[ancien - 1]} → ${TR_JOURS[jour - 1]}`)
+  afficherToast(`${nom} : ${TR_JOURS[ancien - 1]} → ${TR_JOURS[jour - 1]}`, false, async () => {
+    const { error: e } = await db.from('tournee_passages').update({ jour: ancien, updated_at: new Date().toISOString() }).eq('id', id)
+    if (e) throw e
+    p.jour = ancien; afficherTournees()
+    logAction('tournee', 'tournee_passages', id, `Tournée : déplacement de ${nom} annulé (retour au ${TR_JOURS[ancien - 1].toLowerCase()})`)
+    afficherToast('Déplacement annulé')
+  })
   logAction('tournee', 'tournee_passages', id, `Tournée : ${nom} déplacé du ${TR_JOURS[ancien - 1].toLowerCase()} au ${TR_JOURS[jour - 1].toLowerCase()}`)
 }
 
@@ -5749,7 +5895,7 @@ function remplirClientExistant() {
 
 async function ajouterOperateurTournee() {
   const sel = document.getElementById('mp-operateur')
-  const nom = (prompt('Nom du nouvel opérateur :') || '').trim()
+  const nom = ((await demander('Nom du nouvel opérateur :', '', { placeholder: 'Ex : Karim' })) || '').trim()
   if (!nom) { sel.value = ''; return }
   const existe = trOperateurs.find(o => trNorm(o.nom) === trNorm(nom))
   if (existe) { remplirListeOperateursTournee(existe.id); return }
@@ -5831,7 +5977,7 @@ async function supprimerPassage() {
   const p = trPassageEdition
   if (!p) return
   const nom = trClient(p.client_id)?.nom || ''
-  if (!confirm(`Supprimer la bulle « ${nom} » du ${TR_JOURS[p.jour - 1].toLowerCase()} ?`)) return
+  if (!await confirmer(`Supprimer la bulle « ${nom} » du ${TR_JOURS[p.jour - 1].toLowerCase()} ?`)) return
   const { error } = await db.from('tournee_passages').delete().eq('id', p.id)
   if (error) { alert('Suppression impossible.'); return }
   // Client sans plus aucun passage : on le retire aussi (évite les doublons dans la liste)

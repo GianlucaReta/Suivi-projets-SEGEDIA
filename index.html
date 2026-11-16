@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=20261117c" />
+  <link rel="stylesheet" href="style.css?v=20261117e" />
 </head>
 <body>
 
@@ -250,7 +250,7 @@
         <button onclick="ouvrirSelecteurUtilisateur();fermerMenuUtilisateur()" style="width:100%;text-align:left;padding:10px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--ink);font-family:inherit;border-bottom:1px solid var(--border-soft);">Changer de profil</button>
         <button id="menu-sauvegarde" onclick="fermerMenuUtilisateur();telechargerSauvegarde()" style="display:none;width:100%;text-align:left;padding:10px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--ink);font-family:inherit;border-bottom:1px solid var(--border-soft);">Télécharger la sauvegarde</button>
         <button onclick="fermerMenuUtilisateur();ouvrirChoixCode(false)" style="width:100%;text-align:left;padding:10px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--ink);font-family:inherit;border-bottom:1px solid var(--border-soft);">Changer mon code</button>
-        <button onclick="if(confirm('Se déconnecter ?'))deconnexion()" style="width:100%;text-align:left;padding:10px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--danger);font-family:inherit;">Se déconnecter</button>
+        <button onclick="fermerMenuUtilisateur();confirmer('Se déconnecter ?',{ok:'Se déconnecter'}).then(ok=>ok&&deconnexion())" style="width:100%;text-align:left;padding:10px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--danger);font-family:inherit;">Se déconnecter</button>
       </div>
     </div>
   </aside>
@@ -1084,6 +1084,6 @@
   <div id="popup-notifications-liste"></div>
 </div>
 
-<script src="app.js?v=20261117c" id="script-app"></script>
+<script src="app.js?v=20261117e" id="script-app"></script>
 </body>
 </html>
