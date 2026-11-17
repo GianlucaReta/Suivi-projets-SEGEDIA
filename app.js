@@ -280,6 +280,7 @@ function appliqueSidebarState() {
   const btn     = document.getElementById('sidebar-toggle-btn')
   const icon    = document.getElementById('sidebar-toggle-icon')
   if (!sidebar || !main || !btn) return
+  document.querySelectorAll('.nav-item').forEach(n => { n.title = _sidebarCollapsed ? (n.dataset.label || '') : '' })
   if (_sidebarCollapsed) {
     sidebar.classList.add('collapsed')
     main.classList.add('sidebar-collapsed')
@@ -301,7 +302,56 @@ function appliqueSidebarState() {
 document.addEventListener('DOMContentLoaded', appliqueSidebarState)
 
 // --- NAVIGATION ---
+// ── FIL D'ARIANE ET RETOUR ──────────────────────────────────
+// On mémorise la page quittée (et sa position) pour pouvoir y revenir exactement.
+const LIBELLES_PAGES = { dashboard: 'Tableau de bord', projets: 'Projets', detail: 'Projet', taches: 'Tâches', employes: 'Équipe',
+  clients: 'Clients', calendrier: 'Calendrier', recurrents: 'Récurrents', tournees: 'Tournées', factures: 'Factures',
+  recouvrement: 'Recouvrement', archives: 'Archives' }
+let _pageCourante = null
+let _historiqueNav = []
+let _retourEnCours = false
+
+function retourPagePrecedente() {
+  const e = _historiqueNav.pop()
+  if (!e) return
+  _retourEnCours = true
+  if (e.page === 'clients') clSelection = e.client || null
+  if (e.page === 'detail' && e.projet) ouvrirDetailProjet(e.projet)
+  else showPage(e.page)
+  _retourEnCours = false
+  // Les pages se chargent en arrière-plan : on remet la position une fois le contenu arrivé
+  ;[250, 800, 1600].forEach(t => setTimeout(() => window.scrollTo(0, e.scroll || 0), t))
+  majFilAriane()
+}
+
+function majFilAriane() {
+  const el = document.getElementById('fil-ariane')
+  if (!el) return
+  const page = _pageCourante
+  const precedent = _historiqueNav[_historiqueNav.length - 1]
+  const elements = []
+  if (page === 'detail' && projetActif) elements.push([`showPage('projets')`, 'Projets'], [null, projetActif.nom])
+  else if (page === 'clients' && clSelection) {
+    const c = (typeof clListe !== 'undefined' ? clListe : []).find(x => x.id === clSelection)
+    if (c) elements.push([`clSelection=null;chargerClients()`, 'Clients'], [null, c.nom])
+  }
+  if (!precedent && elements.length < 2) { el.style.display = 'none'; el.innerHTML = ''; return }
+  const libellePrecedent = precedent ? (precedent.page === 'detail' && precedent.projet ? precedent.projet.nom : LIBELLES_PAGES[precedent.page] || precedent.page) : ''
+  el.innerHTML = (precedent ? `<button class="fil-retour" onclick="retourPagePrecedente()" title="Revenir où tu étais (même liste, même position)">← ${esc(libellePrecedent)}</button>` : '')
+    + (elements.length > 1 ? elements.map(([action, libelle], i) => i < elements.length - 1
+        ? `<button onclick="${action}">${esc(libelle)}</button><span aria-hidden="true">›</span>`
+        : `<span class="fil-actuel">${esc(libelle)}</span>`).join('') : '')
+  el.style.display = 'flex'
+}
+
 function showPage(page) {
+  // Mémoriser la page quittée pour le bouton Retour (pas quand on revient en arrière)
+  if (!_retourEnCours && _pageCourante && (_pageCourante !== page || page === 'detail')) {
+    _historiqueNav.push({ page: _pageCourante, scroll: window.scrollY, projet: _pageCourante === 'detail' ? projetActif : null,
+      client: _pageCourante === 'clients' ? (typeof clSelection !== 'undefined' ? clSelection : null) : null })
+    if (_historiqueNav.length > 20) _historiqueNav.shift()
+  }
+  _pageCourante = page
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
   document.getElementById('page-' + page).classList.add('active')
@@ -323,6 +373,8 @@ function showPage(page) {
   // Mémoriser l'onglet courant pour le restaurer au rechargement
   // On exclut les sous-pages sans état propre (detail = vue d'un projet spécifique)
   if (page !== 'detail') localStorage.setItem('suivi_current_page', page)
+  window.scrollTo(0, 0)
+  majFilAriane()
 }
 
 // --- UTILISATEUR ACTIF ---
@@ -972,9 +1024,10 @@ async function desarchiverProjet(id) {
 
 // --- DETAIL PROJET ---
 async function ouvrirDetailProjet(projet) {
-  projetActif = projet
   vueProjet = 'liste'
-  showPage('detail')
+  showPage('detail')        // mémorise d'abord le projet quitté (pour Retour)
+  projetActif = projet
+  majFilAriane()
   document.getElementById('detail-titre').textContent = projet.nom
   document.getElementById('detail-client').textContent = projet.client || ''
   document.getElementById('detail-badge').innerHTML = `<span class="badge ${projet.statut.replace(' ', '-')}">${projet.statut}</span>`
@@ -2030,12 +2083,14 @@ document.addEventListener('keydown', e => {
   // ⌘K / Ctrl+K : recherche globale
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
-    const input = document.getElementById('search-input')
-    if (input) input.focus()
+    ouvrirPalette()
     return
   }
 
   if (isInput) return
+
+  // / : recherche rapide (quand on n'est pas en train d'écrire)
+  if (e.key === '/') { e.preventDefault(); ouvrirPalette(); return }
 
   // ? : aide
   if (e.key === '?' || (e.shiftKey && e.key === '/')) {
@@ -2971,18 +3026,16 @@ async function chargerFactures() {
               : `<span id="paye-${f.id}-view" onclick="editerDatePaiement('${f.id}','')" style="cursor:pointer;font-size:11px;color:var(--muted);" title="Cliquer pour saisir la date">+ Ajouter</span>`
 
             // Boutons action
+            // Actions sur une ligne : bouton principal + petites icônes (nom au survol)
+            const icoBtn = (onclick, icone, titre, actif = false, couleur = '') => `<button onclick="${onclick}" title="${titre}" aria-label="${titre}" style="width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;border:1px solid ${actif ? 'transparent' : 'var(--border)'};background:${actif ? couleur + '1a' : 'var(--surface)'};color:${actif ? couleur : 'var(--muted)'};cursor:pointer;font-size:14px;"><i class="ico ico-${icone}"></i></button>`
             const actionBtns = `
-              <div style="display:flex;flex-direction:column;gap:3px;align-items:center;">
+              <div style="display:flex;gap:4px;align-items:center;justify-content:flex-end;">
                 ${!f.solde
-                  ? `<button onclick="marquerFactureSoldee('${f.id}')" style="font-size:11px;padding:3px 10px;border-radius:5px;background:var(--success);color:#fff;border:none;cursor:pointer;font-family:inherit;white-space:nowrap;">✓ Soldée</button>`
-                  : `<button onclick="marquerFactureNonSoldee('${f.id}')" style="font-size:11px;padding:3px 10px;border-radius:5px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;white-space:nowrap;">Annuler</button>`}
-                ${!f.solde
-                  ? (f.litige
-                      ? `<button onclick="annulerLitige('${f.id}')" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:#ede9fe;color:#5b21b6;border:none;cursor:pointer;font-family:inherit;white-space:nowrap;">Clore litige</button>`
-                      : `<button onclick="marquerLitige('${f.id}')" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;white-space:nowrap;"><i class="ico ico-alert"></i> Litige</button>`)
-                  : ''}
-                <button onclick="ouvrirHistoriqueFacture('${f.id}')" title="Historique de la facture" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:var(--surface-alt);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;white-space:nowrap;"><i class="ico ico-history"></i> Historique</button>
-                <button onclick="editerMontantPaye('${f.id}',${montantPaye})" style="font-size:10.5px;padding:2px 8px;border-radius:4px;background:${montantPaye > 0 ? '#fee2e2' : 'var(--surface-alt)'};color:${montantPaye > 0 ? '#991b1b' : 'var(--muted)'};border:1px solid ${montantPaye > 0 ? '#fca5a5' : 'var(--border)'};cursor:pointer;font-family:inherit;white-space:nowrap;font-weight:${montantPaye > 0 ? '700' : '400'};">${montantPaye > 0 ? '<i class="ico ico-coin"></i> Acompte' : '+ Acompte'}</button>
+                  ? `<button onclick="marquerFactureSoldee('${f.id}')" style="font-size:12px;font-weight:600;padding:6px 10px;border-radius:8px;background:var(--success-bg);color:var(--success);border:none;cursor:pointer;font-family:inherit;white-space:nowrap;">Soldée</button>`
+                  : `<button onclick="marquerFactureNonSoldee('${f.id}')" title="Remettre en attente" style="font-size:12px;padding:6px 10px;border-radius:8px;background:var(--surface);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:inherit;white-space:nowrap;">Rouvrir</button>`}
+                ${!f.solde ? (f.litige ? icoBtn(`annulerLitige('${f.id}')`, 'alert', 'Clore le litige', true, '#5B21B6') : icoBtn(`marquerLitige('${f.id}')`, 'alert', 'Passer en litige')) : ''}
+                ${icoBtn(`editerMontantPaye('${f.id}',${montantPaye})`, 'coin', montantPaye > 0 ? 'Acompte : ' + montantPaye.toLocaleString('fr-FR', { minimumFractionDigits: 2 }) + ' €' : 'Saisir un acompte', montantPaye > 0, '#B42318')}
+                ${icoBtn(`ouvrirHistoriqueFacture('${f.id}')`, 'history', 'Historique de la facture')}
               </div>`
 
             return `
@@ -4423,7 +4476,7 @@ async function chargerAnalytique() {
       const arr = toutes.filter(f => f.date_echeance && f.date_echeance >= debutStr && f.date_echeance <= finStr && !f.solde)
       const montant = arr.reduce((s,f)=>s+(parseFloat(f.montant)||0),0)
       const moisCourts = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc']
-      points.push({ label: `${debut.getDate()} ${moisCourts[debut.getMonth()]}`, montant })
+      points.push({ label: `${debut.getDate()} ${moisCourts[debut.getMonth()]}`, montant, passe: i > 0 })
     }
   } else if (analytiquePeriode === 'annuel') {
     // 5 dernières années
@@ -4431,7 +4484,7 @@ async function chargerAnalytique() {
       const annee = now.getFullYear() - i
       const arr = toutes.filter(f => f.date_echeance && f.date_echeance.startsWith(`${annee}`) && !f.solde)
       const montant = arr.reduce((s,f)=>s+(parseFloat(f.montant)||0),0)
-      points.push({ label: `${annee}`, montant })
+      points.push({ label: `${annee}`, montant, passe: i > 0 })
     }
   } else {
     // Mensuel : 12 derniers mois
@@ -4440,7 +4493,7 @@ async function chargerAnalytique() {
       const moisStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
       const arr = toutes.filter(f => f.date_echeance && f.date_echeance.startsWith(moisStr) && !f.solde)
       const montant = arr.reduce((s,f)=>s+(parseFloat(f.montant)||0),0)
-      points.push({ label: moisNoms[d.getMonth()], montant })
+      points.push({ label: moisNoms[d.getMonth()], montant, passe: i > 0 })
     }
   }
 
@@ -4556,12 +4609,12 @@ async function chargerAnalytique() {
           <div style="font-size:13px;font-weight:700;color:var(--ink);">Encours — <span style="color:var(--muted);font-weight:500;">${titreGraphique}</span></div>
           <div style="display:flex;gap:4px;background:var(--surface-alt);border-radius:8px;padding:3px;">${togglePeriode}</div>
         </div>
-        ${svgHtml}
+        <div style="position:relative;height:250px;"><canvas id="graph-encours" role="img" aria-label="Montant non soldé par période d'échéance"></canvas></div>
       </div>
 
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
-        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:14px;">Top clients — encours non soldé <span style="font-size:10.5px;font-weight:400;color:var(--muted);margin-left:6px;">(rouge = en retard)</span></div>
-        ${svgBars}
+        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:14px;">Clients à risque <span style="font-size:11.5px;font-weight:400;color:var(--muted);margin-left:6px;">reste dû · survol : délai de paiement habituel</span></div>
+        ${topClients.length ? `<div style="position:relative;height:${Math.max(180, topClients.length * 34 + 20)}px;"><canvas id="graph-top-clients" role="img" aria-label="Clients qui doivent le plus"></canvas></div>` : '<div style="color:var(--muted);font-size:13px;padding:20px 0;text-align:center;">Aucun encours.</div>'}
       </div>
 
     </div>
@@ -4569,10 +4622,10 @@ async function chargerAnalytique() {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-          <div style="font-size:13px;font-weight:700;color:var(--ink);">Taux de recouvrement mensuel <span style="color:var(--muted);font-weight:400;font-size:11px;margin-left:6px;">% payées dans les délais</span></div>
+          <div style="font-size:13px;font-weight:700;color:var(--ink);">Factures payées à temps <span style="color:var(--muted);font-weight:400;font-size:11px;margin-left:6px;">par mois d'échéance</span></div>
           <span style="font-size:10.5px;color:var(--success);font-weight:600;background:var(--success-bg);padding:2px 8px;border-radius:10px;">Objectif 80%</span>
         </div>
-        ${svgTaux}
+        <div style="position:relative;height:230px;"><canvas id="graph-taux" role="img" aria-label="Part des factures payées à temps, par mois"></canvas></div>
       </div>
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
         <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:6px;">Cash-flow prévisionnel <span style="color:var(--muted);font-weight:400;font-size:11px;margin-left:6px;">basé sur le délai moyen par client</span></div>
@@ -4605,40 +4658,12 @@ async function chargerAnalytique() {
 
     <div style="display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:14px;">
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">
-        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:14px;">Encaissements mensuels réels <span style="color:var(--muted);font-weight:400;font-size:11px;margin-left:6px;">basé sur date d'encaissement</span></div>
-        ${(()=>{
-          const maxE = Math.max(...encaissPoints.map(p=>p.montant), 1)
-          const WE=700,HE=160,pLE=55,pRE=10,pTE=15,pBE=28
-          const iWE=WE-pLE-pRE, iHE=HE-pTE-pBE
-          const stepE = encaissPoints.length>1 ? iWE/(encaissPoints.length-1) : iWE
-          const ptsE = encaissPoints.map((p,i)=>`${pLE+i*stepE},${pTE+iHE-(p.montant/maxE)*iHE}`).join(' ')
-          const dotsE = encaissPoints.map((p,i)=>{
-            const x=pLE+i*stepE, y=pTE+iHE-(p.montant/maxE)*iHE
-            const isActuel = p.mois===moisActuel
-            return `<circle cx="${x}" cy="${y}" r="${isActuel?5:4}" fill="${isActuel?'var(--success)':'#22c55e'}" opacity="${isActuel?1:0.75}"><title>${p.label} : ${p.montant.toLocaleString('fr-FR',{maximumFractionDigits:0})} €</title></circle>`
-          }).join('')
-          const labsE = encaissPoints.map((p,i)=>`<text x="${pLE+i*stepE}" y="${HE-4}" text-anchor="middle" fill="var(--muted)" font-size="9" font-family="Inter,sans-serif">${p.label}</text>`).join('')
-          const { ticks: ticksE, maxR: maxRE } = niceYTicks(maxE, pLE, pTE, iHE)
-          const yTicksE = ticksE.map(t=>
-            `<line x1="${pLE-3}" y1="${t.y}" x2="${pLE}" y2="${t.y}" stroke="var(--border)" stroke-width="1"/><text x="${pLE-6}" y="${t.y+3.5}" text-anchor="end" fill="var(--muted)" font-size="8.5" font-family="Inter,sans-serif">${t.lbl}</text>`
-          ).join('')
-          const ptsEN = encaissPoints.map((p,i)=>`${pLE+i*stepE},${pTE+iHE-(p.montant/maxRE)*iHE}`).join(' ')
-          const dotsEN = encaissPoints.map((p,i)=>{
-            const x=pLE+i*stepE, y=pTE+iHE-(p.montant/maxRE)*iHE
-            const isActuel = p.mois===moisActuel
-            return `<circle cx="${x}" cy="${y}" r="${isActuel?5:4}" fill="${isActuel?'var(--success)':'#22c55e'}" opacity="${isActuel?1:0.75}"><title>${p.label} : ${p.montant.toLocaleString('fr-FR',{maximumFractionDigits:0})} €</title></circle>`
-          }).join('')
-          return `<svg viewBox="0 0 ${WE} ${HE}" width="100%" style="overflow:visible;">
-            <line x1="${pLE}" y1="${pTE}" x2="${pLE}" y2="${pTE+iHE}" stroke="var(--border)" stroke-width="1"/>
-            <line x1="${pLE}" y1="${pTE+iHE}" x2="${WE-pRE}" y2="${pTE+iHE}" stroke="var(--border)" stroke-width="1"/>
-            ${yTicksE}
-            <polyline points="${ptsEN}" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-            ${dotsEN}${labsE}
-          </svg>`
-        })()}
+        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:14px;">Facturé et encaissé par mois <span style="color:var(--muted);font-weight:400;font-size:11px;margin-left:6px;">12 derniers mois</span></div>
+        <div style="position:relative;height:260px;"><canvas id="graph-encaissements" role="img" aria-label="Montants facturés et encaissés par mois"></canvas></div>
       </div>
     </div>`
 
+  dessinerGraphiquesAnalytique({ points, topClients, enRetard, tauxPoints, encaissPoints, toutes, delaiMoyenClient })
   } catch(e) {
     container.innerHTML = `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:20px;color:var(--danger);">
       <b>Erreur dans l'analytique :</b> ${e.message}
@@ -4646,6 +4671,67 @@ async function chargerAnalytique() {
     </div>`
     console.error('chargerAnalytique error:', e)
   }
+}
+
+// ── Graphiques de l'analytique (Chart.js, chargé à la demande) ──
+let _chargementChartJs = null, _graphiquesAnalytique = []
+function chargerChartJs() {
+  if (window.Chart) return Promise.resolve()
+  if (!_chargementChartJs) _chargementChartJs = new Promise((ok, ko) => {
+    const sc = document.createElement('script')
+    sc.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js'
+    sc.onload = ok; sc.onerror = () => { _chargementChartJs = null; ko(new Error('Chart.js indisponible')) }
+    document.head.appendChild(sc)
+  })
+  return _chargementChartJs
+}
+
+async function dessinerGraphiquesAnalytique(d) {
+  try { await chargerChartJs() } catch (e) { console.error(e); return }
+  _graphiquesAnalytique.forEach(g => g.destroy()); _graphiquesAnalytique = []
+  const C = window.Chart
+  C.defaults.font.family = 'Inter, system-ui, sans-serif'; C.defaults.font.size = 12; C.defaults.color = '#6B655D'
+  const euros = v => `${Math.round(v).toLocaleString('fr-FR')} €`
+  const kEuros = v => v >= 1000 ? `${Math.round(v / 1000).toLocaleString('fr-FR')} k€` : `${v} €`
+  const grille = { color: '#F0EDE7' }, sansGrille = { display: false }
+  const infobulle = { backgroundColor: '#1C1A17', padding: 10, cornerRadius: 8, titleFont: { weight: '600' }, displayColors: true, boxPadding: 4 }
+  const creer = (id, config) => { const el = document.getElementById(id); if (el) _graphiquesAnalytique.push(new C(el, config)) }
+
+  // 1. Encours par période : passé = en retard (rouge), période en cours = à échoir (orange)
+  creer('graph-encours', { type: 'bar', data: { labels: d.points.map(p => p.label), datasets: [
+      { label: 'En retard', data: d.points.map(p => p.passe ? p.montant : 0), backgroundColor: '#E5867C', borderRadius: 5, stack: 's' },
+      { label: 'À échoir', data: d.points.map(p => p.passe ? 0 : p.montant), backgroundColor: '#EE7E24', borderRadius: 5, stack: 's' } ] },
+    options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, useBorderRadius: true, borderRadius: 3 } },
+      tooltip: { ...infobulle, filter: i => i.raw > 0, callbacks: { label: c => ` ${c.dataset.label} : ${euros(c.raw)}` } } },
+      scales: { x: { stacked: true, grid: sansGrille }, y: { stacked: true, grid: grille, border: { display: false }, ticks: { callback: kEuros } } } } })
+
+  // 2. Clients à risque : reste dû, rouge si en retard ; survol = délai habituel
+  const enRetard = new Set(d.enRetard.map(f => f.client))
+  creer('graph-top-clients', { type: 'bar', data: { labels: d.topClients.map(([n]) => n.length > 26 ? n.slice(0, 25) + '…' : n),
+      datasets: [{ label: 'Reste dû', data: d.topClients.map(([, v]) => v), backgroundColor: d.topClients.map(([n]) => enRetard.has(n) ? '#D9534F' : '#EE7E24'), borderRadius: 5, barThickness: 18 }] },
+    options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false },
+      tooltip: { ...infobulle, callbacks: { title: i => d.topClients[i[0].dataIndex][0], label: c => {
+        const nom = d.topClients[c.dataIndex][0], delai = d.delaiMoyenClient(nom)
+        return [` Reste dû : ${euros(c.raw)}`, enRetard.has(nom) ? ' Factures en retard' : ' Pas encore en retard',
+          delai === null ? ' Délai habituel : pas d\'historique' : ` Paie en général ${delai <= 0 ? 'à temps' : delai + ' j après l\'échéance'}`] } } } },
+      scales: { x: { grid: grille, border: { display: false }, ticks: { callback: kEuros } }, y: { grid: sansGrille } } } })
+
+  // 3. Part des factures payées à temps, avec l'objectif 80 %
+  creer('graph-taux', { type: 'line', data: { labels: d.tauxPoints.map(p => p.label), datasets: [
+      { label: 'Payées à temps', data: d.tauxPoints.map(p => p.taux), borderColor: '#1E7A46', backgroundColor: 'rgba(30,122,70,0.08)', fill: true, tension: 0.3, spanGaps: true, pointRadius: 3, pointBackgroundColor: '#1E7A46' },
+      { label: 'Objectif 80 %', data: d.tauxPoints.map(() => 80), borderColor: '#9A938A', borderDash: [5, 5], borderWidth: 1.5, pointRadius: 0, fill: false } ] },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, boxHeight: 10 } }, tooltip: { ...infobulle, callbacks: { label: c => c.raw === null ? ' Pas de facture' : ` ${c.dataset.label} : ${c.raw} %` } } },
+      scales: { x: { grid: sansGrille }, y: { min: 0, max: 100, grid: grille, border: { display: false }, ticks: { callback: v => v + ' %', stepSize: 20 } } } } })
+
+  // 4. Facturé et encaissé par mois
+  const facture = d.encaissPoints.map(p => d.toutes.filter(f => f.date_emission && f.date_emission.startsWith(p.mois)).reduce((s, f) => s + (parseFloat(f.montant) || 0), 0))
+  creer('graph-encaissements', { type: 'bar', data: { labels: d.encaissPoints.map(p => p.label), datasets: [
+      { label: 'Facturé', data: facture, backgroundColor: '#E8E5DF', borderRadius: 5 },
+      { label: 'Encaissé', data: d.encaissPoints.map(p => p.montant), backgroundColor: '#1E7A46', borderRadius: 5 } ] },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, boxHeight: 10 } }, tooltip: { ...infobulle, callbacks: { label: c => ` ${c.dataset.label} : ${euros(c.raw)}` } } },
+      scales: { x: { grid: sansGrille }, y: { grid: grille, border: { display: false }, ticks: { callback: kEuros } } } } })
 }
 
 // ── Parser CSV DISTRILOG ──────────────────────────────────
@@ -6272,8 +6358,6 @@ async function verifierNouvelleVersion() {
 setInterval(verifierNouvelleVersion, 5 * 60 * 1000)
 document.addEventListener('visibilitychange', () => { if (!document.hidden) verifierNouvelleVersion() })
 
-// Démarrage (en dernier : toutes les fonctions et variables existent)
-demarrerApplication()
 
 
 // ═══════════════════════════════════════════════════════════
@@ -6335,6 +6419,7 @@ async function ouvrirFicheClientUnique(nom) {
 
 async function afficherFicheClientUnique(id) {
   clSelection = id
+  majFilAriane()
   document.querySelectorAll('.cl-ligne').forEach(l => l.classList.toggle('active', l.getAttribute('onclick').includes(id)))
   const c = clListe.find(x => x.id === id)
   const el = document.getElementById('cl-fiche')
@@ -6485,3 +6570,104 @@ async function detacherNomClient(nom) {
   afficherToast('Nom séparé')
   chargerClients()
 }
+
+// ═══════════════════════════════════════════════════════════
+//  PALETTE DE RECHERCHE (⌘K / Ctrl+K ou /)
+//  Clients, factures, projets, tâches et pages, au clavier.
+// ═══════════════════════════════════════════════════════════
+let _paletteResultats = [], _paletteIndex = 0, _paletteTimer = null, _paletteSeq = 0
+
+function ouvrirPalette() {
+  if (document.getElementById('palette-fond')) { document.getElementById('palette-champ').focus(); return }
+  const fond = document.createElement('div')
+  fond.id = 'palette-fond'
+  fond.innerHTML = `<div id="palette-boite" role="dialog" aria-label="Recherche rapide">
+      <input id="palette-champ" type="text" autocomplete="off" spellcheck="false" placeholder="Rechercher un client, une facture, un projet, une page…" aria-label="Rechercher">
+      <div id="palette-resultats" role="listbox"></div>
+      <div class="palette-pied"><span><kbd>↑</kbd> <kbd>↓</kbd> naviguer</span><span><kbd>Entrée</kbd> ouvrir</span><span><kbd>Échap</kbd> fermer</span></div>
+    </div>`
+  fond.addEventListener('mousedown', e => { if (e.target === fond) fermerPalette() })
+  document.body.appendChild(fond)
+  const champ = document.getElementById('palette-champ')
+  champ.addEventListener('input', () => { clearTimeout(_paletteTimer); _paletteTimer = setTimeout(() => chercherPalette(champ.value), 160) })
+  champ.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); fermerPalette() }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); selectionPalette(_paletteIndex + 1) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); selectionPalette(_paletteIndex - 1) }
+    else if (e.key === 'Enter') { e.preventDefault(); executerPalette(_paletteIndex) }
+  })
+  champ.focus()
+  chercherPalette('')
+}
+
+function fermerPalette() { document.getElementById('palette-fond')?.remove() }
+
+function pagesPalette(q) {
+  const pages = Object.entries(LIBELLES_PAGES).filter(([p]) => p !== 'detail' && (utilisateurAccesFactures || !['factures', 'recouvrement'].includes(p)))
+  return pages.filter(([, l]) => !q || trNorm(l).includes(q)).map(([p, l]) => ({ groupe: 'Aller à', libelle: l, action: () => showPage(p) }))
+}
+
+async function chercherPalette(texte) {
+  const seq = ++_paletteSeq
+  const q = trNorm(texte)
+  const res = document.getElementById('palette-resultats')
+  if (!res) return
+  if (q.length < 2) { afficherPalette(pagesPalette(q)); return }
+  const motif = texte.trim().replace(/[,()*%\\]/g, ' ').trim()
+  const [cl, fa, pr, ta] = await Promise.all([
+    db.from('clients_noms').select('nom, client_id, clients_fiches(nom)').ilike('nom', `%${motif}%`).limit(12),
+    utilisateurAccesFactures ? db.from('factures').select('id,numero,client,montant,solde,date_echeance').or(`numero.ilike.*${motif}*,client.ilike.*${motif}*`).order('date_emission', { ascending: false }).limit(6) : Promise.resolve({ data: [] }),
+    db.from('projets').select('id,nom,client').eq('archive', false).or(`nom.ilike.*${motif}*,client.ilike.*${motif}*`).limit(4),
+    db.from('taches').select('id,description,projets(nom)').eq('archive', false).ilike('description', `%${motif}%`).limit(4),
+  ])
+  if (seq !== _paletteSeq) return
+  const items = []
+  const vus = new Set()
+  for (const c of cl.data || []) {
+    if (vus.has(c.client_id)) continue
+    vus.add(c.client_id)
+    const nomFiche = c.clients_fiches?.nom || c.nom
+    items.push({ groupe: 'Clients', icone: 'user', libelle: nomFiche, sous: nomFiche !== c.nom ? c.nom : '', action: () => ouvrirFicheClientUnique(c.nom) })
+  }
+  const fmt = v => (parseFloat(v) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
+  const auj = aujourdhuiISO()
+  for (const f of fa.data || []) items.push({ groupe: 'Factures', icone: 'file', libelle: `${f.numero} · ${f.client}`,
+    sous: `${fmt(f.montant)} € · ${f.solde ? 'soldée' : f.date_echeance && f.date_echeance < auj ? 'en retard' : 'en attente'}`,
+    action: () => { showPage('factures'); setFiltreFacturesClient(f.client) } })
+  for (const p of pr.data || []) items.push({ groupe: 'Projets', icone: 'folder', libelle: p.nom, sous: p.client || '', action: () => ouvrirDetailProjetId(p.id) })
+  for (const t of ta.data || []) items.push({ groupe: 'Tâches', icone: 'check', libelle: t.description, sous: t.projets?.nom || 'Sans projet', action: () => ouvrirEditionTache(t.id) })
+  items.push(...pagesPalette(q))
+  afficherPalette(items)
+}
+
+function afficherPalette(items) {
+  _paletteResultats = items
+  _paletteIndex = 0
+  const res = document.getElementById('palette-resultats')
+  if (!res) return
+  if (!items.length) { res.innerHTML = '<div style="padding:22px;text-align:center;color:var(--muted);font-size:13px;">Aucun résultat.</div>'; return }
+  let groupe = null
+  res.innerHTML = items.map((it, i) => {
+    const titre = it.groupe !== groupe ? `<div class="palette-groupe">${esc(it.groupe)}</div>` : ''
+    groupe = it.groupe
+    return `${titre}<div class="palette-item ${i === 0 ? 'actif' : ''}" role="option" data-i="${i}" onmousemove="selectionPalette(${i}, false)" onclick="executerPalette(${i})">
+      <i class="ico ico-${it.icone || 'send'}" style="color:var(--muted);"></i><span>${esc(it.libelle)}</span>${it.sous ? `<span class="sous">${esc(it.sous)}</span>` : ''}</div>`
+  }).join('')
+}
+
+function selectionPalette(i, defiler = true) {
+  if (!_paletteResultats.length) return
+  _paletteIndex = (i + _paletteResultats.length) % _paletteResultats.length
+  document.querySelectorAll('.palette-item').forEach(el => el.classList.toggle('actif', +el.dataset.i === _paletteIndex))
+  if (defiler) document.querySelector(`.palette-item[data-i="${_paletteIndex}"]`)?.scrollIntoView({ block: 'nearest' })
+}
+
+function executerPalette(i) {
+  const it = _paletteResultats[i]
+  if (!it) return
+  fermerPalette()
+  it.action()
+}
+
+// Démarrage (en dernier : toutes les fonctions et variables existent)
+demarrerApplication()

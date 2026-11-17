@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=20261117o" />
+  <link rel="stylesheet" href="style.css?v=20261117q" />
 </head>
 <body>
 
@@ -176,13 +176,12 @@
     </div>
 
     <!-- RECHERCHE GLOBALE -->
-    <div style="padding:0 12px 10px; position:relative;">
+    <div id="sidebar-recherche" style="padding:0 4px 12px; position:relative;">
       <div style="position:relative;">
         <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);pointer-events:none;" width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="5.5" cy="5.5" r="4" stroke="#9ca3af" stroke-width="1.3"/><path d="M8.5 8.5L11 11" stroke="#9ca3af" stroke-width="1.3" stroke-linecap="round"/></svg>
-        <input id="search-input" type="text" placeholder="Rechercher…" name="recherche-globale-suivipro"
+        <input id="search-input" type="text" placeholder="Rechercher…   ⌘K" name="recherche-globale-suivipro"
           autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search"
-          oninput="onSearchInput(this.value)"
-          onkeydown="if(event.key==='Escape')fermerRecherche()"
+          readonly onfocus="this.blur();ouvrirPalette()" onclick="ouvrirPalette()" title="Rechercher (⌘K ou /)"
           style="width:100%;box-sizing:border-box;padding:7px 10px 7px 28px;border:1px solid var(--border);border-radius:8px;background:var(--surface-alt);font-size:12.5px;font-family:inherit;color:var(--ink);outline:none;" />
       </div>
       <div id="search-results" style="display:none;position:absolute;left:12px;right:12px;top:calc(100% + 2px);background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.1);z-index:200;max-height:340px;overflow-y:auto;padding:4px;"></div>
@@ -263,6 +262,7 @@
 
   <!-- CONTENU PRINCIPAL -->
   <main class="main">
+    <nav id="fil-ariane" class="fil-ariane" aria-label="Fil d'Ariane" style="display:none;"></nav>
 
     <!-- DASHBOARD -->
     <div id="page-dashboard" class="page active">
@@ -274,6 +274,9 @@
         </div>
         <button class="btn btn-primary" onclick="ouvrirModalProjet()">+ Nouveau projet</button>
       </div>
+
+      <!-- Résumé du jour : tournées, récurrents, relances -->
+      <div id="dashboard-jour" class="dash-jour"></div>
 
       <!-- Stats -->
       <div class="stats-grid" style="margin-bottom:20px;">
@@ -298,9 +301,6 @@
           <div class="stat-sub">Cliquer pour voir</div>
         </div>
       </div>
-
-      <!-- Résumé du jour : tournées, récurrents, relances -->
-      <div id="dashboard-jour" class="dash-jour"></div>
 
       <!-- Deux colonnes -->
       <div class="dashboard-cols">
@@ -1117,6 +1117,6 @@
   <div id="panneau-notifs-liste" style="max-height:60vh;overflow-y:auto;"></div>
 </div>
 
-<script src="app.js?v=20261117o" id="script-app"></script>
+<script src="app.js?v=20261117q" id="script-app"></script>
 </body>
 </html>
