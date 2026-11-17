@@ -1460,9 +1460,13 @@ async function rafraichirPiecesJointesTache() {
   let items = []
   if (tacheEnEdition) {
     const { data } = await db.from('taches_pieces_jointes').select('*').eq('tache_id', tacheEnEdition.id).order('created_at')
+    // Fichiers privés : liens temporaires (1 h), valables seulement pour une personne connectée
+    const chemins = (data || []).map(p => p.chemin)
+    const { data: liens } = chemins.length ? await db.storage.from(PJ_BUCKET).createSignedUrls(chemins, 3600) : { data: [] }
+    const urlDe = Object.fromEntries((liens || []).map(l => [l.path, l.signedUrl]))
     items = (data || []).map(p => ({
       nom: p.nom, mime: p.type_mime, taille: p.taille,
-      url: db.storage.from(PJ_BUCKET).getPublicUrl(p.chemin).data.publicUrl,
+      url: urlDe[p.chemin] || '#',
       retirer: `supprimerPieceJointe('${p.id}')`
     }))
   } else {
@@ -5026,6 +5030,23 @@ async function chargerRecurrents() {
   ])
 
   if (!contrats) return
+  // En février-mars, le trimestre à facturer (T4) est sur l'année précédente :
+  // on le cherche à part pour qu'il apparaisse quand même dans « À traiter » et le badge.
+  window._trimPrecedent = { periode: null, aTraiter: [], nonFaits: 0 }
+  const pt = periodeActionnable('trimestrielle')
+  if (pt.annee < annee && annee === periodeActionnable('mensuelle').annee) {
+    const periodeT = periodeTrimestrielle(pt.annee, pt.num)
+    const concernes = contrats.filter(c => c.frequence === 'trimestrielle' && contratCouvrePeriode(c, periodeT))
+    if (concernes.length) {
+      const { data: rel } = await db.from('releves_recurrents').select('contrat_id,fait,en_attente').eq('periode', periodeT).in('contrat_id', concernes.map(c => c.id))
+      const parContrat = Object.fromEntries((rel || []).map(r => [r.contrat_id, r]))
+      window._trimPrecedent = {
+        periode: periodeT,
+        aTraiter: concernes.filter(c => !parContrat[c.id]?.fait && !parContrat[c.id]?.en_attente),
+        nonFaits: concernes.filter(c => !parContrat[c.id]?.fait).length,
+      }
+    }
+  }
   // Contrats terminés avant l'année affichée ou démarrant après : masqués
   for (let i = contrats.length - 1; i >= 0; i--) {
     const c = contrats[i]
@@ -5075,6 +5096,7 @@ function mettreAJourBadgeRecurrents(contrats, relevesMap, annee) {
       if (!releve || !releve.fait) nbRetard++
     }
   }
+  nbRetard += window._trimPrecedent?.nonFaits || 0   // T4 de l'année précédente (février-mars)
   const badge = document.getElementById('nav-badge-recurrents')
   if (badge) {
     badge.style.display = nbRetard > 0 ? '' : 'none'
@@ -5178,7 +5200,8 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
           const r = relevesMap[c.id]?.[p]
           return contratCouvrePeriode(c, p) && !r?.fait && !r?.en_attente
         })
-      : []
+      : (window._trimPrecedent?.aTraiter || [])   // février-mars : T4 de l'année précédente
+    const periodeTrimUrgente = trimDansAnnee ? periodeTrimestrielle(annee, trimActionnable) : window._trimPrecedent?.periode
 
     // Contrats en attente (tous)
     const enAttenteItems = []
@@ -5212,7 +5235,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
     }
 
     const moisLabel = moisActionnable > 0 ? moisNomsCourt[moisActionnable - 1] : ''
-    const trimLabel = trimActionnable > 0 && trimDansAnnee ? `T${trimActionnable}` : ''
+    const trimLabel = trimActionnable > 0 && trimDansAnnee ? `T${trimActionnable}` : (periodeTrimUrgente ? periodeLabel(periodeTrimUrgente) : '')
 
     const totalUrgent = urgentMensuel.length + urgentTrimest.length
     const totalRetard = retardItems.length
@@ -5237,7 +5260,7 @@ function afficherRecurrents(contrats, relevesMap, annee, employes) {
       }).join('')
       const cardsT = urgentTrimest.map(c => {
         const assignes = Array.isArray(c.assignes) && c.assignes.length ? c.assignes : (c.assigne_a ? [c.assigne_a] : [])
-        return `<div onclick="ouvrirModalReleve('${c.id}','${periodeTrimestrielle(annee, trimActionnable)}')"
+        return `<div onclick="ouvrirModalReleve('${c.id}','${periodeTrimUrgente}')"
           style="background:white;border:1.5px solid #fbbf24;border-radius:8px;padding:10px 12px;cursor:pointer;min-width:150px;max-width:220px;flex-shrink:0;transition:box-shadow 0.15s;"
           onmouseover="this.style.boxShadow='0 2px 8px rgba(251,191,36,0.35)'" onmouseout="this.style.boxShadow=''">
           <div style="font-weight:600;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.client}</div>
