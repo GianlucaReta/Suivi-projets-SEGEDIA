@@ -1191,3 +1191,12 @@ body {
 .cl-kpi div:first-child { font-size:10px; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted); font-weight:600; }
 .cl-kpi div:last-child { font-size:17px; font-weight:700; font-family:'IBM Plex Mono',monospace; margin-top:3px; }
 .cl-nom-chip { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; padding:2px 8px; border-radius:12px; background:var(--surface-alt); border:1px solid var(--border); margin:0 4px 4px 0; }
+
+/* ─── TABLEAU DE BORD : RÉSUMÉ DU JOUR ─── */
+.dash-jour { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin-bottom:20px; }
+.dash-carte { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; cursor:pointer; transition:box-shadow .15s, transform .15s; }
+.dash-carte:hover { box-shadow:var(--shadow-md); transform:translateY(-1px); }
+.dash-carte-titre { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.07em; color:var(--muted); }
+.dash-carte-chiffre { font-size:26px; font-weight:700; color:var(--ink); margin:6px 0 2px; font-family:'IBM Plex Mono',monospace; line-height:1.1; }
+.dash-carte-sous { font-size:12px; color:var(--muted); }
+.dash-carte-liste { margin-top:8px; font-size:12px; color:var(--ink-soft); line-height:1.6; }

@@ -385,6 +385,7 @@ async function ouvrirSelecteurUtilisateur() {
 
 // --- DASHBOARD ---
 async function chargerDashboard() {
+  chargerResumeJour()
   afficherSquelette('dashboard-projets-prioritaires', 'liste', 5)
   afficherSquelette('dashboard-mes-taches', 'liste', 5)
   const aujourd_hui = aujourdhuiISO()
@@ -598,6 +599,86 @@ async function chargerDashboard() {
 
   // Historique des actions
   chargerHistorique()
+}
+
+// ── RÉSUMÉ DU JOUR (haut du tableau de bord) ─────────────────
+// Trois cartes : tournées du jour, récurrents à facturer, relances à faire.
+async function chargerResumeJour() {
+  const el = document.getElementById('dashboard-jour')
+  if (!el) return
+  afficherSquelette(el, 'cartes', utilisateurAccesFactures ? 3 : 2)
+  const [tournees, recurrents, relances] = await Promise.all([
+    resumeTourneesDuJour().catch(e => { console.error(e); return null }),
+    resumeRecurrents().catch(e => { console.error(e); return null }),
+    utilisateurAccesFactures ? resumeRelances().catch(e => { console.error(e); return null }) : Promise.resolve(null),
+  ])
+  el.innerHTML = [tournees, recurrents, relances].filter(Boolean).join('')
+}
+
+async function resumeTourneesDuJour() {
+  const now = new Date(), jour = ((now.getDay() + 6) % 7) + 1
+  const parite = getNumSemaine(now) % 2 === 0 ? 'paire' : 'impaire'
+  const titre = `<div class="dash-carte-titre"><i class="ico ico-truck"></i> Tournées du jour</div>`
+  if (jour > 5) return `<div class="dash-carte" onclick="showPage('tournees')">${titre}<div class="dash-carte-chiffre">—</div><div class="dash-carte-sous">Pas de tournée le week-end</div></div>`
+  const [{ data: passages }, { data: ops }] = await Promise.all([
+    db.from('tournee_passages').select('id,operateur_id,semaine,machines,tournee_clients(nom)').eq('jour', jour).in('semaine', ['toutes', parite]),
+    db.from('tournee_operateurs').select('id,nom,couleur,ordre').order('ordre'),
+  ])
+  const liste = passages || []
+  const parOp = (ops || []).map(o => ({ o, n: liste.filter(p => p.operateur_id === o.id).length })).filter(x => x.n)
+  const nbMachines = liste.reduce((s, p) => s + (p.machines || []).length, 0)
+  return `<div class="dash-carte" onclick="showPage('tournees')">
+    ${titre}
+    <div class="dash-carte-chiffre">${liste.length}</div>
+    <div class="dash-carte-sous">passage${liste.length > 1 ? 's' : ''} · ${nbMachines} machine${nbMachines > 1 ? 's' : ''} · ${TR_JOURS[jour - 1].toLowerCase()} (semaine ${parite})</div>
+    <div class="dash-carte-liste" style="display:flex;flex-wrap:wrap;gap:4px;">${parOp.map(({ o, n }) => { const k = TR_COULEURS[o.couleur] || TR_COULEURS.gray; return `<span class="tr-pill" style="background:${k[0]};color:${k[1]};">${esc(o.nom)} · ${n}</span>` }).join('') || '<span>Aucun passage prévu</span>'}</div>
+  </div>`
+}
+
+async function resumeRecurrents() {
+  const pm = periodeActionnable('mensuelle'), pt = periodeActionnable('trimestrielle')
+  const perM = periodeMensuelle(pm.annee, pm.num), perT = periodeTrimestrielle(pt.annee, pt.num)
+  const { data: contrats } = await db.from('contrats_recurrents').select('id,client,frequence,date_debut,date_fin').eq('actif', true)
+  const ids = (contrats || []).map(c => c.id)
+  const { data: rel } = ids.length ? await db.from('releves_recurrents').select('contrat_id,periode,fait').in('periode', [perM, perT]).in('contrat_id', ids) : { data: [] }
+  const fait = new Set((rel || []).filter(r => r.fait).map(r => r.contrat_id + '|' + r.periode))
+  const aFaire = (contrats || []).map(c => ({ c, p: c.frequence === 'mensuelle' ? perM : perT }))
+    .filter(({ c, p }) => contratCouvrePeriode(c, p) && !fait.has(c.id + '|' + p))
+  const nbM = aFaire.filter(x => x.p === perM).length, nbT = aFaire.length - nbM
+  return `<div class="dash-carte" onclick="showPage('recurrents')">
+    <div class="dash-carte-titre"><i class="ico ico-repeat"></i> Récurrents à facturer</div>
+    <div class="dash-carte-chiffre" style="color:${aFaire.length ? 'var(--warn)' : 'var(--success)'};">${aFaire.length}</div>
+    <div class="dash-carte-sous">${aFaire.length ? `${nbM} pour ${periodeLabel(perM)} · ${nbT} pour ${periodeLabel(perT)}` : `Tout est traité pour ${periodeLabel(perM)} et ${periodeLabel(perT)}`}</div>
+    ${aFaire.length ? `<div class="dash-carte-liste">${aFaire.slice(0, 4).map(x => esc(x.c.client)).join(' · ')}${aFaire.length > 4 ? ` · +${aFaire.length - 4}` : ''}</div>` : ''}
+  </div>`
+}
+
+async function resumeRelances() {
+  const auj = aujourdhuiISO()
+  const [{ data: exclus }, { data: factures }] = await Promise.all([
+    db.from('clients_exclus').select('nom'),
+    toutesLesLignes(() => db.from('factures').select('id,client,montant,montant_paye,date_echeance,date_relance,date_relance_r2,date_appel,moyen_paiement').eq('solde', false).eq('litige', false).lt('date_echeance', auj)),
+  ])
+  const nomsExclus = new Set((exclus || []).map(e => e.nom))
+  const parClient = {}
+  for (const f of factures || []) if (!nomsExclus.has(f.client)) (parClient[f.client] = parClient[f.client] || []).push(f)
+  let r1 = 0, r2 = 0, montant = 0
+  for (const facts of Object.values(parClient)) {
+    const modes = {}; facts.forEach(f => { const m = (f.moyen_paiement || '').toLowerCase().trim(); if (m) modes[m] = (modes[m] || 0) + 1 })
+    const dominant = Object.entries(modes).sort((a, b) => b[1] - a[1])[0]?.[0]
+    if (dominant === 'espèce' || dominant === 'prélèvement') continue   // en attente de lettrage, pas de relance
+    const r1Date = facts.find(f => f.date_relance)?.date_relance
+    const aR2 = facts.some(f => f.date_relance_r2), appel = facts.some(f => f.date_appel)
+    if (!r1Date) { r1++; montant += facts.reduce((s, f) => s + soldeRestant(f), 0) }
+    else if (!aR2 && !appel && (new Date(auj) - new Date(r1Date)) / 86400000 >= 15) { r2++; montant += facts.reduce((s, f) => s + soldeRestant(f), 0) }
+  }
+  const total = r1 + r2
+  return `<div class="dash-carte" onclick="showPage('recouvrement')">
+    <div class="dash-carte-titre"><i class="ico ico-send"></i> Relances à faire</div>
+    <div class="dash-carte-chiffre" style="color:${total ? 'var(--danger)' : 'var(--success)'};">${total}</div>
+    <div class="dash-carte-sous">${total ? `client${total > 1 ? 's' : ''} · ${montant.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} € en jeu` : 'Aucune relance en attente'}</div>
+    ${total ? `<div class="dash-carte-liste">${r1} à relancer (R1)${r2 ? ` · <b style="color:var(--danger);">${r2} R2 urgente${r2 > 1 ? 's' : ''}</b>` : ''}</div>` : ''}
+  </div>`
 }
 
 // --- PROJETS ---
