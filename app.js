@@ -5965,8 +5965,9 @@ let trSemaineOffset = 0          // 0 = cette semaine, -1 = précédente…
 let trRecherche = ''
 let trSelection = null           // id de la bulle dont la fiche est ouverte
 let trPassageEdition = null      // bulle ouverte dans le formulaire (null = création)
-let trOpsMasques = new Set()
-try { trOpsMasques = new Set(JSON.parse(localStorage.getItem('tr_ops_masques') || '[]')) } catch (e) {}
+// Opérateurs choisis : vide = tous ; sinon seuls ceux cliqués s'affichent (plusieurs possibles)
+let trOpsChoisis = new Set()
+try { trOpsChoisis = new Set(JSON.parse(localStorage.getItem('tr_ops_choisis') || '[]')); localStorage.removeItem('tr_ops_masques') } catch (e) {}
 
 function trCouleur(op) { return TR_COULEURS[op?.couleur] || TR_COULEURS.gray }
 function trOp(id) { return trOperateurs.find(o => o.id === id) || null }
@@ -6011,13 +6012,13 @@ function rechercherTournees(val) {
 }
 
 function basculerOperateurTournee(id) {
-  trOpsMasques.has(id) ? trOpsMasques.delete(id) : trOpsMasques.add(id)
-  try { localStorage.setItem('tr_ops_masques', JSON.stringify([...trOpsMasques])) } catch (e) {}
+  trOpsChoisis.has(id) ? trOpsChoisis.delete(id) : trOpsChoisis.add(id)
+  try { localStorage.setItem('tr_ops_choisis', JSON.stringify([...trOpsChoisis])) } catch (e) {}
   afficherTournees()
 }
 function afficherTousOperateursTournee() {
-  trOpsMasques.clear()
-  try { localStorage.setItem('tr_ops_masques', '[]') } catch (e) {}
+  trOpsChoisis.clear()
+  try { localStorage.setItem('tr_ops_choisis', '[]') } catch (e) {}
   afficherTournees()
 }
 
@@ -6045,14 +6046,17 @@ function afficherTournees() {
   trPassages.forEach(p => { nbParOp[p.operateur_id] = (nbParOp[p.operateur_id] || 0) + 1 })
   document.getElementById('tr-operateurs').innerHTML = trOperateurs.map(op => {
     const k = trCouleur(op)
-    return `<button class="tr-chip ${trOpsMasques.has(op.id) ? 'off' : ''}" onclick="basculerOperateurTournee('${op.id}')" title="Afficher / masquer ${esc(op.nom)}">
+    const choisi = trOpsChoisis.has(op.id)
+    return `<button class="tr-chip ${trOpsChoisis.size && !choisi ? 'off' : ''}" onclick="basculerOperateurTournee('${op.id}')" aria-pressed="${choisi}"
+      title="${choisi ? 'Retirer ' + esc(op.nom) + ' du filtre' : 'Afficher ' + esc(op.nom) + (trOpsChoisis.size ? ' en plus' : ' uniquement')}"
+      style="${choisi ? `background:${k[0]};border-color:${k[2]};color:${k[1]};font-weight:600;` : ''}">
       <span class="tr-dot" style="background:${k[2]};"></span>${esc(op.nom)} <span style="color:var(--muted);font-size:11px;">${nbParOp[op.id] || 0}</span></button>`
-  }).join('') + (trOpsMasques.size ? `<button class="tr-chip" onclick="afficherTousOperateursTournee()" style="border-style:dashed;">Tout afficher</button>` : '')
+  }).join('') + (trOpsChoisis.size ? `<button class="tr-chip" onclick="afficherTousOperateursTournee()" style="border-style:dashed;">Tous les opérateurs</button>` : '')
 
   // Bulles visibles : opérateur affiché + bonne semaine (ou, en recherche, toutes les semaines)
   const trouvees = new Map()
   const visibles = trPassages.filter(p => {
-    if (p.operateur_id && trOpsMasques.has(p.operateur_id)) return false
+    if (trOpsChoisis.size && !trOpsChoisis.has(p.operateur_id)) return false
     if (recherche) {
       const m = trCorrespondance(p, recherche)
       if (m === null) return false
