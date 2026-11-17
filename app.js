@@ -305,7 +305,7 @@ function showPage(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
   document.getElementById('page-' + page).classList.add('active')
-  const navMap = { dashboard: 'dashboard', projets: 'projet', taches: 'tâche', employes: 'équipe', archives: 'archive', calendrier: 'calendrier', factures: 'factures', recouvrement: 'recouvrement', recurrents: 'récurrents', tournees: 'tournées' }
+  const navMap = { dashboard: 'dashboard', projets: 'projet', taches: 'tâche', employes: 'équipe', archives: 'archive', calendrier: 'calendrier', factures: 'factures', recouvrement: 'recouvrement', recurrents: 'récurrents', tournees: 'tournées', clients: 'clients' }
   document.querySelectorAll('.nav-item').forEach(n => {
     if (n.textContent.toLowerCase().includes(navMap[page])) n.classList.add('active')
   })
@@ -319,6 +319,7 @@ function showPage(page) {
   if (page === 'recouvrement') { chargerRecouvrement(); mettreAJourBadgeRecouvrement() }
   if (page === 'recurrents') chargerRecurrents()
   if (page === 'tournees') chargerTournees()
+  if (page === 'clients') chargerClients()
   // Mémoriser l'onglet courant pour le restaurer au rechargement
   // On exclut les sous-pages sans état propre (detail = vue d'un projet spécifique)
   if (page !== 'detail') localStorage.setItem('suivi_current_page', page)
@@ -3080,7 +3081,10 @@ async function ouvrirFicheClient(nomClient) {
           </span>
         </div>
       </div>
-      <button onclick="document.getElementById('modal-fiche-client').remove()" style="background:none;border:none;cursor:pointer;font-size:22px;color:var(--muted);padding:0 6px;">×</button>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="btn btn-secondary" onclick="ouvrirFicheClientUnique('${nomClient.replace(/\\/g,'\\\\').replace(/'/g, "\\'")}')">Fiche client complète</button>
+        <button onclick="document.getElementById('modal-fiche-client').remove()" style="background:none;border:none;cursor:pointer;font-size:22px;color:var(--muted);padding:0 6px;">×</button>
+      </div>
     </div>
 
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;">
@@ -5966,6 +5970,7 @@ function afficherFicheTournee() {
         <div style="font-size:12.5px;color:var(--muted);margin-top:3px;">${TR_JOURS[p.jour - 1]} · <span class="tr-pill" style="background:${k[0]};color:${k[1]};">${esc(op?.nom || 'Sans opérateur')}</span> · ${freq}</div>
       </div>
       <div style="display:flex;gap:6px;">
+        <button class="btn btn-secondary" onclick="ouvrirFicheClientUnique('${esc((cl?.nom || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"))}')">Fiche client</button>
         <button class="btn btn-secondary" onclick="ouvrirModalPassage('${p.id}')"><i class="ico ico-pencil"></i> Modifier</button>
         <button class="btn btn-secondary" onclick="selectionnerBulleTournee('${p.id}')" title="Fermer la fiche">✕</button>
       </div>
@@ -6188,3 +6193,214 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) veri
 
 // Démarrage (en dernier : toutes les fonctions et variables existent)
 demarrerApplication()
+
+
+// ═══════════════════════════════════════════════════════════
+//  FICHE CLIENT UNIQUE
+//  Un client peut apparaître sous plusieurs noms (factures, contrats, tournées).
+//  Tous ses noms sont rattachés à une seule fiche (tables clients_fiches / clients_noms).
+// ═══════════════════════════════════════════════════════════
+let clListe = [], clSelection = null, clRecherche = '', clFiltre = 'tous'
+
+async function chargerClients() {
+  afficherSquelette('cl-liste', 'liste', 10)
+  await db.rpc('synchroniser_clients')   // ajoute les nouveaux noms (imports, nouveaux contrats…)
+  const { data, error } = await db.rpc('liste_clients')
+  if (error) { document.getElementById('cl-liste').innerHTML = `<p style="padding:14px;color:var(--danger);">Liste indisponible : ${esc(error.message)}</p>`; return }
+  clListe = data || []
+  afficherListeClients()
+  if (clSelection && clListe.some(c => c.id === clSelection)) afficherFicheClientUnique(clSelection)
+  else document.getElementById('cl-fiche').innerHTML = `<div class="cl-carte" style="color:var(--muted);text-align:center;padding:40px;">Choisis un client dans la liste.</div>`
+}
+
+function afficherListeClients() {
+  const fmt = v => (parseFloat(v) || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })
+  const factures = utilisateurAccesFactures
+  const filtres = [['tous', 'Tous'], ...(factures ? [['impayes', 'Avec impayés']] : []), ['tournees', 'En tournée'], ['contrats', 'Avec contrat']]
+  document.getElementById('cl-filtres').innerHTML = filtres.map(([v, l]) =>
+    `<button class="tr-chip ${clFiltre === v ? '' : 'off'}" style="${clFiltre === v ? 'border-color:var(--ink);' : ''}" onclick="clFiltre='${v}';afficherListeClients()">${l}</button>`).join('')
+  const q = trNorm(clRecherche)
+  let liste = clListe.filter(c => !q || c.noms.some(n => trNorm(n).includes(q)) || trNorm(c.nom).includes(q))
+  if (clFiltre === 'impayes') liste = liste.filter(c => c.nb_impayees > 0).sort((a, b) => b.montant_impaye - a.montant_impaye)
+  if (clFiltre === 'tournees') liste = liste.filter(c => c.nb_passages > 0)
+  if (clFiltre === 'contrats') liste = liste.filter(c => c.nb_contrats > 0)
+  document.getElementById('cl-stats').textContent = `${liste.length} client${liste.length > 1 ? 's' : ''}${q || clFiltre !== 'tous' ? ` sur ${clListe.length}` : ''} · factures, contrats récurrents et tournées réunis`
+  const el = document.getElementById('cl-liste')
+  el.innerHTML = liste.length ? liste.slice(0, 400).map(c => `
+    <div class="cl-ligne ${clSelection === c.id ? 'active' : ''}" onclick="afficherFicheClientUnique('${c.id}')">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">
+        <span style="font-weight:600;font-size:12.5px;color:var(--ink);">${esc(c.nom)}</span>
+        ${factures && c.montant_impaye > 0 ? `<span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:700;color:${c.nb_retard ? 'var(--danger)' : 'var(--warn)'};white-space:nowrap;">${fmt(c.montant_impaye)} €</span>` : ''}
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px;display:flex;gap:10px;flex-wrap:wrap;">
+        ${c.nb_passages ? `<span><i class="ico ico-truck"></i> ${c.nb_passages} passage${c.nb_passages > 1 ? 's' : ''}</span>` : ''}
+        ${c.nb_contrats ? `<span><i class="ico ico-repeat"></i> ${c.nb_contrats} contrat${c.nb_contrats > 1 ? 's' : ''}</span>` : ''}
+        ${factures && c.nb_factures ? `<span><i class="ico ico-file"></i> ${c.nb_factures} facture${c.nb_factures > 1 ? 's' : ''}</span>` : ''}
+        ${c.noms.length > 1 ? `<span>${c.noms.length} noms</span>` : ''}
+      </div>
+    </div>`).join('') : '<p style="padding:14px;color:var(--muted);">Aucun client trouvé.</p>'
+}
+
+// Ouvre la fiche à partir d'un nom (depuis une facture, un contrat, une bulle…)
+async function ouvrirFicheClientUnique(nom) {
+  document.getElementById('modal-fiche-client')?.remove()
+  // On cherche la fiche AVANT d'ouvrir la page, pour qu'elle s'affiche dès le chargement
+  await db.rpc('synchroniser_clients')
+  const { data } = await db.from('clients_noms').select('client_id').eq('nom', nom).maybeSingle()
+  if (data?.client_id) clSelection = data.client_id
+  else { document.getElementById('cl-recherche').value = nom; clRecherche = nom }
+  showPage('clients')
+}
+
+async function afficherFicheClientUnique(id) {
+  clSelection = id
+  document.querySelectorAll('.cl-ligne').forEach(l => l.classList.toggle('active', l.getAttribute('onclick').includes(id)))
+  const c = clListe.find(x => x.id === id)
+  const el = document.getElementById('cl-fiche')
+  if (!c) return
+  el.innerHTML = squelette('cartes', 3)
+  const noms = c.noms
+  const [{ data: fiche }, { data: contrats }, { data: tclients }, facturesRes] = await Promise.all([
+    db.from('clients_fiches').select('notes').eq('id', id).single(),
+    db.from('contrats_recurrents').select('id,client,numero_machine,type_prestation,frequence,actif,date_debut,date_fin').in('client', noms),
+    db.from('tournee_clients').select('id,nom,ville,adresse,email,infos').in('nom', noms),
+    utilisateurAccesFactures
+      ? toutesLesLignes(() => db.from('factures').select('id,numero,client,montant,montant_paye,solde,litige,date_emission,date_echeance,date_paiement,email_client,telephone,ville,moyen_paiement').in('client', noms).order('date_emission', { ascending: false }))
+      : Promise.resolve({ data: null }),
+  ])
+  if (clSelection !== id) return   // un autre client a été choisi entre-temps
+  const tcIds = (tclients || []).map(t => t.id)
+  const { data: passages } = tcIds.length ? await db.from('tournee_passages').select('id,client_id,jour,semaine,machines,operateur_id,note').in('client_id', tcIds) : { data: [] }
+  const { data: ops } = (passages || []).length ? await db.from('tournee_operateurs').select('id,nom,couleur') : { data: [] }
+  const factures = facturesRes.data
+  const fmt = v => (parseFloat(v) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
+  const auj = aujourdhuiISO()
+  const uniques = arr => [...new Set(arr.filter(Boolean).map(x => String(x).trim()))]
+  const emails = uniques([...(tclients || []).map(t => t.email), ...(factures || []).map(f => f.email_client)])
+  const tels = uniques((factures || []).map(f => f.telephone))
+  const adresses = uniques((tclients || []).map(t => [t.adresse, t.ville].filter(Boolean).join(' · ')))
+  const infos = uniques((tclients || []).map(t => t.infos))
+  const nomsJs = s => esc(String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"))
+
+  // Factures
+  let blocFactures = ''
+  if (factures) {
+    const impayees = factures.filter(f => !f.solde && !f.litige)
+    const retard = impayees.filter(f => f.date_echeance && f.date_echeance < auj)
+    const reste = arr => arr.reduce((s, f) => s + soldeRestant(f), 0)
+    const payees = factures.filter(f => f.solde && f.date_paiement && f.date_echeance)
+    const delai = payees.length ? Math.round(payees.reduce((s, f) => s + (new Date(f.date_paiement) - new Date(f.date_echeance)) / 86400000, 0) / payees.length) : null
+    blocFactures = `<div class="cl-carte">
+      <h3><i class="ico ico-file"></i> Factures</h3>
+      ${factures.length ? `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;">
+        <div class="cl-kpi"><div>Facturé (total)</div><div>${fmt(factures.reduce((s, f) => s + (parseFloat(f.montant) || 0), 0))} €</div></div>
+        <div class="cl-kpi"><div>Reste à payer</div><div style="color:${impayees.length ? 'var(--warn)' : 'var(--success)'};">${fmt(reste(impayees))} €</div></div>
+        <div class="cl-kpi"><div>Dont en retard</div><div style="color:${retard.length ? 'var(--danger)' : 'var(--ink)'};">${fmt(reste(retard))} €</div></div>
+        <div class="cl-kpi"><div>Paie en moyenne</div><div>${delai === null ? '—' : delai <= 0 ? 'à temps' : `+${delai} j`}</div></div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        ${factures.slice(0, 8).map(f => {
+          const enRetard = !f.solde && !f.litige && f.date_echeance && f.date_echeance < auj
+          const statut = f.solde ? '<span style="color:var(--success);">Soldée</span>' : f.litige ? '<span style="color:#5b21b6;">Litige</span>' : enRetard ? '<span style="color:var(--danger);font-weight:600;">En retard</span>' : '<span style="color:var(--warn);">En attente</span>'
+          return `<tr style="border-top:1px solid var(--border-soft);"><td style="padding:6px 0;font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);">${esc(f.numero)}</td><td style="color:var(--muted);">${f.date_emission ? formatDate(f.date_emission) : ''}</td><td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:600;">${fmt(f.montant)} €</td><td style="text-align:right;">${statut}</td></tr>`
+        }).join('')}
+      </table>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" onclick="ouvrirFicheClient('${nomsJs(factures[0].client)}')">Paiements et relances</button>
+        <button class="btn btn-secondary" onclick="showPage('factures');setFiltreFacturesClient('${nomsJs(factures[0].client)}')">Voir ses ${factures.length} facture${factures.length > 1 ? 's' : ''}</button>
+      </div>` : '<p style="color:var(--muted);font-size:12.5px;">Aucune facture sous ces noms.</p>'}
+    </div>`
+  }
+
+  // Contrats récurrents
+  const blocContrats = `<div class="cl-carte">
+    <h3><i class="ico ico-repeat"></i> Contrats récurrents</h3>
+    ${(contrats || []).length ? contrats.map(ct => `
+      <div onclick="ouvrirHistoriqueContrat('${ct.id}')" style="cursor:pointer;display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--border-soft);font-size:12.5px;${ct.actif ? '' : 'opacity:0.55;'}">
+        <span>${typeLabel(ct.type_prestation)}${ct.numero_machine ? ` <span style="color:var(--muted);">#${esc(ct.numero_machine)}</span>` : ''}</span>
+        <span style="color:var(--muted);">${ct.frequence}${ct.date_fin ? ` · fin le ${formatDate(ct.date_fin)}` : ''}${ct.actif ? '' : ' · archivé'}</span>
+      </div>`).join('') : '<p style="color:var(--muted);font-size:12.5px;">Aucun contrat récurrent.</p>'}
+  </div>`
+
+  // Tournées
+  const opNom = idOp => (ops || []).find(o => o.id === idOp)?.nom || '—'
+  const blocTournees = `<div class="cl-carte">
+    <h3><i class="ico ico-truck"></i> Tournées</h3>
+    ${(passages || []).length ? passages.sort((a, b) => a.jour - b.jour).map(p => `
+      <div style="padding:7px 0;border-top:1px solid var(--border-soft);font-size:12.5px;">
+        <div style="display:flex;justify-content:space-between;gap:10px;"><b>${TR_JOURS[p.jour - 1]}</b><span style="color:var(--muted);">${esc(opNom(p.operateur_id))}${p.semaine !== 'toutes' ? ` · semaines ${p.semaine}s` : ''}</span></div>
+        ${(p.machines || []).length ? `<div style="margin-top:4px;">${p.machines.map(m => `<span class="tr-machine">${esc(m)}</span>`).join('')}</div>` : ''}
+        ${p.note ? `<div style="font-size:11.5px;color:var(--muted);">${esc(p.note)}</div>` : ''}
+      </div>`).join('') + `<button class="btn btn-secondary" style="margin-top:8px;" onclick="showPage('tournees');setTimeout(()=>{const i=document.getElementById('tr-recherche');i.value='${nomsJs((tclients || [])[0]?.nom || c.nom)}';rechercherTournees(i.value)},300)">Voir sur le planning</button>`
+      : '<p style="color:var(--muted);font-size:12.5px;">Pas de passage en tournée.</p>'}
+  </div>`
+
+  el.innerHTML = `
+    <div class="cl-carte">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+        <div style="font-size:19px;font-weight:700;color:var(--ink);">${esc(c.nom)}</div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-secondary" onclick="renommerClient('${id}')">Renommer</button>
+          <button class="btn btn-secondary" onclick="fusionnerClient('${id}')">Fusionner avec…</button>
+        </div>
+      </div>
+      <div style="margin-top:8px;">
+        <span style="font-size:11px;color:var(--muted);margin-right:6px;">Noms utilisés :</span>
+        ${c.noms.map(n => `<span class="cl-nom-chip">${esc(n)}${c.noms.length > 1 ? `<button onclick="detacherNomClient('${nomsJs(n)}')" title="Ce nom n'est pas ce client : le séparer" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:0;font-size:13px;line-height:1;">×</button>` : ''}</span>`).join('')}
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px;">
+        <tr><td style="color:var(--muted);width:110px;padding:4px 0;"><i class="ico ico-mail"></i> Mail</td><td>${emails.length ? emails.map(e => `<a href="mailto:${esc(e)}" style="color:var(--brand-deep);">${esc(e)}</a>`).join(', ') : '<span style="color:var(--muted-soft);">aucun</span>'}</td></tr>
+        <tr><td style="color:var(--muted);padding:4px 0;"><i class="ico ico-phone"></i> Téléphone</td><td>${tels.length ? tels.map(t => esc(formatPhone(t))).join(', ') : '<span style="color:var(--muted-soft);">aucun</span>'}</td></tr>
+        <tr><td style="color:var(--muted);padding:4px 0;"><i class="ico ico-pin"></i> Adresse</td><td>${adresses.length ? adresses.map(esc).join('<br>') : '<span style="color:var(--muted-soft);">à compléter (dans la bulle de tournée)</span>'}</td></tr>
+        ${infos.length ? `<tr><td style="color:var(--muted);padding:4px 0;"><i class="ico ico-key"></i> Accès</td><td>${infos.map(esc).join('<br>')}</td></tr>` : ''}
+      </table>
+    </div>
+    ${blocFactures}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">${blocContrats}${blocTournees}</div>
+    <div class="cl-carte">
+      <h3><i class="ico ico-note"></i> Notes sur le client</h3>
+      <textarea id="cl-notes" rows="3" placeholder="Interlocuteur, habitudes, points d'attention…" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;resize:vertical;">${esc(fiche?.notes || '')}</textarea>
+      <button class="btn btn-secondary" style="margin-top:6px;" onclick="sauverNotesClient('${id}')">Enregistrer la note</button>
+    </div>`
+}
+
+async function sauverNotesClient(id) {
+  const notes = document.getElementById('cl-notes').value.trim() || null
+  const { error } = await db.from('clients_fiches').update({ notes }).eq('id', id)
+  afficherToast(error ? 'Note non enregistrée, réessaie.' : 'Note enregistrée', !!error)
+}
+
+async function renommerClient(id) {
+  const c = clListe.find(x => x.id === id)
+  const nom = ((await demander('Nom affiché pour ce client :', c?.nom || '')) || '').trim()
+  if (!nom || nom === c?.nom) return
+  const { error } = await db.from('clients_fiches').update({ nom }).eq('id', id)
+  if (error) { afficherToast('Renommage impossible', true); return }
+  c.nom = nom; afficherListeClients(); afficherFicheClientUnique(id)
+}
+
+async function fusionnerClient(id) {
+  const c = clListe.find(x => x.id === id)
+  const saisie = ((await demander(`Fusionner « ${c.nom} » avec quel client ?\nTape une partie de son nom (ex. MBS).`, '')) || '').trim()
+  if (!saisie) return
+  const q = trNorm(saisie)
+  const cands = clListe.filter(x => x.id !== id && (trNorm(x.nom).includes(q) || x.noms.some(n => trNorm(n).includes(q))))
+  if (!cands.length) { alert(`Aucun autre client ne correspond à « ${saisie} ».`); return }
+  if (cands.length > 1) { alert(`${cands.length} clients correspondent, précise :\n\n${cands.slice(0, 10).map(x => '· ' + x.nom).join('\n')}${cands.length > 10 ? '\n…' : ''}`); return }
+  const autre = cands[0]
+  if (!await confirmer(`Réunir « ${autre.nom} » dans la fiche « ${c.nom} » ?\n\nSes noms (${autre.noms.join(', ')}), ses factures, contrats et tournées seront rattachés à cette fiche. Un nom rattaché par erreur peut être séparé ensuite (×).`, { ok: 'Fusionner' })) return
+  const { error } = await db.rpc('fusionner_clients', { p_garder: id, p_absorber: autre.id })
+  if (error) { alert('Fusion impossible : ' + error.message); return }
+  logAction('client', 'clients_fiches', id, `Clients fusionnés : « ${autre.nom} » rattaché à « ${c.nom} »`)
+  afficherToast('Clients fusionnés')
+  chargerClients()
+}
+
+async function detacherNomClient(nom) {
+  if (!await confirmer(`Séparer « ${nom} » de cette fiche ?\nIl aura sa propre fiche client.`, { ok: 'Séparer' })) return
+  const { data: nid, error } = await db.rpc('detacher_nom_client', { p_nom: nom })
+  if (error) { alert(error.message); return }
+  afficherToast('Nom séparé')
+  chargerClients()
+}

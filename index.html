@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=20261117l" />
+  <link rel="stylesheet" href="style.css?v=20261117n" />
 </head>
 <body>
 
@@ -205,6 +205,9 @@
     <div class="sidebar-nav">
       <button class="nav-item" onclick="showPage('employes')" data-label="Équipe">
         <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="6" cy="5" r="2.5" stroke="currentColor" stroke-width="1.4"/><path d="M1 13c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="12" cy="5" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M14 12c0-1.5-.9-2.8-2.2-3.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span> Équipe
+      </button>
+      <button class="nav-item" onclick="showPage('clients')" data-label="Clients">
+        <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2.5" width="12" height="11" rx="1.5" stroke="currentColor" stroke-width="1.4"/><circle cx="6" cy="7" r="1.6" stroke="currentColor" stroke-width="1.2"/><path d="M3.8 11c.4-1.2 1.2-1.8 2.2-1.8s1.8.6 2.2 1.8M9.5 6.5h3M9.5 9h2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span> Clients
       </button>
       <button class="nav-item" onclick="showPage('calendrier')" data-label="Calendrier">
         <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M5 2v2M11 2v2M2 7h12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span> Calendrier
@@ -441,6 +444,27 @@
         <button class="btn btn-primary" onclick="ouvrirModalEmploye()">+ Ajouter membre</button>
       </div>
       <div class="employes-grid" id="liste-employes"></div>
+    </div>
+
+    <!-- CLIENTS (fiche unique) -->
+    <div id="page-clients" class="page">
+      <div class="page-header" style="flex-wrap:wrap;gap:12px;align-items:flex-start;">
+        <div>
+          <h1 class="page-title">Clients</h1>
+          <div id="cl-stats" style="font-size:12px;color:var(--muted);margin-top:3px;">Une fiche par client : factures, contrats récurrents et tournées réunis.</div>
+        </div>
+      </div>
+      <div class="cl-layout">
+        <div>
+          <div class="tr-recherche" style="max-width:none;margin-bottom:8px;">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="5.5" cy="5.5" r="4" stroke="#9ca3af" stroke-width="1.3"/><path d="M8.5 8.5L11 11" stroke="#9ca3af" stroke-width="1.3" stroke-linecap="round"/></svg>
+            <input id="cl-recherche" type="search" placeholder="Rechercher un client…" autocomplete="off" oninput="clRecherche=this.value;afficherListeClients()" />
+          </div>
+          <div id="cl-filtres" class="tr-chips" style="margin-bottom:8px;"></div>
+          <div id="cl-liste" class="cl-liste"></div>
+        </div>
+        <div id="cl-fiche"></div>
+      </div>
     </div>
 
     <!-- CALENDRIER -->
@@ -1090,6 +1114,6 @@
   <div id="panneau-notifs-liste" style="max-height:60vh;overflow-y:auto;"></div>
 </div>
 
-<script src="app.js?v=20261117l" id="script-app"></script>
+<script src="app.js?v=20261117n" id="script-app"></script>
 </body>
 </html>
